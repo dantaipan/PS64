@@ -725,6 +725,35 @@ static void test_favs(void)
     a = ui_input(&u, IN_TRIANGLE);
     CHECK(a.kind == UA_FAV_TOGGLE && a.fav.kind == FAV_LOCAL_FILE);
 
+    /* Assembly64 as the real server behaves: the category list has no ids;
+     * a Music-filtered search teaches that its results' number (4) is Music. */
+    {
+        static ui_state v;
+        ui_init(&v);
+        v.a64_ready = 1;
+        v.a64_cats.count = 2;
+        strcpy(v.a64_cats.names[0], "Games"); strcpy(v.a64_cats.keys[0], "games"); v.a64_cats.ids[0] = -1;
+        strcpy(v.a64_cats.names[1], "Music"); strcpy(v.a64_cats.keys[1], "music"); v.a64_cats.ids[1] = -1;
+        ui_open_a64(&v);
+        ui_text(&v, "boulder");
+        ui_input(&v, IN_L2);
+        ui_input(&v, IN_L2);                                 /* Music */
+        ui_action s1 = ui_input(&v, IN_R2);
+        CHECK(s1.kind == UA_A64_SEARCH && !strcmp(s1.category_key, "music"));
+        a64_result rr;
+        memset(&rr, 0, sizeof(rr));
+        rr.kind = A64R_SEARCH;
+        rr.count = 1;
+        rr.items = calloc(1, sizeof(a64_item));
+        strcpy(rr.items[0].id, "264000");
+        strcpy(rr.items[0].name, "Boulder Dash Music");
+        rr.items[0].category = 4;
+        ui_a64_results(&v, &rr);
+        ui_action t = ui_input(&v, IN_TRIANGLE);
+        CHECK(t.kind == UA_FAV_TOGGLE && t.fav.group == FAV_SIDS);
+        ui_free(&v);
+    }
+
     /* Assembly64 item: Triangle favourites it, grouped by category name. */
     u.a64_ready = 1;
     u.a64_cats.count = 1;

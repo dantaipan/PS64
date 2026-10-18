@@ -308,7 +308,11 @@ static fav_entry entry_a64_item(const ui_state *u, const a64_item *it)
     fav_entry e;
     memset(&e, 0, sizeof(e));
     e.kind = FAV_A64_ITEM;
-    e.group = fav_group_for_category(a64_category_name(&u->a64_cats, it->category));
+    const char *cat = a64_category_name(&u->a64_cats, it->category);
+    for (int i = 0; !cat && i < u->a64_nseen; i++)
+        if (u->a64_seen_num[i] == it->category)
+            cat = u->a64_seen_name[i];
+    e.group = fav_group_for_category(cat);
     e.action = FA_NONE;
     snprintf(e.item_id, sizeof(e.item_id), "%s", it->id);
     e.category = it->category;
@@ -488,6 +492,8 @@ static ui_action a64_search_action(ui_state *u, int offset)
     ui_action a = act(UA_A64_SEARCH);
     snprintf(a.text, sizeof(a.text), "%s", u->a64_query);
     snprintf(a.category_key, sizeof(a.category_key), "%s", a64_cat_key(u));
+    snprintf(u->a64_search_cat, sizeof(u->a64_search_cat), "%s",
+             u->a64_cat >= 0 && u->a64_cat < u->a64_cats.count ? u->a64_cats.names[u->a64_cat] : "");
     a.offset = offset;
     u->a64_loading = 1;
     snprintf(u->a64_status, sizeof(u->a64_status), "Searching Assembly64...");
@@ -511,6 +517,18 @@ void ui_a64_results(ui_state *u, a64_result *r)
 {
     u->a64_loading = 0;
     if (r->kind == A64R_SEARCH) {
+        /* A filtered search tells us what its results' category numbers mean. */
+        for (int i = 0; u->a64_search_cat[0] && i < r->count; i++) {
+            int known = 0;
+            for (int j = 0; j < u->a64_nseen; j++)
+                known |= u->a64_seen_num[j] == r->items[i].category;
+            if (!known && u->a64_nseen < A64_MAX_CATS) {
+                u->a64_seen_num[u->a64_nseen] = r->items[i].category;
+                snprintf(u->a64_seen_name[u->a64_nseen], sizeof(u->a64_seen_name[0]), "%s",
+                         u->a64_search_cat);
+                u->a64_nseen++;
+            }
+        }
         if (r->offset == 0) {
             free(u->a64_items);
             u->a64_items = r->items;

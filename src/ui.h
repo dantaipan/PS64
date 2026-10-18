@@ -97,6 +97,12 @@ typedef struct {
     a64_item       a64_cur;         /* item whose files are shown */
     a64_file      *a64_files;       /* owned */
     int            a64_nfiles, a64_fsel, a64_ftop;
+    /* Result category numbers seen in filtered searches -> filter name
+     * (the server's category list doesn't carry the numbers). */
+    int            a64_seen_num[A64_MAX_CATS];
+    char           a64_seen_name[A64_MAX_CATS][40];
+    int            a64_nseen;
+    char           a64_search_cat[40];   /* filter name used by the pending search */
 
     /* Favourites and recents (lists owned by main). */
     fav_list      *favs, *recents;
