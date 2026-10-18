@@ -3,11 +3,13 @@
 /fake_sender
 /test_vicstream
 /test_input
+/test_emulator
+/lrc.a
 *.o
 *.dSYM/
 ps5/out/
 
-# Downloaded by tools/get_sdl2.sh
+# Downloaded by tools/get_sdl2.sh and tools/get_vice.sh
 third_party/
 
 # Experiments (third-party clones, test content such as game disk images)

@@ -1,7 +1,8 @@
 /*
  * c64index - a searchable list of the runnable files on an Ultimate's
- * storage (PRG, disk images, CRT, SID, MOD). Built by walking folders over
- * FTP on a worker thread, saved to a text file, searched by keyword.
+ * storage (PRG, disk images, CRT, SID, MOD), or of the emulator's games
+ * folder. Built by walking folders (over FTP, or locally) on a worker
+ * thread, saved to a text file, searched by keyword.
  */
 #ifndef C64INDEX_H
 #define C64INDEX_H
@@ -38,6 +39,10 @@ int  index_save(c64index *x, const char *file, const char *host, const char *roo
  * file when finished. Searches work on partial results meanwhile. */
 void index_build_start(c64index *x, const char *host, const char *password,
                        const char *roots, const char *file);
+/* The same for a local folder (the emulator's games folder; paths start at
+ * "/" inside root). Saved with host INDEX_LOCAL_HOST. */
+#define INDEX_LOCAL_HOST "emulator"
+void index_build_local_start(c64index *x, const char *root, const char *file);
 void index_status_get(c64index *x, index_status *st);
 int  index_count(c64index *x);
 

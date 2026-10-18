@@ -62,21 +62,33 @@ static void row(SDL_Renderer *ren, int i, int selected, const char *text, SDL_Co
 static void draw_menu(SDL_Renderer *ren, const ui_state *u)
 {
     panel(ren, "PS64");
-    char port[32];
+    char port[32], disk[40];
     snprintf(port, sizeof(port), "Joystick port: < %d >", u->port);
-    const char *items[MI_COUNT] = {
-        "Resume", "Browse files...", "Search files...", "Search Assembly64...",
-        "Favourites...", "Recents...",
-        "Reset C64", "Reboot C64 (clears cartridge)",
-        u->muted ? "Audio: < Off >" : "Audio: < On >", port, "Choose C64...",
-        "Update search index", "Quit",
+    snprintf(disk, sizeof(disk), "Disk: < %d of %d >", u->disk + 1, u->disks);
+    const char *labels[MI_COUNT] = {
+        [MI_RESUME] = "Resume",
+        [MI_BROWSE] = u->emulator ? "Browse games folder..." : "Browse files...",
+        [MI_SEARCH] = u->emulator ? "Search games folder..." : "Search files...",
+        [MI_A64] = "Search Assembly64...",
+        [MI_FAVS] = "Favourites...", [MI_RECENTS] = "Recents...",
+        [MI_RESET] = "Reset C64",
+        [MI_REBOOT] = u->emulator ? "Switch off and on (removes disks)" : "Reboot C64 (clears cartridge)",
+        [MI_AUDIO] = u->muted ? "Audio: < Off >" : "Audio: < On >",
+        [MI_PORT] = port,
+        [MI_CHOOSE] = u->emulator ? "Choose C64 or emulator..." : "Choose C64...",
+        [MI_INDEX] = "Update search index", [MI_QUIT] = "Quit",
+        [MI_DISK] = disk,
+        [MI_CONTROLLER] = u->joy_keys ? "D-pad: < Cursor keys >" : "D-pad: < Joystick >",
     };
-    for (int i = 0; i < MI_COUNT; i++)
-        row(ren, i, i == u->sel, items[i], WHITE);
-    if (u->current_ip[0]) {
+    int items[MI_COUNT];
+    int n = ui_menu_items(u, items);
+    for (int i = 0; i < n; i++)
+        row(ren, i, i == u->sel, labels[items[i]], WHITE);
+    if (u->emulator || u->current_ip[0]) {
         char line[64];
-        snprintf(line, sizeof(line), "C64: %s", u->current_ip);
-        font_draw(ren, line, PX + 16, LIST_Y + (MI_COUNT + 1) * ROW_H, 1, DIM);
+        snprintf(line, sizeof(line), u->emulator ? "Built-in emulator (VICE)%.0s" : "C64: %s",
+                 u->current_ip);
+        font_draw(ren, line, PX + 16, LIST_Y + (n + 1) * ROW_H, 1, DIM);
     }
     footer(ren, "X select   O close   </> change");
 }
@@ -106,8 +118,10 @@ static void draw_picker(SDL_Renderer *ren, const ui_state *u, Uint32 now)
                 snprintf(text, sizeof(text), "%-15s  %s  %s %s", d->ip,
                          d->hostname[0] ? d->hostname : "-", d->product, d->firmware);
         } else {
-            static const char *const fixed[3] = {
-                "Enter address...", "Search again", "No C64 - listen only (start streams from its menu)",
+            static const char *const fixed[4] = {
+                "Enter address...", "Search again",
+                "Built-in emulator (no C64 Ultimate needed)",
+                "No C64 - listen only (start streams from its menu)",
             };
             snprintf(text, sizeof(text), "%s", fixed[i - u->ndevices]);
             c = CYAN;
@@ -163,6 +177,13 @@ static void draw_browser(SDL_Renderer *ren, const ui_state *u)
         font_draw(ren, "Loading...", PX + 16, LIST_Y, 1, DIM);
     } else if (u->error[0]) {
         font_draw(ren, u->error, PX + 16, LIST_Y, 1, RED);
+    } else if (u->count == 0 && u->emulator && !strcmp(u->path, "/")) {
+        char line[300];
+        font_draw(ren, "The games folder is empty. Copy games (D64, PRG, T64, TAP, CRT) into",
+                  PX + 16, LIST_Y, 1, WHITE);
+        snprintf(line, sizeof(line), "%s", u->games_dir);
+        font_draw(ren, line, PX + 16, LIST_Y + ROW_H, 1, CYAN);
+        font_draw(ren, "over FTP, or find games with Search Assembly64.", PX + 16, LIST_Y + 2 * ROW_H, 1, WHITE);
     } else if (u->count == 0) {
         font_draw(ren, "(empty folder)", PX + 16, LIST_Y, 1, DIM);
     }
@@ -225,7 +246,7 @@ static void draw_actions(SDL_Renderer *ren, const ui_state *u, Uint32 now)
 
 static void draw_search(SDL_Renderer *ren, const ui_state *u, Uint32 now)
 {
-    panel(ren, "Search the C64's files");
+    panel(ren, u->emulator ? "Search the games folder" : "Search the C64's files");
     index_status st;
     memset(&st, 0, sizeof(st));
     int count = 0;
@@ -240,9 +261,11 @@ static void draw_search(SDL_Renderer *ren, const ui_state *u, Uint32 now)
         return;
     }
     if (count == 0 && !st.building) {
-        font_draw(ren, st.error[0] ? st.error : "There's no search index for this C64 yet.",
+        font_draw(ren, st.error[0] ? st.error : u->emulator ? "There's no search index for the games folder yet."
+                                                            : "There's no search index for this C64 yet.",
                   PX + 16, LIST_Y, 1, st.error[0] ? RED : WHITE);
-        font_draw(ren, "Building one lists every folder on its storage over FTP.",
+        font_draw(ren, u->emulator ? "Building one lists every folder in it."
+                                   : "Building one lists every folder on its storage over FTP.",
                   PX + 16, LIST_Y + 2 * ROW_H, 1, DIM);
         font_draw(ren, "It can take a few minutes; you can search while it runs.",
                   PX + 16, LIST_Y + 3 * ROW_H, 1, DIM);
@@ -429,7 +452,7 @@ static void draw_favs(SDL_Renderer *ren, const ui_state *u)
 
 static const char *fav_tag(const fav_entry *e)
 {
-    if (e->kind == FAV_LOCAL_FOLDER) return "DIR";
+    if (fav_is_folder(e)) return "DIR";
     if (e->kind == FAV_A64_ITEM) return "A64";
     return files_type_tag(files_type(e->path, 0));
 }
@@ -447,11 +470,13 @@ static void draw_fav_list(SDL_Renderer *ren, const ui_state *u)
         char where[256], name[96], place[64], line[200];
         if (e->kind == FAV_A64_FILE || e->kind == FAV_A64_ITEM) {
             snprintf(where, sizeof(where), "Assembly64");
+        } else if (fav_is_emulator(e) && !files_emulator()) {
+            snprintf(where, sizeof(where), "Emulator");     /* not this machine's */
         } else {
             /* The folder the title lives in, shortened from the left. */
             snprintf(where, sizeof(where), "%s", e->path);
             char *cut = strrchr(where, '/');
-            if (cut && e->kind == FAV_LOCAL_FILE)
+            if (cut && !fav_is_folder(e))
                 *cut = 0, cut = strrchr(where, '/');
             if (cut)
                 *cut = 0;

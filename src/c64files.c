@@ -37,11 +37,27 @@ int files_type(const char *name, int is_dir)
         return FT_SID;
     if (!strcasecmp(e, "mod"))
         return FT_MOD;
+    if (!strcasecmp(e, "t64") || !strcasecmp(e, "tap"))
+        return FT_TAPE;
     return FT_OTHER;
 }
 
+static int emulator_mode;
+
+void files_set_emulator(int on) { emulator_mode = on; }
+int  files_emulator(void)       { return emulator_mode; }
+
 int files_default_action(int type)
 {
+    if (emulator_mode) {
+        switch (type) {
+        case FT_PRG:
+        case FT_TAPE: return FA_RUN;
+        case FT_DISK: return FA_MOUNT_RUN;
+        case FT_CRT:  return FA_RUN_CRT;
+        }
+        return FA_NONE;
+    }
     switch (type) {
     case FT_PRG:  return FA_RUN;
     case FT_DISK: return FA_MOUNT_RUN;
@@ -58,8 +74,19 @@ int files_actions_for(int type, int *out, int max)
     static const int disk[] = { FA_MOUNT_RUN, FA_MOUNT_A, FA_MOUNT_B };
     static const int crt[] = { FA_RUN_CRT };
     static const int play[] = { FA_PLAY };
+    static const int run[] = { FA_RUN };
+    static const int emu_disk[] = { FA_MOUNT_RUN, FA_MOUNT_A };
     const int *src = NULL;
     int n = 0;
+    if (emulator_mode) {
+        switch (type) {
+        case FT_PRG:
+        case FT_TAPE: src = run; n = 1; break;
+        case FT_DISK: src = emu_disk; n = 2; break;
+        case FT_CRT:  src = crt; n = 1; break;
+        }
+        type = FT_OTHER;
+    }
     switch (type) {
     case FT_PRG:  src = prg;  n = 2; break;
     case FT_DISK: src = disk; n = 3; break;
@@ -80,19 +107,23 @@ const char *files_action_name(int action)
         "Run", "Load", "Mount & run", "Mount on drive A", "Mount on drive B", "Run cartridge", "Play",
         "Reset", "Reboot", "Launch",
     };
+    if (emulator_mode && action == FA_MOUNT_A)
+        return "Insert into drive 8";
     return action >= 0 && action < FA_COUNT ? names[action] : "";
 }
 
 const char *files_type_tag(int type)
 {
-    static const char *const tags[] = { "DIR", "PRG", "DISK", "CRT", "SID", "MOD", "" };
+    static const char *const tags[] = { "DIR", "PRG", "DISK", "CRT", "SID", "MOD", "TAPE", "" };
     return tags[type];
 }
 
 int files_pick_launch(const char *const *names, int n)
 {
-    static const int order[] = { FT_DISK, FT_PRG, FT_CRT, FT_SID, FT_MOD };
+    static const int order[] = { FT_DISK, FT_PRG, FT_CRT, FT_TAPE, FT_SID, FT_MOD };
     for (size_t o = 0; o < sizeof(order) / sizeof(order[0]); o++) {
+        if (files_default_action(order[o]) == FA_NONE)
+            continue;
         int best = -1;
         for (int i = 0; i < n; i++)
             if (files_type(names[i], 0) == order[o] &&

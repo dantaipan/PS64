@@ -39,6 +39,10 @@ struct remote {
     char     msgs[MSGQ_CAP][96];
     int      msg_len;
     int      warned_restore;
+
+    /* Local machine (the built-in emulator): input goes to these, no thread. */
+    remote_sink sink;
+    int         local;
 };
 
 static uint32_t now_ms(void)
@@ -392,10 +396,32 @@ remote *remote_start(const char *host, const char *password)
     return r;
 }
 
+remote *remote_start_local(const remote_sink *sink)
+{
+    remote *r = calloc(1, sizeof(*r));
+    if (!r)
+        return NULL;
+    r->sink = *sink;
+    r->local = 1;
+    r->mode = REMOTE_INPUT;               /* real keys and joystick */
+    r->joy_port = 2;
+    pthread_mutex_init(&r->lock, NULL);
+    pthread_cond_init(&r->wake, NULL);
+    return r;
+}
+
 void remote_stop(remote *r)
 {
     if (!r)
         return;
+    if (r->local) {
+        if (r->sink.release_all)
+            r->sink.release_all();
+        pthread_mutex_destroy(&r->lock);
+        pthread_cond_destroy(&r->wake);
+        free(r);
+        return;
+    }
     pthread_mutex_lock(&r->lock);
     r->quit = 1;
     r->joy_wanted = 0;
@@ -417,6 +443,11 @@ int remote_mode(remote *r)
 
 void remote_key_tap(remote *r, int key, int mods)
 {
+    if (r->local) {
+        if (r->sink.key_tap)
+            r->sink.key_tap(key, mods);
+        return;
+    }
     pthread_mutex_lock(&r->lock);
     if (r->key_len < KEYQ_CAP) {
         r->keys[(r->key_head + r->key_len) % KEYQ_CAP] = (keytap){ key, mods };
@@ -428,6 +459,11 @@ void remote_key_tap(remote *r, int key, int mods)
 
 void remote_joystick(remote *r, int port, unsigned bits)
 {
+    if (r->local) {
+        if (r->sink.joystick)
+            r->sink.joystick(port, bits);
+        return;
+    }
     pthread_mutex_lock(&r->lock);
     if (r->joy_port != port || r->joy_wanted != bits) {
         r->joy_port = port;
@@ -439,6 +475,10 @@ void remote_joystick(remote *r, int port, unsigned bits)
 
 void remote_menu_button(remote *r)
 {
+    if (r->local) {
+        post_message(r, "The built-in emulator has no Ultimate menu");
+        return;
+    }
     pthread_mutex_lock(&r->lock);
     r->menu_requests++;
     pthread_cond_signal(&r->wake);
@@ -447,6 +487,11 @@ void remote_menu_button(remote *r)
 
 void remote_release_all(remote *r)
 {
+    if (r->local) {
+        if (r->sink.release_all)
+            r->sink.release_all();
+        return;
+    }
     pthread_mutex_lock(&r->lock);
     r->release_all = 1;
     r->joy_wanted = 0;

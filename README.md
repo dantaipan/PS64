@@ -14,6 +14,10 @@ make test     # decoder unit tests
 
 The Mac build needs the official SDL 2.30.9 macOS framework in `third_party/`;
 fetch it once with `tools/get_sdl2.sh` (it isn't kept in the repository).
+For the built-in emulator, also run `tools/get_vice.sh` once: it fetches the
+VICE libretro core (pinned commit) into `third_party/vice` and builds it; the
+Makefile includes the emulator whenever that library is there, and
+`make test` then also runs `test_emulator` against the real core.
 
 ## Run
 
@@ -69,6 +73,11 @@ within each byte is the other way round: press `N` (or pass `--swap-nibbles`).
 | `src/c64index.[ch]` | Search index: FTP crawl, save/load, keyword search |
 | `src/a64.[ch]` | Assembly64 client: search, file lists, downloads |
 | `src/favs.[ch]` | Favourites and recents lists |
+| `src/emulator.[ch]` | Built-in emulator: libretro frontend for the VICE core |
+| `src/emugames.[ch]` | Starting games in the emulator (games folder, Assembly64, disk lists) |
+| `src/localfs.[ch]` | The emulator's games folder and download cache |
+| `tools/get_vice.sh` | Fetches and builds the VICE core |
+| `tests/test_emulator.c` | Drives the real core: typing, joystick, PRG/disk/.m3u starts, disk swap |
 | `tools/fake_sender.c` | Synthetic stream generator |
 | `tests/test_vicstream.c` | Video and audio decoder unit tests |
 | `tests/test_input.c` | Key table, JSON, joystick timing and on-screen keyboard tests |
@@ -220,9 +229,48 @@ actions), newest first; Triangle there makes one a favourite.
 Both lists are saved next to the config as `ps64-favourites.txt` and
 `ps64-recents.txt`.
 
+## Built-in emulator (no C64 Ultimate needed)
+
+PS64 can run its own C64 instead of showing a C64 Ultimate: the VICE
+emulator (x64sc, through its libretro core, linked into PS64). Pick
+**Built-in emulator** in the C64 picker (or set `c64 = emulator`);
+**Options > Choose C64 or emulator...** switches back. Keyboard and joystick
+go straight into the emulated C64, so unlike the Ultimate's typing buffer
+they work in games.
+
+- **Games folder**: `games/` next to the config (`/data/homebrew/PS64/games`
+  on the PS5; change with `games-dir`). Copy D64/G64/D71/D81, PRG, T64/TAP and
+  CRT files into it over FTP, in folders if you like. **Browse games
+  folder** and **Search games folder** (after **Update search index**) work
+  like the Ultimate's browser and search; Cross starts a file, Square on a
+  disk offers **Insert into drive 8** without starting it.
+- **Assembly64** downloads are saved under `emulator/downloads/` next to the
+  config and started; started again later, they come from there.
+- **Multi-disk games**: starting a disk also loads the other disk images of
+  its folder (or Assembly64 entry), in name order. **Options > Disk: < 1 of 2 >**
+  swaps disks (Left/Right).
+- **Loading** runs at full speed (sound off) until the game starts.
+- **Controller**: D-pad / left stick are the joystick and Cross is fire
+  (port 2; **Joystick port** in the menu). **Options > D-pad** switches them to
+  cursor keys and RETURN for BASIC and menus (saved as `dpad = keys`). The other
+  buttons, the on-screen keyboard and the shortcuts work as with the Ultimate.
+- **Reset C64** resets; **Switch off and on** also removes disks and cartridges.
+- SID and MOD files can't be played in the emulator yet (VICE plays SIDs with
+  a separate program); they stay C64 Ultimate only.
+
+The emulator keeps its settings and saves in `emulator/` next to the config.
+The C64 ROMs come built into the VICE core; no ROM files are needed (its log
+mentions missing CMD drive ROMs, which only matter for drives PS64 doesn't use).
+Debug options: `--c64 emulator`, `--games-dir DIR`, `--emu-load /path/in/games`.
+
 ## Licence
 
 PS64 is free software under the GNU General Public License v3.0; see
 `LICENSE`. It builds against SDL2 (zlib licence) and, on the PS5, the
 ps5-payload-sdk; the font includes `font8x8_basic` (public domain).
+The built-in emulator is VICE (https://vice-emu.sourceforge.io), GPL-2.0-or-later,
+through its libretro core (https://github.com/libretro/vice-libretro, PS5 port
+https://github.com/mihawk-99/PS5_VICE); `tools/get_vice.sh` names the exact
+source commit used. Binaries of PS64 that include it are distributed under
+GPL-3.0 with that source.
 

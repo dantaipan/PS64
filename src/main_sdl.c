@@ -8,6 +8,7 @@
  *   ps64 --multicast 239.0.1.64   join a multicast group instead of unicast
  *   ps64 --config ps64.cfg     read options from a file (key = value lines)
  *   ps64 --pick                   search the network and choose a C64
+ *   ps64 --c64 emulator           use the built-in emulator (VICE) instead of a C64 Ultimate
  *
  * On PS5 the options are read from ps64.cfg next to the executable; with
  * no C64 configured the picker opens and the choice is saved there.
@@ -24,10 +25,15 @@
 #include "discover.h"
 #include "favs.h"
 #include "font_sdl.h"
+#include "localfs.h"
 #include "osk_sdl.h"
 #include "settings.h"
 #include "ui.h"
 #include "vicstream.h"
+#ifdef PS64_EMU
+#include "emugames.h"
+#include "emulator.h"
+#endif
 
 #include <SDL2/SDL.h>
 
@@ -80,6 +86,10 @@ typedef struct {
     const char *a64_url;      /* Assembly64 API base URL */
     const char *a64_search;   /* debug: search Assembly64 for this at launch */
     int         launch_fav;   /* debug: launch this favourite (1-based) at startup */
+    int         use_emulator; /* c64 = emulator: the built-in emulator is the machine */
+    const char *games_dir;    /* the emulator's games folder (default: "games" next to the config) */
+    const char *emu_load;     /* debug: start this file in the emulator at launch */
+    int         dpad_keys;    /* emulator: D-pad/stick/Cross as cursor keys and RETURN */
 } options;
 
 static void usage(const char *argv0)
@@ -93,8 +103,10 @@ static void usage(const char *argv0)
         "          [--joystick-port 1|2] [--button-NAME KEY] [--type TEXT] [--browse-dir DIR]\n"
         "          [--search-roots /SD,/USB0] [--build-index] [--search TEXT]\n"
         "          [--assembly64-client-id ID] [--assembly64-url URL] [--a64-search TEXT]\n"
+        "          [--c64 emulator] [--games-dir DIR] [--dpad joystick|keys] [--emu-load FILE]\n"
         "\n"
-        "--c64 (alias --start) streams from and controls that C64; --remote only controls it.\n"
+        "--c64 (alias --start) streams from and controls that C64; --remote only controls it;\n"
+        "      --c64 emulator runs the built-in emulator instead (if this build has it).\n"
         "keys: F fullscreen, M mute, N swap nibble order, S save snapshot, Esc/Q quit,\n"
         "      O menu, B file browser, Tab on-screen keyboard\n"
         "controller: D-pad/stick joystick, Cross fire, touchpad keyboard, R3 Ultimate menu,\n"
@@ -139,15 +151,23 @@ static int parse_args(int argc, char **argv, options *o)
     o->a64_url = A64_DEFAULT_URL;
     o->a64_search = NULL;
     o->launch_fav = 0;
+    o->use_emulator = 0;
+    o->games_dir = NULL;
+    o->emu_load = NULL;
+    o->dpad_keys = 0;
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
         const char *next = i + 1 < argc ? argv[i + 1] : NULL;
         if (!strcmp(a, "--port") && next)           { o->port = atoi(next); i++; }
         else if ((!strcmp(a, "--start") || !strcmp(a, "--c64")) && next) {
             o->listen_only = !strcasecmp(next, "none");
-            o->start_host = o->listen_only ? NULL : next;
+            o->use_emulator = !strcasecmp(next, "emulator");
+            o->start_host = o->listen_only || o->use_emulator ? NULL : next;
             i++;
         }
+        else if (!strcmp(a, "--games-dir") && next) { o->games_dir = next; i++; }
+        else if (!strcmp(a, "--emu-load") && next)  { o->emu_load = next; i++; }
+        else if (!strcmp(a, "--dpad") && next)      { o->dpad_keys = !strcasecmp(next, "keys"); i++; }
         else if (!strcmp(a, "--pick"))              { o->pick = 1; }
         else if (!strcmp(a, "--browse-dir") && next) { o->browse_dir = next; i++; }
         else if (!strcmp(a, "--browse") && next)    { o->browse_path = next; i++; }
@@ -338,11 +358,11 @@ typedef struct {
     uint64_t overflows;
 } audio_out;
 
-static int audio_open(audio_out *a, const options *o)
+static int audio_open(audio_out *a, int rate, int latency_ms)
 {
     memset(a, 0, sizeof(*a));
     SDL_AudioSpec want = {0}, have;
-    want.freq = o->audio_rate;
+    want.freq = rate;
     want.format = AUDIO_S16SYS;
     want.channels = 2;
     want.samples = 512;
@@ -351,7 +371,7 @@ static int audio_open(audio_out *a, const options *o)
         fprintf(stderr, "audio: %s\n", SDL_GetError());
         return -1;
     }
-    a->target = (Uint32)((Sint64)o->audio_rate * o->audio_latency_ms / 1000);
+    a->target = (Uint32)((Sint64)rate * latency_ms / 1000);
     a->prime = (Uint32)have.samples * 2;
     a->buffering = 1;
     return 0;
@@ -380,6 +400,16 @@ static void audio_push(audio_out *a, const int16_t *samples, size_t frames)
         SDL_PauseAudioDevice(a->dev, 0);
         a->buffering = 0;
     }
+}
+
+/* Reopen at another rate (the emulator makes 48 kHz, the Ultimate ~47983 Hz). */
+static void audio_reopen(audio_out *a, int rate, int latency_ms)
+{
+    int muted = a->muted;
+    SDL_CloseAudioDevice(a->dev);
+    if (audio_open(a, rate, latency_ms) != 0)
+        fprintf(stderr, "audio: can't reopen at %d Hz\n", rate);
+    a->muted = muted;
 }
 
 static void audio_set_muted(audio_out *a, int muted)
@@ -466,6 +496,7 @@ typedef struct {
     remote   *rem;
     c64files *files;
     c64index *index;          /* search index for this C64 (may be empty) */
+    int       emu;            /* the built-in emulator instead of a C64 Ultimate */
 } session;
 
 /* Where the search index lives: next to the config file, else the current folder. */
@@ -501,6 +532,8 @@ static void record_recent(fav_list *recents, fav_entry e, int action)
 
 static void session_end(session *s, const options *o)
 {
+    if (s->emu)
+        files_set_emulator(0);    /* the emulator itself keeps its state, unused, until next time */
     index_free(s->index);
     files_stop(s->files);
     remote_stop(s->rem);
@@ -545,6 +578,96 @@ static int session_begin(session *s, const options *o, const char *host, const c
         printf("search index: %d files from %s\n", index_count(s->index), index_file);
     return rc;
 }
+
+#ifdef PS64_EMU
+/*
+ * The built-in emulator as the machine: its games folder, its own files
+ * (VICE's settings and saves, Assembly64 downloads) and search index.
+ */
+static char games_dir[600] = "games", emu_dir[600] = "emulator";
+static char emu_index_file[600] = "ps64-emu-index.txt";
+
+static void emu_tap(int key, int mods)       { emulator_key_tap(key, mods); }
+static void emu_joy(int port, unsigned bits) { emulator_joystick(port, bits); }
+static void emu_release(void)                { emulator_release_keys(); }
+
+static int session_begin_emulator(session *s, const options *o)
+{
+    if (emulator_start(emu_dir, o->joystick_port) != 0)
+        return -1;
+    static const remote_sink sink = { emu_tap, emu_joy, emu_release };
+    s->emu = 1;
+    s->rem = remote_start_local(&sink);
+    files_set_emulator(1);
+    localfs_mkdirs(games_dir);
+    s->index = index_new();
+    if (s->index && index_load(s->index, emu_index_file, INDEX_LOCAL_HOST) == 0)
+        printf("search index: %d files from %s\n", index_count(s->index), emu_index_file);
+    return 0;
+}
+
+/* List a games-folder path into the browser. */
+static void emu_list(ui_state *ui, const char *path)
+{
+    enum { MAX = 4096 };
+    ftp_entry *e = malloc(sizeof(*e) * MAX);
+    char err[160] = "Out of memory";
+    int n = e ? localfs_list(games_dir, path, e, MAX, err, sizeof(err)) : -1;
+    if (n < 0) {
+        free(e);
+        ui_set_list_error(ui, path, err);
+    } else {
+        ui_set_listing(ui, path, e, n);
+    }
+}
+
+static double now_ms(void)
+{
+    return (double)SDL_GetPerformanceCounter() * 1000.0 / (double)SDL_GetPerformanceFrequency();
+}
+
+/*
+ * Run the emulator for this pass of the main loop: 50 frames a second,
+ * nudged by the sound queue so audio neither runs dry nor piles up; while a
+ * disk loads, as many frames as fit in 12 ms without sound. Returns the
+ * frames run (0: no new picture).
+ */
+static int emu_step(audio_out *a, int audio_on)
+{
+    static double next;
+    static int16_t buf[8192 * 2];
+    double now = now_ms();
+    int ran = 0;
+    if (emulator_fast()) {
+        do {
+            emulator_run_frame();
+            ran++;
+            while (emulator_take_audio(buf, 8192))
+                ;
+        } while (emulator_fast() && now_ms() < now + 12);
+        next = now_ms();
+        return ran;
+    }
+    if (next == 0 || now - next > 200)
+        next = now;                       /* first frame, or after a stall */
+    double adjust = 1.0;
+    if (audio_on && !a->muted && !a->buffering && a->target) {
+        double err = ((double)SDL_GetQueuedAudioSize(a->dev) / 4 - a->target) / a->target;
+        adjust += 0.01 * (err > 1 ? 1 : err < -1 ? -1 : err);
+    }
+    double frame_ms = 1000.0 / emulator_fps() * adjust;
+    while (now >= next && ran < 3) {
+        emulator_run_frame();
+        ran++;
+        next += frame_ms;
+        size_t n;
+        while ((n = emulator_take_audio(buf, 8192)) > 0)
+            if (audio_on)
+                audio_push(a, buf, n);
+    }
+    return ran;
+}
+#endif
 
 /* Explain a session_begin failure. */
 static void connect_error(char *msg, size_t cap, int rc, const char *host)
@@ -611,6 +734,15 @@ int main(int argc, char **argv)
         return 2;
     }
     set_index_file(config);
+#ifdef PS64_EMU
+    next_to_config(config, "games", games_dir, sizeof(games_dir));
+    next_to_config(config, "emulator", emu_dir, sizeof(emu_dir));
+    next_to_config(config, "ps64-emu-index.txt", emu_index_file, sizeof(emu_index_file));
+    if (opt.games_dir)
+        snprintf(games_dir, sizeof(games_dir), "%s", opt.games_dir);
+    static emugames eg;
+    eg_init(&eg, games_dir, emu_dir);
+#endif
 
     int sock = open_receiver(opt.port, opt.multicast);
     if (sock < 0) {
@@ -644,8 +776,9 @@ int main(int argc, char **argv)
     static audio_decoder adec;
     static int16_t samples[AUDIO_MAX_FRAMES * 2];
     audio_out aout;
+    int aout_rate = opt.audio_rate;     /* the device's rate: the Ultimate's, or the emulator's */
     audio_init(&adec);
-    if (opt.audio && audio_open(&aout, &opt) != 0) {
+    if (opt.audio && audio_open(&aout, opt.audio_rate, opt.audio_latency_ms) != 0) {
         fprintf(stderr, "warning: continuing without audio\n");
         opt.audio = 0;
     }
@@ -679,14 +812,15 @@ int main(int argc, char **argv)
     uint8_t buf[2048];
     int running = 1, fullscreen = 0, dirty = 0;
     Uint32 started = SDL_GetTicks(), stats_at = started;
-    uint64_t frames_at = 0;
+    uint64_t frames_at = 0, emu_frames = 0;
+    int was_emu = 0;
 
     /* The first frames after the window opens can stall for ~0.5s, which
      * would arrive as an audio burst; discard audio until things settle. */
     Uint32 audio_from = SDL_GetTicks() + 1000;
 
     static ui_state ui;
-    ui_init(&ui);
+    ui_setup(&ui);
 
     /* Favourites and recents. */
     static fav_list favs, recents;
@@ -707,6 +841,7 @@ int main(int argc, char **argv)
     ctl.osk.shift = opt.osk_mods & C64MOD_SHIFT ? 2 : 0;
     ctl.osk.cbm = (opt.osk_mods & C64MOD_CBM) != 0;
     ctl.osk.ctrl = (opt.osk_mods & C64MOD_CTRL) != 0;
+    ctl.joy_keys = opt.dpad_keys;
     char browse_dir[512];
     snprintf(browse_dir, sizeof(browse_dir), "%s", opt.browse_dir ? opt.browse_dir : "/");
 
@@ -715,7 +850,20 @@ int main(int argc, char **argv)
     discover *scan = NULL;
     int want_picker = opt.pick;
     char msg[160];
-    if (opt.start_host) {
+    if (opt.use_emulator) {
+#ifdef PS64_EMU
+        if (session_begin_emulator(&ses, &opt) == 0) {
+            snprintf(msg, sizeof(msg), "Built-in emulator");
+        } else {
+            session_end(&ses, &opt);
+            snprintf(msg, sizeof(msg), "The built-in emulator didn't start");
+            want_picker = 1;
+        }
+#else
+        snprintf(msg, sizeof(msg), "This PS64 build has no built-in emulator");
+        want_picker = 1;
+#endif
+    } else if (opt.start_host) {
         int rc = session_begin(&ses, &opt, opt.start_host, opt.password, 1);
         if (rc == 0) {
             snprintf(msg, sizeof(msg), "Streaming from C64 at %s", opt.start_host);
@@ -755,6 +903,18 @@ int main(int argc, char **argv)
         ui_action a = ui_open_browser(&ui, opt.browse_path);
         files_list(ses.files, a.path);
     }
+#ifdef PS64_EMU
+    snprintf(ui.games_dir, sizeof(ui.games_dir), "%s", games_dir);
+    char emu_browse[512] = "/";       /* where the emulator's browser opens */
+    if (opt.browse_path && ses.emu) {
+        ui_open_browser(&ui, opt.browse_path);
+        emu_list(&ui, opt.browse_path);
+    }
+    if (opt.emu_load && ses.emu) {
+        eg_launch_path(&eg, opt.emu_load, FA_NONE, msg, sizeof(msg));
+        printf("%s\n", msg);
+    }
+#endif
     ctl.remote = ses.rem;
     snprintf(ui.current_ip, sizeof(ui.current_ip), "%s", ses.host);
     int typed = 0;
@@ -785,6 +945,11 @@ int main(int argc, char **argv)
     int index_was_building = 0;
     Uint32 search_refresh_at = 0, build_report_at = 0;
     if (opt.build_index && ses.index) {
+#ifdef PS64_EMU
+        if (ses.emu)
+            index_build_local_start(ses.index, games_dir, emu_index_file);
+        else
+#endif
         index_build_start(ses.index, ses.host, ses.api.password, opt.search_roots, index_file);
         index_was_building = 1;
     }
@@ -852,7 +1017,7 @@ int main(int argc, char **argv)
                     perror("recv");
                 break;
             }
-            if (vic_feed(&dec, buf, (size_t)n))
+            if (!ses.emu && vic_feed(&dec, buf, (size_t)n))
                 dirty = 1;
         }
         while (opt.audio) {
@@ -862,13 +1027,31 @@ int main(int argc, char **argv)
                     perror("recv audio");
                 break;
             }
-            if (SDL_TICKS_PASSED(SDL_GetTicks(), audio_from) == 0)
+            if (SDL_TICKS_PASSED(SDL_GetTicks(), audio_from) == 0 || ses.emu)
                 continue;
             size_t frames = audio_feed(&adec, buf, (size_t)n, samples, AUDIO_MAX_FRAMES);
             if (frames)
                 audio_push(&aout, samples, frames);
         }
 
+#ifdef PS64_EMU
+        if (ses.emu && emu_step(&aout, opt.audio)) {
+            int w, h;
+            const uint32_t *px = emulator_frame(&w, &h);
+            if (px) {
+                if (!tex || tex_w != w || tex_h != h) {
+                    if (tex) SDL_DestroyTexture(tex);
+                    tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888,
+                        SDL_TEXTUREACCESS_STREAMING, w, h);
+                    tex_w = w;
+                    tex_h = h;
+                    SDL_RenderSetLogicalSize(ren, tex_w, tex_h);
+                }
+                SDL_UpdateTexture(tex, NULL, px, w * 4);
+                emu_frames++;
+            }
+        }
+#endif
         if (dirty) {
             if (!tex || tex_w != dec.width || tex_h != dec.height) {
                 if (tex) SDL_DestroyTexture(tex);
@@ -942,6 +1125,47 @@ int main(int argc, char **argv)
                 controls_banner(&ctl, msg);
                 break;
             }
+            case UA_EMULATOR:
+#ifdef PS64_EMU
+                discover_stop(scan);
+                scan = NULL;
+                session_end(&ses, &opt);
+                if (session_begin_emulator(&ses, &opt) != 0) {
+                    session_end(&ses, &opt);
+                    ui_open_picker(&ui, "The built-in emulator didn't start");
+                    break;
+                }
+                if (config) {
+                    static const char *const legacy[] = { "start", NULL };
+                    config_set(config, "c64", "emulator", legacy);
+                }
+                notify("Built-in emulator");
+                controls_banner(&ctl, "Built-in emulator: browse the games folder or search Assembly64");
+#else
+                controls_banner(&ctl, "This PS64 build has no built-in emulator");
+#endif
+                break;
+#ifdef PS64_EMU
+            case UA_DISK: {
+                int n = emulator_disk_count();
+                if (n < 2)
+                    break;
+                int d = ((emulator_disk_index() + a.offset) % n + n) % n;
+                if (emulator_disk_insert(d) == 0)
+                    snprintf(msg, sizeof(msg), "Disk %d of %d inserted", d + 1, n);
+                else
+                    snprintf(msg, sizeof(msg), "Couldn't change the disk");
+                controls_banner(&ctl, msg);
+                break;
+            }
+#endif
+            case UA_CONTROLLER:
+                ctl.joy_keys = !ctl.joy_keys;
+                if (config)
+                    config_set(config, "dpad", ctl.joy_keys ? "keys" : "joystick", NULL);
+                controls_banner(&ctl, ctl.joy_keys ? "D-pad: cursor keys, Cross: RETURN"
+                                                   : "D-pad: joystick, Cross: fire");
+                break;
             case UA_LISTEN_ONLY:
                 discover_stop(scan);
                 scan = NULL;
@@ -954,6 +1178,14 @@ int main(int argc, char **argv)
                 break;
             case UA_RESET:
             case UA_REBOOT:
+#ifdef PS64_EMU
+                if (ses.emu) {
+                    eg_a64_cancel(&eg);
+                    emulator_reset(a.kind == UA_REBOOT);
+                    controls_banner(&ctl, a.kind == UA_RESET ? "C64 reset" : "C64 switched off and on");
+                    break;
+                }
+#endif
                 if (!ses.files) {
                     controls_banner(&ctl, "Choose a C64 first (Options > Choose C64)");
                     break;
@@ -981,6 +1213,28 @@ int main(int argc, char **argv)
                     a64_entries(a64c, a.text, a.category);
                 break;
             case UA_A64_FILE:
+#ifdef PS64_EMU
+                if (ses.emu && a64c) {
+                    int chosen = -1;
+                    for (int i = 0; i < ui.a64_nfiles; i++)
+                        if (ui.a64_files[i].id == a.file_id)
+                            chosen = i;
+                    int rc = eg_a64_begin(&eg, a64c, a.text, a.category, ui.a64_cur.name, ui.a64_files,
+                                          ui.a64_nfiles, chosen, a.file_action, msg, sizeof(msg));
+                    if (rc == EG_WAITING) {
+                        ui.a64_loading = 1;
+                        snprintf(ui.a64_status, sizeof(ui.a64_status), "%s", msg);
+                    } else {
+                        if (rc == EG_STARTED)
+                            ui_close(&ui);
+                        controls_banner(&ctl, msg);
+                    }
+                    if (rc != EG_ERROR)
+                        record_recent(&recents, fav_a64_file(a.text, a.category, a.file_id, a.path,
+                                                             ui.a64_cur.name), a.file_action);
+                    break;
+                }
+#endif
                 if (!ses.files) {
                     controls_banner(&ctl, "Choose a C64 first (Options > Choose C64)");
                     break;
@@ -1005,6 +1259,11 @@ int main(int argc, char **argv)
                     controls_banner(&ctl, "Choose a C64 first (Options > Choose C64)");
                     break;
                 }
+#ifdef PS64_EMU
+                if (ses.emu)
+                    index_build_local_start(ses.index, games_dir, emu_index_file);
+                else
+#endif
                 index_build_start(ses.index, ses.host, ses.api.password, opt.search_roots, index_file);
                 index_was_building = 1;
                 ui.index = ses.index;
@@ -1012,6 +1271,13 @@ int main(int argc, char **argv)
                 controls_banner(&ctl, "Building the search index...");
                 break;
             case UA_OPEN_BROWSER:
+#ifdef PS64_EMU
+                if (ses.emu) {
+                    a = ui_open_browser(&ui, emu_browse);
+                    emu_list(&ui, a.path);
+                    break;
+                }
+#endif
                 if (!ses.files) {
                     controls_banner(&ctl, "Choose a C64 first (Options > Choose C64)");
                     break;
@@ -1020,6 +1286,10 @@ int main(int argc, char **argv)
                 files_list(ses.files, a.path);
                 break;
             case UA_LIST:
+#ifdef PS64_EMU
+                if (ses.emu)
+                    emu_list(&ui, a.path);
+#endif
                 if (ses.files)
                     files_list(ses.files, a.path);
                 break;
@@ -1034,7 +1304,39 @@ int main(int argc, char **argv)
             }
             case UA_FAV_LAUNCH: {
                 fav_entry *e = &a.fav;
-                int local = e->kind == FAV_LOCAL_FILE || e->kind == FAV_LOCAL_FOLDER;
+                int local = fav_is_path(e);
+                if (local && fav_is_emulator(e) != ses.emu) {
+                    controls_banner(&ctl, ses.emu ? "That's on a C64 Ultimate (Options > Choose C64)"
+                                                  : "That's in the built-in emulator's games folder "
+                                                    "(Options > Choose C64 > Built-in emulator)");
+                    break;
+                }
+#ifdef PS64_EMU
+                if (ses.emu) {
+                    if (!local && !a64c) {
+                        controls_banner(&ctl, "Assembly64 needs a client ID (Options > Search Assembly64)");
+                        break;
+                    }
+                    int rc = EG_WAITING;
+                    if (local) {
+                        rc = eg_launch_path(&eg, e->path, fav_is_folder(e) ? FA_LAUNCH_FOLDER : e->action,
+                                            msg, sizeof(msg));
+                    } else {
+                        /* Fetch the item's files first: the start may need its other disks. */
+                        snprintf(auto_item, sizeof(auto_item), "%s", e->item_id);
+                        auto_category = e->category;
+                        auto_entry = *e;
+                        a64_entries(a64c, e->item_id, e->category);
+                        snprintf(msg, sizeof(msg), "Starting %s...", e->name);
+                    }
+                    if (rc != EG_ERROR) {
+                        record_recent(&recents, *e, e->action);
+                        ui_close(&ui);
+                    }
+                    controls_banner(&ctl, msg);
+                    break;
+                }
+#endif
                 if (!ses.files) {
                     controls_banner(&ctl, "Choose a C64 first (Options > Choose C64)");
                     break;
@@ -1064,6 +1366,17 @@ int main(int argc, char **argv)
                 break;
             }
             case UA_FILE:
+#ifdef PS64_EMU
+                if (ses.emu) {
+                    if (eg_launch_path(&eg, a.path, a.file_action, msg, sizeof(msg)) != EG_ERROR) {
+                        record_recent(&recents, fav_local(a.path, 0), a.file_action);
+                        ui_close(&ui);
+                        ui_parent(a.path, emu_browse, sizeof(emu_browse));
+                    }
+                    controls_banner(&ctl, msg);
+                    break;
+                }
+#endif
                 if (!ses.files)
                     break;
                 files_action(ses.files, a.path, a.file_action);
@@ -1079,6 +1392,31 @@ int main(int argc, char **argv)
         ctl.remote = ses.rem;
         ui.index = ses.index;
         snprintf(ui.current_ip, sizeof(ui.current_ip), "%s", ses.host);
+        ui.emulator = ses.emu;
+        ui.joy_keys = ctl.joy_keys;
+#ifdef PS64_EMU
+        ui.disks = ses.emu ? emulator_disk_count() : 0;
+        ui.disk = ses.emu ? emulator_disk_index() : 0;
+#endif
+        /* Switched machine: drop the old picture, play sound at the new one's rate. */
+        if (ses.emu != was_emu) {
+            was_emu = ses.emu;
+            if (tex) {
+                SDL_DestroyTexture(tex);
+                tex = NULL;
+            }
+            vic_init(&dec);
+            dec.swap_nibbles = opt.swap_nibbles;
+        }
+#ifdef PS64_EMU
+        int want_rate = ses.emu ? emulator_sample_rate() : opt.audio_rate;
+#else
+        int want_rate = opt.audio_rate;
+#endif
+        if (opt.audio && want_rate != aout_rate) {
+            audio_reopen(&aout, want_rate, opt.audio_latency_ms);
+            aout_rate = want_rate;
+        }
 
         /* Search index: refresh results while it builds, report when done. */
         if (ses.index && index_was_building) {
@@ -1107,7 +1445,11 @@ int main(int argc, char **argv)
                     ui_search_refresh(&ui);
                 if (opt.build_index) {
                     printf("index: %d files, %d folders, %d failed, %.1f s -> %s\n",
-                           st.files, st.dirs, st.failed_dirs, (tick - started) / 1000.0, index_file);
+                           st.files, st.dirs, st.failed_dirs, (tick - started) / 1000.0,
+#ifdef PS64_EMU
+                           ses.emu ? emu_index_file :
+#endif
+                           index_file);
                     running = 0;
                 }
             }
@@ -1118,6 +1460,19 @@ int main(int argc, char **argv)
             while (a64_poll(a64c, &r)) {
                 if (r.kind == A64R_FILE) {
                     ui.a64_loading = 0;
+#ifdef PS64_EMU
+                    int erc = ses.emu ? eg_a64_file(&eg, a64c, &r, msg, sizeof(msg)) : EG_ERROR;
+                    if (ses.emu) {
+                        if (erc == EG_WAITING) {
+                            ui.a64_loading = 1;
+                            snprintf(ui.a64_status, sizeof(ui.a64_status), "%s", msg);
+                        } else if (erc == EG_STARTED) {
+                            ui_close(&ui);
+                        }
+                        if (msg[0])
+                            controls_banner(&ctl, msg);
+                    } else
+#endif
                     if (ses.files) {
                         files_action_data(ses.files, r.name, r.data, r.len, r.action);
                         r.data = NULL;              /* handed to the file worker */
@@ -1140,9 +1495,20 @@ int main(int argc, char **argv)
                     for (int i = 0; i < nn; i++)
                         names[i] = r.files[i].path;
                     int pick = files_pick_launch(names, nn);
+                    if (auto_entry.kind == FAV_A64_FILE)
+                        for (int i = 0; i < nn; i++)
+                            if (r.files[i].id == auto_entry.file_id)
+                                pick = i;
                     if (pick < 0) {
                         snprintf(msg, sizeof(msg), "Nothing to run in %s", auto_entry.name);
                         controls_banner(&ctl, msg);
+#ifdef PS64_EMU
+                    } else if (ses.emu) {
+                        int rc = eg_a64_begin(&eg, a64c, r.item_id, r.category, auto_entry.name, r.files,
+                                              r.nfiles, pick, auto_entry.action, msg, sizeof(msg));
+                        controls_banner(&ctl, msg);
+                        (void)rc;
+#endif
                     } else {
                         const a64_file *f = &r.files[pick];
                         a64_download(a64c, r.item_id, r.category, f->id, f->path,
@@ -1184,6 +1550,13 @@ int main(int argc, char **argv)
             }
         }
 
+#ifdef PS64_EMU
+        if (ses.emu) {
+            char emsg[96];
+            while (emulator_take_message(emsg, sizeof(emsg)))
+                controls_banner(&ctl, emsg);
+        }
+#endif
         if (ses.rem) {
             char rmsg[96];
             while (remote_take_message(ses.rem, rmsg, sizeof(rmsg))) {
@@ -1230,14 +1603,18 @@ int main(int argc, char **argv)
                     (unsigned long long)adec.stats.lost_packets,
                     (unsigned long long)aout.underruns,
                     (unsigned long long)aout.overflows);
-            snprintf(title, sizeof(title),
-                "C64 Ultimate - %dx%d  %.1f fps  lost %llu  bad %llu%s",
-                dec.width, dec.height, fps,
-                (unsigned long long)dec.stats.lost_packets,
-                (unsigned long long)dec.stats.bad_packets, atitle);
+            if (ses.emu)
+                snprintf(title, sizeof(title), "PS64 - built-in emulator  %.1f fps",
+                         (double)(emu_frames - frames_at) * 1000.0 / (now - stats_at));
+            else
+                snprintf(title, sizeof(title),
+                    "C64 Ultimate - %dx%d  %.1f fps  lost %llu  bad %llu%s",
+                    dec.width, dec.height, fps,
+                    (unsigned long long)dec.stats.lost_packets,
+                    (unsigned long long)dec.stats.bad_packets, atitle);
             SDL_SetWindowTitle(win, title);
             stats_at = now;
-            frames_at = dec.stats.frames;
+            frames_at = ses.emu ? emu_frames : dec.stats.frames;
         }
     }
 
@@ -1255,6 +1632,9 @@ int main(int argc, char **argv)
     fav_free(&favs);
     fav_free(&recents);
     session_end(&ses, &opt);
+#ifdef PS64_EMU
+    emulator_stop();
+#endif
     ui_free(&ui);
     if (opt.audio)
         SDL_CloseAudioDevice(aout.dev);

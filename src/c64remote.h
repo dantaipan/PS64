@@ -1,6 +1,7 @@
 /*
  * c64remote - forwards keys and joystick state to a C64 Ultimate from a
- * background thread, so the video loop never waits on the network.
+ * background thread, so the video loop never waits on the network (or, for
+ * the built-in emulator, straight to it).
  *
  * At start it probes GET /v1/machine:input:
  *   200      -> REMOTE_INPUT: real key presses and joystick via POST /v1/machine:input
@@ -25,6 +26,16 @@ enum { REMOTE_DETECTING, REMOTE_BUFFER, REMOTE_INPUT, REMOTE_UNREACHABLE };
 typedef struct remote remote;
 
 remote *remote_start(const char *host, const char *password);
+
+/* A machine in this process (the built-in emulator): taps and joystick
+ * state go straight to these callbacks; the mode is REMOTE_INPUT. */
+typedef struct {
+    void (*key_tap)(int key, int mods);
+    void (*joystick)(int port, unsigned bits);
+    void (*release_all)(void);
+} remote_sink;
+remote *remote_start_local(const remote_sink *sink);
+
 void remote_stop(remote *r);               /* releases everything, joins the thread */
 int  remote_mode(remote *r);
 

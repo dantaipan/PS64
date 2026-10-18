@@ -8,7 +8,7 @@
 #include "c64remote.h"
 #include "ftp.h"
 
-enum { FT_DIR, FT_PRG, FT_DISK, FT_CRT, FT_SID, FT_MOD, FT_OTHER };
+enum { FT_DIR, FT_PRG, FT_DISK, FT_CRT, FT_SID, FT_MOD, FT_TAPE, FT_OTHER };
 
 enum {
     FA_NONE = -1,
@@ -26,6 +26,15 @@ enum {
 };
 
 int  files_type(const char *name, int is_dir);
+
+/*
+ * Which machine the actions below are for: the C64 Ultimate (default), or
+ * the built-in emulator, which also runs tapes but can't play SID/MOD and
+ * has one drive (MOUNT_A is "insert into drive 8").
+ */
+void files_set_emulator(int on);
+int  files_emulator(void);
+
 int  files_default_action(int type);
 /* Actions that apply to a file type; returns how many were written. */
 int  files_actions_for(int type, int *out, int max);
@@ -33,8 +42,9 @@ const char *files_action_name(int action);
 const char *files_type_tag(int type);
 
 /*
- * Which file of a folder to start: disk images first, then PRG, CRT, SID,
- * MOD; within a type the first by name (so Disk1.d64 before Disk2.d64).
+ * Which file of a folder to start: disk images first, then PRG, CRT, tape,
+ * SID, MOD (those the machine can start); within a type the first by name
+ * (so Disk1.d64 before Disk2.d64).
  * Returns the index into names, or -1 if none is runnable.
  */
 int  files_pick_launch(const char *const *names, int n);

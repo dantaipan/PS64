@@ -8,6 +8,7 @@
 #include "../src/discover.h"
 #include "../src/favs.h"
 #include "../src/ftp.h"
+#include "../src/localfs.h"
 #include "../src/osk.h"
 #include "../src/settings.h"
 #include "../src/ui.h"
@@ -313,7 +314,7 @@ static void test_ftp_and_files(void)
 static void test_ui(void)
 {
     static ui_state u;
-    ui_init(&u);
+    ui_setup(&u);
 
     /* Menu wraps; Options-style close. */
     ui_open_menu(&u);
@@ -336,7 +337,7 @@ static void test_ui(void)
     memset(dev, 0, sizeof(dev));
     strcpy(dev[0].ip, "192.168.2.64");
     ui_set_devices(&u, dev, 1, 100, 1);
-    CHECK(ui_picker_rows(&u) == 4);
+    CHECK(ui_picker_rows(&u) == 5);
     ui_action a = ui_input(&u, IN_OK);
     CHECK(a.kind == UA_CONNECT && !strcmp(a.ip, "192.168.2.64") && u.screen == UI_CLOSED);
 
@@ -455,7 +456,7 @@ static void test_index(void)
 
     /* Search screen: typing filters, R2 moves to results, Cross runs. */
     static ui_state u;
-    ui_init(&u);
+    ui_setup(&u);
     u.index = y;
     ui_open_search(&u);
     CHECK(u.screen == UI_SEARCH && u.search_focus == 0);
@@ -550,7 +551,7 @@ static void test_a64(void)
 
     /* Screens: no ID -> ID entry; save; search; open item; run a file. */
     static ui_state u;
-    ui_init(&u);
+    ui_setup(&u);
     ui_open_menu(&u);
     u.sel = MI_A64;
     ui_input(&u, IN_OK);
@@ -678,7 +679,7 @@ static void test_favs(void)
 
     /* UI: Triangle favourites in the browser, L2 opens search there. */
     static ui_state u;
-    ui_init(&u);
+    ui_setup(&u);
     fav_list favs, recents;
     fav_init(&favs, 0);
     fav_init(&recents, RECENTS_MAX);
@@ -729,7 +730,7 @@ static void test_favs(void)
      * a Music-filtered search teaches that its results' number (4) is Music. */
     {
         static ui_state v;
-        ui_init(&v);
+        ui_setup(&v);
         v.a64_ready = 1;
         v.a64_cats.count = 2;
         strcpy(v.a64_cats.names[0], "Games"); strcpy(v.a64_cats.keys[0], "games"); v.a64_cats.ids[0] = -1;
@@ -775,8 +776,123 @@ static void test_favs(void)
     fav_free(&recents);
 }
 
+/* The emulator's folders, and what each machine can do with a file type. */
+static void test_emulator_mode(void)
+{
+    char out[600];
+    localfs_real_path("/data/PS64/games", "/Arcade/Boulder Dash/Disk1.d64", out, sizeof(out));
+    CHECK(!strcmp(out, "/data/PS64/games/Arcade/Boulder Dash/Disk1.d64"));
+    localfs_real_path("/data/PS64/games/", "/", out, sizeof(out));
+    CHECK(!strcmp(out, "/data/PS64/games"));
+    localfs_real_path("/g", "/../../etc/./passwd", out, sizeof(out));      /* stays inside */
+    CHECK(!strcmp(out, "/g/etc/passwd"));
+
+    localfs_safe_name("Disk 1/2: Side A", out, sizeof(out));
+    CHECK(!strcmp(out, "Disk 1_2_ Side A"));
+    localfs_safe_name("..", out, sizeof(out));
+    CHECK(!strcmp(out, "file"));
+    localfs_safe_name(".hidden", out, sizeof(out));
+    CHECK(!strcmp(out, "_hidden"));
+
+    /* Disks to swap between: by name, starting with the chosen one. */
+    const char *names[] = { "readme.txt", "Disk3.d64", "Disk1.d64", "intro.prg", "Disk2.D64" };
+    int order[8];
+    CHECK(localfs_disk_set(names, 5, 2, order, 8) == 3 && order[0] == 2 && order[1] == 4 && order[2] == 1);
+    CHECK(localfs_disk_set(names, 5, 4, order, 8) == 3 && order[0] == 4 && order[1] == 1 && order[2] == 2);
+    CHECK(localfs_disk_set(names, 5, 3, order, 8) == 0);                    /* not a disk */
+
+    /* A real folder: listing, writing, an .m3u. */
+    char dir[] = "/tmp/ps64-localfs-XXXXXX";
+    CHECK(mkdtemp(dir) != NULL);
+    char file[600];
+    snprintf(file, sizeof(file), "%s/Games/Sub/game.prg", dir);
+    CHECK(localfs_write(file, "\x01\x08", 2) == 0);
+    snprintf(file, sizeof(file), "%s/Games/.DS_Store", dir);
+    CHECK(localfs_write(file, "x", 1) == 0);
+    snprintf(file, sizeof(file), "%s/Games/b.d64", dir);
+    CHECK(localfs_write(file, "xyz", 3) == 0);
+    ftp_entry e[8];
+    char err[160];
+    int n = localfs_list(dir, "/Games", e, 8, err, sizeof(err));
+    CHECK(n == 2 && e[0].is_dir && !strcmp(e[0].name, "Sub") && !strcmp(e[1].name, "b.d64") &&
+          e[1].size == 3);
+    CHECK(localfs_list(dir, "/Nope", e, 8, err, sizeof(err)) == -1 && strstr(err, "not found"));
+    const char *paths[] = { "/a/Disk1.d64", "/a/Disk2.d64" };
+    snprintf(file, sizeof(file), "%s/disks.m3u", dir);
+    CHECK(localfs_write_m3u(file, paths, 2) == 0);
+    FILE *f = fopen(file, "r");
+    char line[64] = "";
+    CHECK(f && fgets(line, sizeof(line), f) && !strcmp(line, "/a/Disk1.d64\n"));
+    if (f) fclose(f);
+
+    /* Actions per machine. */
+    int acts[FA_COUNT];
+    CHECK(files_type("game.t64", 0) == FT_TAPE && files_type("game.TAP", 0) == FT_TAPE);
+    CHECK(files_default_action(FT_TAPE) == FA_NONE && files_default_action(FT_SID) == FA_PLAY);
+    files_set_emulator(1);
+    CHECK(files_default_action(FT_TAPE) == FA_RUN && files_default_action(FT_SID) == FA_NONE);
+    CHECK(files_default_action(FT_DISK) == FA_MOUNT_RUN && files_default_action(FT_CRT) == FA_RUN_CRT);
+    CHECK(files_actions_for(FT_DISK, acts, FA_COUNT) == 2 && acts[1] == FA_MOUNT_A);
+    CHECK(!strcmp(files_action_name(FA_MOUNT_A), "Insert into drive 8"));
+    CHECK(files_actions_for(FT_SID, acts, FA_COUNT) == 0);
+    const char *folder[] = { "tune.sid", "game.tap" };
+    CHECK(files_pick_launch(folder, 2) == 1);                     /* the SID can't start here */
+    fav_entry fe = fav_local("/Games/b.d64", 0);
+    CHECK(fe.kind == FAV_EMU_FILE && fav_is_emulator(&fe) && fav_is_path(&fe) && !fav_is_folder(&fe));
+    fe = fav_local("/Games", 1);
+    CHECK(fe.kind == FAV_EMU_FOLDER && fav_is_folder(&fe));
+    files_set_emulator(0);
+    CHECK(files_pick_launch(folder, 2) == 0);
+    fe = fav_local("/SD/b.d64", 0);
+    CHECK(fe.kind == FAV_LOCAL_FILE && !fav_is_emulator(&fe));
+
+    /* Emulator favourites survive a save/load. */
+    fav_list l;
+    fav_init(&l, 0);
+    files_set_emulator(1);
+    fe = fav_local("/Games/b.d64", 0);
+    files_set_emulator(0);
+    fav_toggle(&l, &fe);
+    snprintf(file, sizeof(file), "%s/favs.txt", dir);
+    CHECK(fav_save(&l, file) == 0);
+    fav_free(&l);
+    CHECK(fav_load(&l, file) == 0 && l.count == 1 && l.e[0].kind == FAV_EMU_FILE);
+    fav_free(&l);
+
+    /* Menus: emulator items, the disk item only with more than one disk. */
+    static ui_state u;
+    ui_setup(&u);
+    int items[MI_COUNT];
+    int nu = ui_menu_items(&u, items);
+    CHECK(nu == 13 && items[nu - 1] == MI_QUIT);
+    u.emulator = 1;
+    int ne = ui_menu_items(&u, items);
+    int has_disk = 0, has_ctl = 0;
+    for (int i = 0; i < ne; i++) {
+        has_disk |= items[i] == MI_DISK;
+        has_ctl |= items[i] == MI_CONTROLLER;
+    }
+    CHECK(ne == 14 && !has_disk && has_ctl);
+    u.disks = 2;
+    ne = ui_menu_items(&u, items);
+    CHECK(ne == 15 && items[6] == MI_DISK);
+    ui_open_menu(&u);
+    u.sel = 6;
+    ui_action a = ui_input(&u, IN_LEFT);
+    CHECK(a.kind == UA_DISK && a.offset == -1);
+    a = ui_input(&u, IN_OK);
+    CHECK(a.kind == UA_DISK && a.offset == 1);
+    u.sel = 9;
+    CHECK(ui_input(&u, IN_OK).kind == UA_CONTROLLER);
+    ui_open_picker(&u, NULL);
+    u.sel = 2;                                                    /* no devices: emulator row */
+    CHECK(ui_input(&u, IN_OK).kind == UA_EMULATOR);
+    ui_free(&u);
+}
+
 int main(void)
 {
+    test_emulator_mode();
     test_favs();
     test_a64();
     test_index();

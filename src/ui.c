@@ -24,7 +24,7 @@ static ui_action act(int kind)
     return a;
 }
 
-void ui_init(ui_state *u)
+void ui_setup(ui_state *u)
 {
     memset(u, 0, sizeof(*u));
     u->screen = UI_CLOSED;
@@ -74,7 +74,7 @@ ui_action ui_open_browser(ui_state *u, const char *path)
 
 int ui_picker_rows(const ui_state *u)
 {
-    return u->ndevices + 3;     /* + Enter address, Search again, Listen only */
+    return u->ndevices + 4;     /* + Enter address, Search again, Built-in emulator, Listen only */
 }
 
 void ui_set_devices(ui_state *u, const c64_device *d, int n, int progress, int done)
@@ -178,20 +178,49 @@ static int petscii_to_ascii(int p)
     return -1;
 }
 
+int ui_menu_items(const ui_state *u, int *out)
+{
+    static const int ultimate[] = { MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS, MI_RECENTS,
+                                    MI_RESET, MI_REBOOT, MI_AUDIO, MI_PORT, MI_CHOOSE, MI_INDEX,
+                                    MI_QUIT };
+    static const int emulator[] = { MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS, MI_RECENTS,
+                                    MI_DISK, MI_RESET, MI_REBOOT, MI_CONTROLLER, MI_AUDIO, MI_PORT,
+                                    MI_CHOOSE, MI_INDEX, MI_QUIT };
+    const int *src = u->emulator ? emulator : ultimate;
+    int n = u->emulator ? (int)(sizeof(emulator) / sizeof(emulator[0]))
+                        : (int)(sizeof(ultimate) / sizeof(ultimate[0]));
+    int count = 0;
+    for (int i = 0; i < n; i++)
+        if (src[i] != MI_DISK || u->disks > 1)
+            out[count++] = src[i];
+    return count;
+}
+
 static ui_action input_menu(ui_state *u, int in)
 {
+    int items[MI_COUNT];
+    int n = ui_menu_items(u, items);
+    if (u->sel >= n)
+        u->sel = n - 1;
+    int item = items[u->sel];
     switch (in) {
-    case IN_UP:   move(u, MI_COUNT, -1, 1); break;
-    case IN_DOWN: move(u, MI_COUNT, 1, 1); break;
+    case IN_UP:   move(u, n, -1, 1); break;
+    case IN_DOWN: move(u, n, 1, 1); break;
     case IN_BACK: ui_close(u); break;
     case IN_LEFT: case IN_RIGHT: case IN_OK:
-        switch (u->sel) {
+        switch (item) {
         case MI_AUDIO: return act(UA_MUTE);
         case MI_PORT:  return act(UA_PORT);
+        case MI_CONTROLLER: return act(UA_CONTROLLER);
+        case MI_DISK: {
+            ui_action a = act(UA_DISK);
+            a.offset = in == IN_LEFT ? -1 : 1;
+            return a;
+        }
         }
         if (in != IN_OK)
             break;
-        switch (u->sel) {
+        switch (item) {
         case MI_RESUME: ui_close(u); break;
         case MI_BROWSE: return act(UA_OPEN_BROWSER);
         case MI_SEARCH: return act(UA_OPEN_SEARCH);
@@ -231,7 +260,8 @@ static ui_action input_picker(ui_state *u, int in)
         switch (u->sel - u->ndevices) {
         case 0: start_address(u); break;
         case 1: u->message[0] = 0; return act(UA_RESCAN);
-        case 2: ui_close(u); return act(UA_LISTEN_ONLY);
+        case 2: ui_close(u); return act(UA_EMULATOR);
+        case 3: ui_close(u); return act(UA_LISTEN_ONLY);
         }
         break;
     }
@@ -997,7 +1027,7 @@ static ui_action input_fav_list(ui_state *u, int in)
             return fav_toggle_action(*e);
         break;
     case IN_ALT:
-        if (e && (e->kind == FAV_LOCAL_FILE || e->kind == FAV_A64_FILE)) {
+        if (e && ((fav_is_path(e) && !fav_is_folder(e)) || e->kind == FAV_A64_FILE)) {
             u->nactions = files_actions_for(files_type(e->path, 0), u->actions, FA_COUNT);
             u->action_sel = 0;
             u->action_fav = *e;

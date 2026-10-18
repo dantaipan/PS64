@@ -3,8 +3,9 @@
  * joystick and key input, the on-screen keyboard and the in-app screens.
  *
  * Normal mode:
- *   D-pad / left stick   joystick (input-command mode) or cursor keys (typing-buffer mode)
- *   Cross                fire (input-command mode) or RETURN (typing-buffer mode)
+ *   D-pad / left stick   joystick (input-command mode, built-in emulator) or cursor
+ *                        keys (typing-buffer mode, or joy_keys set)
+ *   Cross                fire, or RETURN where the D-pad is cursor keys
  *   Square/Triangle/Circle, L1/R1/L2/R2   configurable shortcuts
  *                        (default SPACE, RETURN, RUN/STOP, F1, F3, F5, F7)
  *   Touchpad             on-screen keyboard
@@ -38,6 +39,7 @@ typedef struct {
     ui_state *ui;
     binding   bind[BTN_BINDABLE];
     int       port;            /* joystick port 1 or 2 */
+    int       joy_keys;        /* D-pad/stick/Cross as cursor keys and RETURN even with a joystick */
     osk_state osk;
 
     unsigned  dpad, stick;     /* JOY_UP/DOWN/LEFT/RIGHT */

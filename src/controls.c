@@ -100,7 +100,9 @@ static void to_ui(controls *c, int input)
 
 static int mode(controls *c)
 {
-    return c->remote ? remote_mode(c->remote) : REMOTE_UNREACHABLE;
+    int m = c->remote ? remote_mode(c->remote) : REMOTE_UNREACHABLE;
+    /* D-pad as cursor keys: drive it like the typing-buffer mode. */
+    return m == REMOTE_INPUT && c->joy_keys ? REMOTE_BUFFER : m;
 }
 
 static void tap(controls *c, int key, int mods)

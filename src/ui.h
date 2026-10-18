@@ -20,13 +20,18 @@ enum { UI_CLOSED, UI_MENU, UI_PICKER, UI_ADDRESS, UI_PASSWORD, UI_BROWSER, UI_AC
 enum { IN_UP, IN_DOWN, IN_LEFT, IN_RIGHT, IN_OK, IN_BACK, IN_ALT, IN_TRIANGLE,
        IN_L1, IN_R1, IN_L2, IN_R2 };
 
-/* Menu items. */
+/* Menu items (ui_menu_items() lists the ones shown, in order). */
 enum { MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS, MI_RECENTS, MI_RESET, MI_REBOOT,
-       MI_AUDIO, MI_PORT, MI_CHOOSE, MI_INDEX, MI_QUIT, MI_COUNT };
+       MI_AUDIO, MI_PORT, MI_CHOOSE, MI_INDEX, MI_QUIT,
+       MI_DISK, MI_CONTROLLER,          /* emulator only */
+       MI_COUNT };
 
 enum { UA_NONE, UA_MUTE, UA_PORT, UA_QUIT, UA_CONNECT, UA_LISTEN_ONLY, UA_RESCAN,
        UA_LIST, UA_FILE, UA_OPEN_BROWSER, UA_OPEN_SEARCH, UA_BUILD_INDEX, UA_RESET, UA_REBOOT,
-       UA_A64_SEARCH, UA_A64_ENTRIES, UA_A64_FILE, UA_A64_SET_ID, UA_FAV_TOGGLE, UA_FAV_LAUNCH };
+       UA_A64_SEARCH, UA_A64_ENTRIES, UA_A64_FILE, UA_A64_SET_ID, UA_FAV_TOGGLE, UA_FAV_LAUNCH,
+       UA_EMULATOR,      /* use the built-in emulator */
+       UA_DISK,          /* emulator: insert the next (offset 1) or previous (-1) disk */
+       UA_CONTROLLER };  /* emulator: D-pad as joystick <-> cursor keys */
 
 typedef struct {
     int  kind;
@@ -52,6 +57,10 @@ typedef struct {
 
     /* Shown in the menu. */
     int muted, port;
+    int emulator;                 /* the built-in emulator is the machine (set by main) */
+    int disk, disks;              /* emulator: inserted disk (0-based) of a swappable set */
+    int joy_keys;                 /* emulator: D-pad/stick/Cross are cursor keys and RETURN */
+    char games_dir[256];          /* emulator: the real folder behind "/" (shown when empty) */
 
     /* Picker. */
     c64_device devices[DISCOVER_MAX];
@@ -112,7 +121,7 @@ typedef struct {
     fav_entry      action_fav;      /* entry the action list applies to */
 } ui_state;
 
-void ui_init(ui_state *u);
+void ui_setup(ui_state *u);
 void ui_free(ui_state *u);
 
 void ui_open_menu(ui_state *u);
@@ -151,7 +160,10 @@ void ui_text(ui_state *u, const char *text);
 
 ui_action ui_input(ui_state *u, int input);
 
-/* Number of rows in the picker (devices + 3 fixed entries). */
+/* Menu items shown for the current machine; returns the count. */
+int ui_menu_items(const ui_state *u, int *out);
+
+/* Number of rows in the picker (devices + 4 fixed entries). */
 int ui_picker_rows(const ui_state *u);
 /* Parent folder of path ("/" for top level). */
 void ui_parent(const char *path, char *out, size_t cap);

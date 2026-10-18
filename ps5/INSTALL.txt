@@ -2,14 +2,15 @@ PS64 for PS5
 ================
 
 Shows a Commodore 64 Ultimate's screen and sound on a jailbroken PS5, lets
-the DualSense type on it, and browses/starts files from its storage.
+the DualSense type on it, and browses/starts files from its storage. No C64
+Ultimate? PS64 also has a built-in C64 emulator (VICE).
 
 You need
 --------
 - A jailbroken PS5 that can run ELF payloads, with an FTP server payload
   (e.g. ftpsrv) and the websrv homebrew launcher payload.
-- A Commodore 64 Ultimate (or Ultimate 64) on the same network, with these
-  turned on in its menu under Network Services:
+- For the C64 Ultimate mode: a Commodore 64 Ultimate (or Ultimate 64) on
+  the same network, with these turned on in its menu under Network Services:
     * Web Remote Control (REST API)  - required
     * FTP File Service               - for the file browser
 
@@ -19,8 +20,17 @@ Install
    so you have /data/homebrew/PS64/eboot.elf.
 2. Load websrv, open http://<ps5-ip>:8080/ in the PS5 browser (or any
    computer on the network) and launch PS64.
-3. The first time, PS64 searches the network: pick your C64. The choice
-   is saved in /data/homebrew/PS64/ps64.cfg.
+3. The first time, PS64 searches the network: pick your C64, or
+   "Built-in emulator". The choice is saved in /data/homebrew/PS64/ps64.cfg.
+
+Built-in emulator
+-----------------
+Copy games (D64, G64, D81, PRG, T64, TAP, CRT; folders are fine) into
+/data/homebrew/PS64/games/ over FTP, or find them with Search Assembly64.
+The D-pad/left stick is the joystick and Cross is fire; Options > D-pad
+switches them to cursor keys and RETURN. A disk is started together with the
+other disks in its folder: Options > Disk swaps between them. Disks load at
+full speed. SID/MOD music needs a C64 Ultimate.
 
 Controller
 ----------

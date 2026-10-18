@@ -24,7 +24,7 @@ static int same(const fav_entry *a, const fav_entry *b)
 {
     if (a->kind != b->kind)
         return 0;
-    if (a->kind == FAV_LOCAL_FILE || a->kind == FAV_LOCAL_FOLDER)
+    if (fav_is_path(a))
         return !strcmp(a->path, b->path);
     if (strcmp(a->item_id, b->item_id) || a->category != b->category)
         return 0;
@@ -108,7 +108,8 @@ fav_entry fav_local(const char *path, int is_dir)
 {
     fav_entry e;
     memset(&e, 0, sizeof(e));
-    e.kind = is_dir ? FAV_LOCAL_FOLDER : FAV_LOCAL_FILE;
+    e.kind = files_emulator() ? (is_dir ? FAV_EMU_FOLDER : FAV_EMU_FILE)
+                              : (is_dir ? FAV_LOCAL_FOLDER : FAV_LOCAL_FILE);
     e.group = is_dir ? FAV_GAMES : fav_group_for_name(path);
     e.action = FA_NONE;
     snprintf(e.path, sizeof(e.path), "%s", path);
@@ -122,6 +123,22 @@ fav_entry fav_local(const char *path, int is_dir)
             }
     snprintf(e.name, sizeof(e.name), "%s", title);
     return e;
+}
+
+int fav_is_path(const fav_entry *e)
+{
+    return e->kind == FAV_LOCAL_FILE || e->kind == FAV_LOCAL_FOLDER ||
+           e->kind == FAV_EMU_FILE || e->kind == FAV_EMU_FOLDER;
+}
+
+int fav_is_folder(const fav_entry *e)
+{
+    return e->kind == FAV_LOCAL_FOLDER || e->kind == FAV_EMU_FOLDER;
+}
+
+int fav_is_emulator(const fav_entry *e)
+{
+    return e->kind == FAV_EMU_FILE || e->kind == FAV_EMU_FOLDER;
 }
 
 fav_entry fav_a64_file(const char *item_id, int category, int file_id, const char *file_name,
@@ -226,7 +243,7 @@ int fav_load(fav_list *l, const char *file)
         snprintf(e.item_id, sizeof(e.item_id), "%s", field[5]);
         snprintf(e.name, sizeof(e.name), "%s", field[6]);
         snprintf(e.path, sizeof(e.path), "%s", field[7]);
-        if (e.kind < FAV_LOCAL_FILE || e.kind > FAV_A64_ITEM || grow(l) != 0)
+        if (e.kind < FAV_LOCAL_FILE || e.kind > FAV_EMU_FOLDER || grow(l) != 0)
             continue;
         l->e[l->count++] = e;
         if (l->max && l->count >= l->max)

@@ -41,6 +41,9 @@ Features, in the order they were built:
 11. Assembly64 online search (`src/a64.c`) with downloads sent straight to the C64.
 12. Favourites (Games / SIDs) and Recents (last 25) (`src/favs.c`).
 13. Renamed from "C64 View" to **PS64** (folder, files, icon via `tools/gen_icon.py`).
+14. **Built-in emulator** (VICE) as an alternative machine (`src/emulator.c`, `src/emugames.c`,
+    `src/localfs.c`): games folder, Assembly64 downloads, multi-disk swapping, fast loading,
+    real joystick and keys, local search index. See "Emulator mode" below.
 
 ## Controls (current)
 
@@ -97,6 +100,35 @@ Goal: let people without a C64 Ultimate use PS64 with a built-in emulator. Spike
 - Next step if pursued: a libretro frontend inside PS64 plus an "emulator instead of C64
   Ultimate" choice, local file browsing, Assembly64 -> emulator, disk swapping.
 
+## Emulator mode (built 2026-10-18)
+
+- Core: same pinned fork as the spike, fetched/built by `tools/get_vice.sh` into
+  `third_party/vice` (Mac objects in `build-osx`, PS5 in `build-ps5`; `ps5/build.sh` fetches
+  on the host and builds inside Docker). Mac Makefile includes it when the library exists.
+- `src/emulator.c` is the libretro frontend. Things learned:
+  - The core keeps global state: set it up once per process. Starting it again = power cycle.
+  - It must run one frame after `retro_load_game(NULL)` before another load, or it sets
+    itself up twice and crashes (found when `--emu-load` loaded straight away).
+  - Loading into a running core is only a plain reset; call VICE's `reload_restart()` after
+    `retro_load_game` to autostart the new file.
+  - Keys go straight into VICE's keyboard matrix with `keyboard_set_keyarr(code>>3, code&7)`
+    (PS64 key ids are matrix codes); RESTORE is `machine_set_restore_key`. Taps are timed in
+    emulated frames. Joystick via the RetroPad (B = fire), port via the `vice_joyport` option.
+  - Fast loading: option `vice_autoloadwarp`; the core asks for fast-forward through
+    `SET_FASTFORWARDING_OVERRIDE`, and PS64 then runs frames for 12 ms per loop, muted.
+  - Pacing: 50.125 frames/s on the host clock, nudged ±1% by the sound queue level; the
+    audio device is reopened at 48 kHz in emulator mode (Ultimate: ~47983 Hz).
+  - Name clash: VICE has its own `ui_init` (PS64's became `ui_setup`) and `emu_reset`
+    (PS64's emulator code uses `emulator_*`).
+- Multi-disk: a disk is started with the other disk images of its folder or Assembly64 entry
+  via an `.m3u` in `emulator/`; the menu's Disk item swaps through the disk-control interface.
+- Games folder paths look like the Ultimate's (`/Folder/Game.d64`, `/` = games folder), so
+  browser, search index (`host=emulator`, `ps64-emu-index.txt`) and favourites
+  (`FAV_EMU_FILE/FOLDER`) are shared code. SID/MOD can't play in the emulator.
+- Tested: `tests/test_emulator.c` (real core: typing, joystick 31->14, PRG, .m3u + swap,
+  folder launch, Assembly64 download path, power cycle) and the Mac app (Boulder Dash from the
+  games folder and from Assembly64). PS5 build: eboot.elf 6.8 MB.
+
 ## Working conventions
 
 - Build: `make` / `make test` (Mac; run `tools/get_sdl2.sh` once), `ps5/build.sh all dist`,
@@ -112,5 +144,6 @@ Goal: let people without a C64 Ultimate use PS64 with a built-in emulator. Spike
 ## Open items
 
 - Try Assembly64 search end to end on the PS5 now that the client ID is configured.
-- Decide whether to build the VICE emulator mode for real.
+- Try emulator mode on the PS5 (speed, sound, controller, Assembly64 downloads).
+- Possible later: SID playback in the emulator (a PSID player stub), save states.
 - Optional: faster disk loading (Ultimate drive/speed settings), not investigated.

@@ -2,6 +2,7 @@
 
 #include "c64files.h"
 #include "ftp.h"
+#include "localfs.h"
 
 #include <ctype.h>
 #include <pthread.h>
@@ -29,6 +30,7 @@ struct c64index {
     int          stop;
     index_status status;
     char         host[64], password[64], roots[256], file[512];
+    char         local_root[512];       /* set: index this folder instead of FTP */
 };
 
 c64index *index_new(void)
@@ -237,8 +239,9 @@ static void *builder(void *arg)
             q_push(&q, r);
     }
 
-    ftp_session *s = ftp_open(x->host, pw, err, sizeof(err));
-    int fatal = s == NULL;
+    int local = x->local_root[0] != 0;
+    ftp_session *s = local ? NULL : ftp_open(x->host, pw, err, sizeof(err));
+    int fatal = !local && s == NULL;
     char *dir;
     while (!fatal && (dir = q_pop(&q)) != NULL) {
         if (stopping(x)) {
@@ -249,8 +252,9 @@ static void *builder(void *arg)
         snprintf(x->status.current, sizeof(x->status.current), "%s", dir);
         pthread_mutex_unlock(&x->lock);
 
-        int n = list ? ftp_list_dir(s, dir, list, LIST_MAX, err, sizeof(err)) : -1;
-        if (n < 0) {
+        int n = !list ? -1 : local ? localfs_list(x->local_root, dir, list, LIST_MAX, err, sizeof(err))
+                                   : ftp_list_dir(s, dir, list, LIST_MAX, err, sizeof(err));
+        if (n < 0 && !local) {
             /* Reconnect once if the connection dropped, then retry this folder. */
             ftp_close(s);
             s = ftp_open(x->host, pw, err, sizeof(err));
@@ -273,7 +277,9 @@ static void *builder(void *arg)
                     continue;
                 }
                 int t = files_type(list[i].name, 0);
-                if (t != FT_OTHER && strlen(path) < sizeof(((index_hit *)0)->path) &&
+                /* What the machine can start: no tapes on the Ultimate, no SID/MOD in the emulator. */
+                int wanted = t != FT_OTHER && (local ? t != FT_SID && t != FT_MOD : t != FT_TAPE);
+                if (wanted && strlen(path) < sizeof(((index_hit *)0)->path) &&
                     add_locked(x, path, list[i].size) == 0)
                     x->status.files++;
             }
@@ -315,6 +321,31 @@ void index_build_start(c64index *x, const char *host, const char *password,
     snprintf(x->password, sizeof(x->password), "%s", password ? password : "");
     snprintf(x->roots, sizeof(x->roots), "%s", roots);
     snprintf(x->file, sizeof(x->file), "%s", file);
+    x->local_root[0] = 0;
+    pthread_mutex_unlock(&x->lock);
+    if (pthread_create(&x->thread, NULL, builder, x) == 0) {
+        x->thread_running = 1;
+    } else {
+        pthread_mutex_lock(&x->lock);
+        x->status.building = 0;
+        snprintf(x->status.error, sizeof(x->status.error), "Couldn't start indexing");
+        pthread_mutex_unlock(&x->lock);
+    }
+}
+
+void index_build_local_start(c64index *x, const char *root, const char *file)
+{
+    join_builder(x);
+    pthread_mutex_lock(&x->lock);
+    clear_entries(x);
+    memset(&x->status, 0, sizeof(x->status));
+    x->status.building = 1;
+    x->stop = 0;
+    snprintf(x->host, sizeof(x->host), "%s", INDEX_LOCAL_HOST);
+    x->password[0] = 0;
+    snprintf(x->roots, sizeof(x->roots), "/");
+    snprintf(x->file, sizeof(x->file), "%s", file);
+    snprintf(x->local_root, sizeof(x->local_root), "%s", root);
     pthread_mutex_unlock(&x->lock);
     if (pthread_create(&x->thread, NULL, builder, x) == 0) {
         x->thread_running = 1;
