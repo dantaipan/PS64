@@ -1,9 +1,21 @@
-# ps64
+# PS64
 
-Viewer for the Commodore 64 Ultimate (Ultimate 64 firmware) VIC and audio data streams.
-macOS/SDL2 prototype first; the decoders in `src/vicstream.c` and
-`src/audiostream.c` have no OS or SDL dependencies so they can be reused as-is
-in a PS5 payload (ps5-payload-sdk).
+Play the Commodore 64 on a jailbroken PS5 (or a Mac), with or without the real hardware:
+
+- **With a Commodore 64 Ultimate**: PS64 shows the Ultimate's video and audio
+  streams and controls it from the DualSense: on-screen C64 keyboard, file
+  browser and search over its storage, favourites and recents.
+- **Without one**: PS64's **built-in emulator** (VICE) runs a C64 itself.
+  Copy games into its games folder or download them from Assembly64; the
+  joystick and keyboard work in games, multi-disk games can swap disks, and
+  disks load at full speed. See [Built-in emulator](#built-in-emulator-no-c64-ultimate-needed).
+
+Both modes can search the online **Assembly64** database and start what you
+find straight away. Pick the machine in **Options > Choose C64…**.
+
+The video and audio decoders (`src/vicstream.c`, `src/audiostream.c`) have no
+OS or SDL dependencies; the same `src/` code builds for macOS (SDL2) and as a
+PS5 payload (ps5-payload-sdk).
 
 ## Build
 
