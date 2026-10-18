@@ -1,0 +1,49 @@
+PS64 for PS5
+================
+
+Shows a Commodore 64 Ultimate's screen and sound on a jailbroken PS5, lets
+the DualSense type on it, and browses/starts files from its storage.
+
+You need
+--------
+- A jailbroken PS5 that can run ELF payloads, with an FTP server payload
+  (e.g. ftpsrv) and the websrv homebrew launcher payload.
+- A Commodore 64 Ultimate (or Ultimate 64) on the same network, with these
+  turned on in its menu under Network Services:
+    * Web Remote Control (REST API)  - required
+    * FTP File Service               - for the file browser
+
+Install
+-------
+1. Copy the PS64 folder to /data/homebrew/ on the PS5 (FTP to the PS5),
+   so you have /data/homebrew/PS64/eboot.elf.
+2. Load websrv, open http://<ps5-ip>:8080/ in the PS5 browser (or any
+   computer on the network) and launch PS64.
+3. The first time, PS64 searches the network: pick your C64. The choice
+   is saved in /data/homebrew/PS64/ps64.cfg.
+
+Controller
+----------
+  D-pad / left stick   joystick (cursor keys on firmware without joystick input)
+  Cross                fire (RETURN on firmware without joystick input)
+  Square/Triangle/O    SPACE / RETURN / RUN/STOP
+  L1 / R1 / L2 / R2    F1 / F3 / F5 / F7
+  Touchpad             on-screen C64 keyboard
+  L3                   browse the C64's files (L2 there: search)
+  Triangle (in lists)  add/remove favourite
+  R3                   Ultimate menu button
+  Options              menu: browse, search files, search Assembly64,
+                       favourites (games / SIDs), recents (last 25),
+                       reset / reboot C64, audio,
+                       joystick port, choose C64, update search index, quit
+
+Search Assembly64 (Options menu) needs a client ID from the Assembly64 team
+(hackerswithstyle.se); the app asks for it the first time and saves it.
+
+Search builds an index of the C64's storage over FTP the first time (a few
+minutes for a big collection), saved next to the app as ps64-index.txt.
+
+Joystick input needs C64 firmware with the REST input command; on C64
+Ultimate firmware 1.1.0 keys are typed into the KERNAL keyboard buffer, which
+works in BASIC and most menus but not in games that read the keyboard
+directly.

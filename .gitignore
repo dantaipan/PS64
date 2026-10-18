@@ -1,0 +1,22 @@
+# Build output
+/ps64
+/fake_sender
+/test_vicstream
+/test_input
+*.o
+*.dSYM/
+ps5/out/
+
+# Downloaded by tools/get_sdl2.sh
+third_party/
+
+# Experiments (third-party clones, test content such as game disk images)
+spikes/
+
+# Local data written by the app or debug runs
+*.bmp
+ps64-index.txt
+ps64-favourites.txt
+ps64-recents.txt
+*.tmp
+.DS_Store
