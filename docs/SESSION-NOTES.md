@@ -214,6 +214,6 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
 - Try Assembly64 search end to end on the PS5 now that the client ID is configured.
 - Try emulator mode on the PS5 (speed, sound, controller, Assembly64 downloads).
 - Possible later: SID playback in the emulator (a PSID player stub), save states.
-- Run the native app on the PS5 (test plan above), then: public repo, tag 01.000.000 with
-  PPSA06464.zip, catalog PR (only with the user's go-ahead).
+- Store release and the update process: `docs/RELEASING.md` (dev build option and
+  `release.sh` still to build; publishing only with the user's go-ahead).
 - Optional: faster disk loading (Ultimate drive/speed settings), not investigated.

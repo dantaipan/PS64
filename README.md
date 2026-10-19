@@ -266,6 +266,9 @@ the Commodore rainbow. The PS5 keeps a copy of a title's artwork and name from w
 first registered (`/user/appmeta/<title>/` and `/user/app/<title>/sce_sys/`); replacing
 the app's files doesn't refresh that copy.
 
+Releasing to the Prospero Store, updates, and testing a dev build next to the store copy:
+see [docs/RELEASING.md](docs/RELEASING.md).
+
 The native app keeps its files in **`/data/ps64/`** (settings `ps64.cfg`, favourites,
 recents, search indexes, the emulator's `games/` and `emulator/` folders), because a store
 update replaces the app's own folder. On first start it copies the settings, lists and
