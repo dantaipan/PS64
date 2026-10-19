@@ -2,8 +2,13 @@
 # Build PS64 as a native PS5 app (title PPSA06464, for ShadowMountPlus and the
 # Prospero Store), in Docker. Output: ps5/native/out/PPSA06464/ and PPSA06464.zip.
 #
-#   ps5/native/build.sh                 build
-#   ps5/native/build.sh deploy <ps5-ip> build and copy to /data/homebrew/PPSA06464 (FTP 2121)
+#   ps5/native/build.sh                     build the store app (PPSA06464)
+#   ps5/native/build.sh deploy <ps5-ip>     ... and copy it to /data/homebrew/PPSA06464 (FTP 2121)
+#   ps5/native/build.sh dev                 build PS64 Dev (PPSA06465, data in /data/ps64-dev)
+#   ps5/native/build.sh dev deploy <ps5-ip> ... and copy it to /data/homebrew/PPSA06465
+#
+# Once PS64 is installed from the Prospero Store, test with "dev": deploying the store
+# app would overwrite the store's copy (docs/RELEASING.md).
 #
 # Uses the PS5 Native App Boilerplate (pinned) for linking, the FSELF and packaging,
 # PS64's SDL2 with the patches in sdl-ps5-native.patch, and dlmalloc.

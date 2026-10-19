@@ -688,8 +688,18 @@ static void connect_error(char *msg, size_t cap, int rc, const char *host)
  * The native app (PPSA06464) keeps its files in /data/ps64, because a store
  * update replaces the app's own folder. The first time, it brings over the
  * settings, lists and indexes of the payload version in /data/homebrew/PS64.
+ *
+ * The dev build (PS64_DEV: PPSA06465, "PS64 Dev", see docs/RELEASING.md) runs
+ * next to the store copy with its own folder, /data/ps64-dev, and starts from
+ * a copy of the store copy's files (or else the payload version's).
  */
+#ifdef PS64_DEV
+#define NATIVE_DIR "/data/ps64-dev"
+static const char *const first_run_sources[] = { "/data/ps64", "/data/homebrew/PS64" };
+#else
 #define NATIVE_DIR "/data/ps64"
+static const char *const first_run_sources[] = { "/data/homebrew/PS64" };
+#endif
 
 static void copy_file(const char *from, const char *to)
 {
@@ -727,11 +737,15 @@ static void native_first_run(void)
         { "ps64-index.txt", "ps64-index.txt" }, { "ps64-emu-index.txt", "ps64-emu-index.txt" },
     };
     for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
-        char from[256], to[256];
-        snprintf(from, sizeof(from), "/data/homebrew/PS64/%s", files[i][0]);
+        char to[256];
         snprintf(to, sizeof(to), NATIVE_DIR "/%s", files[i][1]);
-        if (!file_exists(to))
-            copy_file(from, to);
+        /* Each file from the first place that has it. */
+        for (size_t s = 0; s < sizeof(first_run_sources) / sizeof(first_run_sources[0]); s++) {
+            char from[256];
+            snprintf(from, sizeof(from), "%s/%s", first_run_sources[s], files[i][0]);
+            if (!file_exists(to) && file_exists(from))
+                copy_file(from, to);
+        }
     }
     if (!file_exists(NATIVE_DIR "/ps64.cfg")) {
         FILE *f = fopen(NATIVE_DIR "/ps64.cfg", "w");
