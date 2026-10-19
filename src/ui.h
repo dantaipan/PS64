@@ -14,7 +14,7 @@
 #include "osk.h"
 
 enum { UI_CLOSED, UI_MENU, UI_PICKER, UI_ADDRESS, UI_PASSWORD, UI_BROWSER, UI_ACTIONS,
-       UI_SEARCH, UI_A64, UI_A64_FILES, UI_A64_ID, UI_FAVS, UI_FAV_LIST };
+       UI_SEARCH, UI_A64, UI_A64_FILES, UI_A64_ID, UI_FAVS, UI_FAV_LIST, UI_ABOUT };
 
 /* Abstract inputs (controls.c maps buttons and keys to these). */
 enum { IN_UP, IN_DOWN, IN_LEFT, IN_RIGHT, IN_OK, IN_BACK, IN_ALT, IN_TRIANGLE,
@@ -24,6 +24,7 @@ enum { IN_UP, IN_DOWN, IN_LEFT, IN_RIGHT, IN_OK, IN_BACK, IN_ALT, IN_TRIANGLE,
 enum { MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS, MI_RECENTS, MI_RESET, MI_REBOOT,
        MI_AUDIO, MI_PORT, MI_CHOOSE, MI_INDEX, MI_QUIT,
        MI_DISK, MI_CONTROLLER,          /* emulator only */
+       MI_ABOUT,
        MI_COUNT };
 
 enum { UA_NONE, UA_MUTE, UA_PORT, UA_QUIT, UA_CONNECT, UA_LISTEN_ONLY, UA_RESCAN,
@@ -50,6 +51,7 @@ typedef struct {
 #define UI_PAGE 20          /* rows per page in the picker and browser */
 #define UI_SEARCH_PAGE 10   /* result rows shown above the on-screen keyboard */
 #define UI_SEARCH_MAX 300   /* results kept per query */
+#define UI_ABOUT_ROWS 22    /* About text lines shown at once */
 
 typedef struct {
     int screen;
@@ -119,6 +121,9 @@ typedef struct {
     int            fav_group;       /* FAV_GAMES / FAV_SIDS */
     int            fl_sel, fl_top;
     fav_entry      action_fav;      /* entry the action list applies to */
+
+    /* About. */
+    int            about_top;       /* first text line shown */
 } ui_state;
 
 void ui_setup(ui_state *u);
@@ -142,6 +147,10 @@ void ui_open_a64(ui_state *u);
 void ui_open_a64_id(ui_state *u, const char *message);
 void ui_a64_results(ui_state *u, a64_result *r);   /* takes ownership of r's lists */
 void ui_a64_error(ui_state *u, const char *message, int auth_error);
+
+/* About: what PS64 does, the controls, thanks. */
+void ui_open_about(ui_state *u);
+const char *const *ui_about_text(int *count);
 
 void ui_open_favs(ui_state *u);
 void ui_open_recents(ui_state *u);

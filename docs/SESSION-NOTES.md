@@ -178,6 +178,13 @@ spike proved. Beyond the spike, it needed:
   `__eh_frame_*` symbols in the linker script for the C++ unwinder;
 - archive names limited to `[A-Za-z0-9_.-]` (libc++.a staged as libcxx.a);
 - `getcwd` crashes in a native app (VICE calls it while booting): wrapped to return `/app0`;
+- Home-screen artwork: `tools/gen_backgrounds.py` writes BC7 DDS backgrounds directly
+  (solid 4x4 blocks, mode 6), so no Windows texconv is needed. The PS5 caches a title's
+  artwork/name/music at first registration in `/user/appmeta/PPSA06464/` and
+  `/user/app/PPSA06464/sce_sys/`; after the spike's template art (bears, music, "PS64 Spike")
+  those were updated over FTP by hand.
+- Menu: "Choose C64 stream or emulator", "About PS64" (text in `ui_about_text()`, thanks to
+  VICE and Assembly64), version in `src/version.h`.
 - `access()` reported an existing file as missing, so the first-run copy overwrote the copied
   config: existence is checked with fopen. Like getaddrinfo, some libc calls that resolve
   fine still fail in the sandbox; ShadowMountPlus logs crash details only in an app's first

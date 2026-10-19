@@ -75,8 +75,8 @@ static void draw_menu(SDL_Renderer *ren, const ui_state *u)
         [MI_REBOOT] = u->emulator ? "Switch off and on (removes disks)" : "Reboot C64 (clears cartridge)",
         [MI_AUDIO] = u->muted ? "Audio: < Off >" : "Audio: < On >",
         [MI_PORT] = port,
-        [MI_CHOOSE] = u->emulator ? "Choose C64 or emulator..." : "Choose C64...",
-        [MI_INDEX] = "Update search index", [MI_QUIT] = "Quit",
+        [MI_CHOOSE] = "Choose C64 stream or emulator...",
+        [MI_INDEX] = "Update search index", [MI_ABOUT] = "About PS64...", [MI_QUIT] = "Quit",
         [MI_DISK] = disk,
         [MI_CONTROLLER] = u->joy_keys ? "D-pad: < Cursor keys >" : "D-pad: < Joystick >",
     };
@@ -95,7 +95,7 @@ static void draw_menu(SDL_Renderer *ren, const ui_state *u)
 
 static void draw_picker(SDL_Renderer *ren, const ui_state *u, Uint32 now)
 {
-    panel(ren, "Choose your C64 Ultimate");
+    panel(ren, "Choose C64 stream or emulator");
     char status[96];
     if (u->scanning)
         snprintf(status, sizeof(status), "Searching the network %c %d%%",
@@ -130,6 +130,22 @@ static void draw_picker(SDL_Renderer *ren, const ui_state *u, Uint32 now)
         row(ren, i - u->top, i == u->sel, line, c);
     }
     footer(ren, "X choose   O close      The C64 needs its web remote control turned on");
+}
+
+static void draw_about(SDL_Renderer *ren, const ui_state *u)
+{
+    panel(ren, "About PS64");
+    int count;
+    const char *const *text = ui_about_text(&count);
+    for (int i = 0; i < UI_ABOUT_ROWS && u->about_top + i < count; i++) {
+        const char *line = text[u->about_top + i];
+        /* Section headings in yellow. */
+        int heading = line[0] && line[0] != ' ' && line[strlen(line) - 1] != '.' &&
+                      line[strlen(line) - 1] != ',' && line[strlen(line) - 1] != ':' &&
+                      strchr(line, ' ') == NULL;
+        font_draw(ren, line, PX + 16, LIST_Y + i * ROW_H, 1, heading ? YELLOW : WHITE);
+    }
+    footer(ren, count > UI_ABOUT_ROWS ? "Up/Down scroll   L1/R1 page   O back" : "O back");
 }
 
 static void draw_address(SDL_Renderer *ren, const ui_state *u)
@@ -510,6 +526,7 @@ void ui_draw(SDL_Renderer *ren, const ui_state *u, Uint32 now)
     case UI_A64_ID:   draw_a64_id(ren, u, now); break;
     case UI_FAVS:     draw_favs(ren, u); break;
     case UI_FAV_LIST: draw_fav_list(ren, u); break;
+    case UI_ABOUT:    draw_about(ren, u); break;
     }
     canvas_end(ren, saved_w, saved_h);
 }

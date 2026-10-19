@@ -319,7 +319,8 @@ static void test_ui(void)
     /* Menu wraps; Options-style close. */
     ui_open_menu(&u);
     ui_input(&u, IN_UP);
-    CHECK(u.sel == MI_QUIT);
+    int menu[MI_COUNT];
+    CHECK(menu[ui_menu_items(&u, menu) - 1] == MI_QUIT && u.sel == ui_menu_items(&u, menu) - 1);
     CHECK(ui_input(&u, IN_OK).kind == UA_QUIT);
     u.sel = MI_AUDIO;
     CHECK(ui_input(&u, IN_RIGHT).kind == UA_MUTE);
@@ -864,7 +865,7 @@ static void test_emulator_mode(void)
     ui_setup(&u);
     int items[MI_COUNT];
     int nu = ui_menu_items(&u, items);
-    CHECK(nu == 13 && items[nu - 1] == MI_QUIT);
+    CHECK(nu == 14 && items[nu - 1] == MI_QUIT && items[nu - 2] == MI_ABOUT);
     u.emulator = 1;
     int ne = ui_menu_items(&u, items);
     int has_disk = 0, has_ctl = 0;
@@ -872,10 +873,10 @@ static void test_emulator_mode(void)
         has_disk |= items[i] == MI_DISK;
         has_ctl |= items[i] == MI_CONTROLLER;
     }
-    CHECK(ne == 14 && !has_disk && has_ctl);
+    CHECK(ne == 15 && !has_disk && has_ctl && items[ne - 2] == MI_ABOUT);
     u.disks = 2;
     ne = ui_menu_items(&u, items);
-    CHECK(ne == 15 && items[6] == MI_DISK);
+    CHECK(ne == 16 && items[6] == MI_DISK);
     ui_open_menu(&u);
     u.sel = 6;
     ui_action a = ui_input(&u, IN_LEFT);
@@ -887,6 +888,28 @@ static void test_emulator_mode(void)
     ui_open_picker(&u, NULL);
     u.sel = 2;                                                    /* no devices: emulator row */
     CHECK(ui_input(&u, IN_OK).kind == UA_EMULATOR);
+
+    /* About: opens from the menu, scrolls within the text, back returns to the menu. */
+    ui_open_menu(&u);
+    ne = ui_menu_items(&u, items);
+    u.sel = ne - 2;
+    CHECK(ui_input(&u, IN_OK).kind == UA_NONE && u.screen == UI_ABOUT && u.about_top == 0);
+    int lines;
+    const char *const *text = ui_about_text(&lines);
+    CHECK(lines > UI_ABOUT_ROWS && strstr(text[0], "PS64"));
+    int thanks = 0;
+    for (int i = 0; i < lines; i++)
+        thanks |= (strstr(text[i], "VICE") != NULL) << 0 | (strstr(text[i], "Assembly64") != NULL) << 1;
+    CHECK(thanks == 3);
+    ui_input(&u, IN_UP);
+    CHECK(u.about_top == 0);
+    for (int i = 0; i < 100; i++)
+        ui_input(&u, IN_DOWN);
+    CHECK(u.about_top == lines - UI_ABOUT_ROWS);
+    ui_input(&u, IN_L1);
+    CHECK(u.about_top == (lines - 2 * UI_ABOUT_ROWS > 0 ? lines - 2 * UI_ABOUT_ROWS : 0));
+    ui_input(&u, IN_BACK);
+    CHECK(u.screen == UI_MENU && u.sel == ne - 2);
     ui_free(&u);
 }
 

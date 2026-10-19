@@ -1,6 +1,7 @@
 #include "ui.h"
 
 #include "c64keys.h"
+#include "version.h"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -182,10 +183,10 @@ int ui_menu_items(const ui_state *u, int *out)
 {
     static const int ultimate[] = { MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS, MI_RECENTS,
                                     MI_RESET, MI_REBOOT, MI_AUDIO, MI_PORT, MI_CHOOSE, MI_INDEX,
-                                    MI_QUIT };
+                                    MI_ABOUT, MI_QUIT };
     static const int emulator[] = { MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS, MI_RECENTS,
                                     MI_DISK, MI_RESET, MI_REBOOT, MI_CONTROLLER, MI_AUDIO, MI_PORT,
-                                    MI_CHOOSE, MI_INDEX, MI_QUIT };
+                                    MI_CHOOSE, MI_INDEX, MI_ABOUT, MI_QUIT };
     const int *src = u->emulator ? emulator : ultimate;
     int n = u->emulator ? (int)(sizeof(emulator) / sizeof(emulator[0]))
                         : (int)(sizeof(ultimate) / sizeof(ultimate[0]));
@@ -228,6 +229,7 @@ static ui_action input_menu(ui_state *u, int in)
         case MI_FAVS:   ui_open_favs(u); break;
         case MI_RECENTS: ui_open_recents(u); break;
         case MI_INDEX:  return act(UA_BUILD_INDEX);
+        case MI_ABOUT:  ui_open_about(u); break;
         case MI_RESET:  ui_close(u); return act(UA_RESET);
         case MI_REBOOT: ui_close(u); return act(UA_REBOOT);
         case MI_CHOOSE: ui_open_picker(u, NULL); return act(UA_RESCAN);
@@ -1041,6 +1043,73 @@ static ui_action input_fav_list(ui_state *u, int in)
     return none();
 }
 
+/* ---- About ----------------------------------------------------------------------- */
+
+static const char *const about_text[] = {
+    "PS64 " PS64_VERSION " - the Commodore 64 on your PS5",
+    "",
+    "Two ways to play:",
+    " - Show and control a Commodore 64 Ultimate on your network: its picture",
+    "   and sound stream to the PS5, the controller types on it.",
+    " - Or use the built-in C64 emulator (VICE): no C64 needed.",
+    "Find games on the C64's storage, in the emulator's games folder",
+    "(/data/ps64/games), or in the online Assembly64 database.",
+    "Options > Choose C64 stream or emulator switches between the two.",
+    "",
+    "Controller",
+    "  D-pad / left stick    joystick (emulator) or cursor keys",
+    "  Cross                 fire, or RETURN",
+    "  Square/Triangle/O     SPACE / RETURN / RUN/STOP",
+    "  L1  R1  L2  R2        F1  F3  F5  F7",
+    "  Touchpad              on-screen C64 keyboard",
+    "  L3                    file browser (L2 there: search)",
+    "  R3                    C64 Ultimate menu button",
+    "  Options               this menu",
+    "  In lists: Triangle adds a favourite, Square shows more actions.",
+    "",
+    "On a C64 Ultimate with firmware 1.1.0, keys are typed into the C64's",
+    "keyboard buffer: they work in BASIC and menus, but not inside games, and",
+    "there is no joystick. The emulator has neither limit.",
+    "",
+    "Thanks",
+    "  VICE, the Versatile Commodore Emulator - the VICE team",
+    "  (vice-emu.sourceforge.io), and the libretro VICE core.",
+    "  Assembly64 - the Assembly64 team at hackerswithstyle.se, for the",
+    "  database of C64 software and its API.",
+    "",
+    "PS64 is free software under the GNU GPL v3.",
+    "Source: github.com/dantaipan/PS64",
+};
+
+const char *const *ui_about_text(int *count)
+{
+    *count = (int)(sizeof(about_text) / sizeof(about_text[0]));
+    return about_text;
+}
+
+void ui_open_about(ui_state *u)
+{
+    u->screen = UI_ABOUT;
+    u->about_top = 0;
+}
+
+static ui_action input_about(ui_state *u, int in)
+{
+    int count;
+    ui_about_text(&count);
+    int last = count > UI_ABOUT_ROWS ? count - UI_ABOUT_ROWS : 0;
+    switch (in) {
+    case IN_UP:   u->about_top--; break;
+    case IN_DOWN: u->about_top++; break;
+    case IN_L1:   u->about_top -= UI_ABOUT_ROWS; break;
+    case IN_R1:   u->about_top += UI_ABOUT_ROWS; break;
+    case IN_BACK:
+    case IN_OK:   u->screen = UI_MENU; break;          /* back to the menu, About still selected */
+    }
+    u->about_top = u->about_top < 0 ? 0 : u->about_top > last ? last : u->about_top;
+    return none();
+}
+
 ui_action ui_input(ui_state *u, int in)
 {
     switch (u->screen) {
@@ -1056,6 +1125,7 @@ ui_action ui_input(ui_state *u, int in)
     case UI_A64_ID:   return input_a64_id(u, in);
     case UI_FAVS:     return input_favs(u, in);
     case UI_FAV_LIST: return input_fav_list(u, in);
+    case UI_ABOUT:    return input_about(u, in);
     }
     return none();
 }

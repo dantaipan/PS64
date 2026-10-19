@@ -5,7 +5,8 @@ Generate the PS5 launcher icon (512x512 PNG) in C64 colours:
   python3 tools/gen_icon.py ps5/icon0.png
 
 Light-blue border, blue screen, "PS64" in a blocky 8x8 C64-style font and
-the rainbow stripes. Pure standard library (zlib + struct).
+the Commodore rainbow: horizontal stripes, red at the top to blue at the
+bottom, as on the machine. Pure standard library (zlib + struct).
 """
 import struct
 import sys
@@ -15,7 +16,11 @@ W = H = 512
 BORDER = (0x70, 0x6D, 0xEB)       # C64 light blue
 SCREEN = (0x2E, 0x2C, 0x9B)       # C64 blue
 TEXT = (0x70, 0x6D, 0xEB)
-STRIPES = [(0xC4, 0x6C, 0x71), (0xED, 0xF1, 0x71), (0x56, 0xAC, 0x4D), (0x75, 0xCE, 0xC8)]
+# The rainbow, top to bottom (also used by gen_backgrounds.py). The blue is lighter than
+# the C64-blue screen so it stays visible on it.
+RAINBOW = [(0xE0, 0x3A, 0x2F), (0xF0, 0x8A, 0x24), (0xF5, 0xD0, 0x2E), (0x3F, 0xA3, 0x4D),
+           (0x3B, 0x7D, 0xD8)]
+STRIPE_TOP, STRIPE_H = 286, 30    # five stripes, edge to edge across the screen
 
 GLYPHS = {
     "P": ["#####...", "##..##..", "##..##..", "#####...", "##......", "##......", "##......", "........"],
@@ -39,10 +44,8 @@ def pixel(x, y):
         gy = (y - TEXT_Y) // SCALE
         if GLYPHS[ch][gy][gx] == "#":
             return TEXT
-    for i, colour in enumerate(STRIPES):
-        off = 300 + i * 28
-        if off <= (x + (511 - y)) * 0.5 + 60 < off + 20 and y > 270:
-            return colour
+    if STRIPE_TOP <= y < STRIPE_TOP + len(RAINBOW) * STRIPE_H:
+        return RAINBOW[(y - STRIPE_TOP) // STRIPE_H]
     return SCREEN
 
 

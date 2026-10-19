@@ -25,6 +25,7 @@ mkdir -p "$STAGE/src" "$STAGE/include/SDL2" "$STAGE/include-lrc" "$STAGE/lib" "$
 cp src/*.c src/*.h "$STAGE/src/"
 cp ps5/native/src/*.c "$STAGE/src/"
 cp ps5/native/sce_sys/* "$STAGE/sce_sys/"
+python3 tools/gen_backgrounds.py "$STAGE/sce_sys"        # pic0.dds / pic1.dds (rainbow)
 cp third_party/sdl-native-build/include/SDL2/* third_party/sdl-native-build/include-config-release/SDL2/* \
    "$STAGE/include/SDL2/"
 cp third_party/dlmalloc/dlmalloc.c "$STAGE/include/"

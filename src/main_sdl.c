@@ -982,6 +982,8 @@ int main(int argc, char **argv)
         ui_open_menu(&ui);
     if (opt.ui_screen && !strcmp(opt.ui_screen, "assembly64"))
         ui_open_a64(&ui);
+    if (opt.ui_screen && !strcmp(opt.ui_screen, "about"))
+        ui_open_about(&ui);
     if (opt.ui_screen && !strncmp(opt.ui_screen, "favourites", 10)) {
         ui_open_favs(&ui);
         if (!strcmp(opt.ui_screen, "favourites-games"))

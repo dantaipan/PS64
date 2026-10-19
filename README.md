@@ -89,6 +89,8 @@ within each byte is the other way round: press `N` (or pass `--swap-nibbles`).
 | `src/emugames.[ch]` | Starting games in the emulator (games folder, Assembly64, disk lists) |
 | `src/localfs.[ch]` | The emulator's games folder and download cache |
 | `tools/get_vice.sh` | Fetches and builds the VICE core |
+| `tools/gen_icon.py`, `tools/gen_backgrounds.py` | Launcher icon and native home-screen backgrounds |
+| `src/version.h` | PS64's version (shown in About; matches the native app's contentVersion) |
 | `tests/test_emulator.c` | Drives the real core: typing, joystick, PRG/disk/.m3u starts, disk swap |
 | `tools/fake_sender.c` | Synthetic stream generator |
 | `tests/test_vicstream.c` | Video and audio decoder unit tests |
@@ -256,6 +258,13 @@ ps5/native/build.sh deploy <ps5-ip>         # build and copy to /data/homebrew/P
 
 Install by hand: copy the `PPSA06464` folder (from the zip) to `/data/homebrew/` on the PS5,
 with ShadowMountPlus running; the PS64 tile appears within seconds.
+
+Its home-screen artwork is generated: `tools/gen_icon.py` draws the icon (also used by the
+websrv build) and `tools/gen_backgrounds.py` the two 4K backgrounds (`pic0.dds` while the
+tile is selected, `pic1.dds` while it launches; BC7 DDS, written by the build), both with
+the Commodore rainbow. The PS5 keeps a copy of a title's artwork and name from when it was
+first registered (`/user/appmeta/<title>/` and `/user/app/<title>/sce_sys/`); replacing
+the app's files doesn't refresh that copy.
 
 The native app keeps its files in **`/data/ps64/`** (settings `ps64.cfg`, favourites,
 recents, search indexes, the emulator's `games/` and `emulator/` folders), because a store
