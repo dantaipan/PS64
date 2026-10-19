@@ -129,6 +129,40 @@ Goal: let people without a C64 Ultimate use PS64 with a built-in emulator. Spike
   folder launch, Assembly64 download path, power cycle) and the Mac app (Boulder Dash from the
   games folder and from Assembly64). PS5 build: eboot.elf 6.8 MB.
 
+## Native app (Prospero Store) spike, 2026-10-19: passed
+
+Goal: list PS64 on prosperostore.net (catalog: github.com/darkxex/ps5-homebrew-catalog), which
+only takes native apps (`PPSAxxxxx/eboot.bin` + `sce_sys/param.json`, mounted by ShadowMountPlus).
+**Title ID `PPSA06464` is reserved for PS64** (catalog PR #427, merged). Listing also needs a
+public repo, a release tagged with the version (e.g. `01.000.000`) carrying `PPSA06464.zip`,
+`contentVersion` raised each release, and a PR adding the full record.
+
+Spike in `spikes/native/` (gitignored): blackbearreloaded/ps5-native-app-boilerplate built in a
+Docker image (`ps64-native` = `ps64-ps5-sdk` + ninja, ccache, clang-format/tidy, pkg-config),
+`make init TITLE_ID=PPSA06464`, then a C test app with SDL2; `make deploy PS5_HOST=...`.
+On the PS5 everything PS64 needs works: SDL picture, controller, sound, `/data` and `/download0`
+writes (ShadowMountPlus mounts `/data` into the sandbox; no elevation), C64 REST + FTP,
+Assembly64 DNS + HTTP, the C64's UDP video stream at full rate. What it took:
+
+1. **Heap**: the C library heap in a native app is ~5 MB. `malloc` & co. go to dlmalloc
+   (gee.cs.oswego.edu, 2.8.6) in one mmap'd block (`--wrap` malloc free calloc realloc
+   posix_memalign memalign aligned_alloc; free/realloc pass foreign pointers to the real ones).
+   1 GB/768/512 MB mmaps failed, 384 MB succeeded (the flexible-memory budget is ~450 MB);
+   direct memory (separate) also works.
+2. **Sockets**: `fcntl(O_NONBLOCK)` doesn't take effect on sockets; a non-blocking recv blocked
+   forever (looked like a black screen). Wrap `fcntl`: on sockets set `SO_NBIO` (0x1200).
+3. **Host names**: `getaddrinfo` isn't usable (crash at address 0); use `sceNetResolver` first.
+4. **SDL**: PS64's SDL (ps5-payload-dev/SDL `ee4c47d`), rebuilt with patches: flush the frame
+   from the CPU cache before each flip, 100 ms timeout on the flip-event wait. SDL's USB
+   keyboard and IME dialog calls are wrapped to "not available" (their modules aren't loaded
+   in a native app: crash at address 0). PacBrew's SDL2 also links, with `-L` to the SDK stubs.
+5. **libc gaps**: `nl_langinfo`, `___mb_cur_max` stand-ins.
+6. **Quitting**: returning from `main` is SIGSYS; call `sceSystemServiceLoadExec("exit", NULL)`.
+7. Drew at 30 fps because the test loop also slept 16 ms after the vsync'd present.
+- Debugging: ShadowMountPlus's `/data/shadowmount/debug.log` shows crashes (signal, RIP,
+  return address; map with llvm-symbolizer on `build/llvm-pie.elf`, base 0x400000). After PS5
+  rest mode ShadowMountPlus stopped scanning until restarted (new tiles didn't appear).
+
 ## Working conventions
 
 - Build: `make` / `make test` (Mac; run `tools/get_sdl2.sh` once), `ps5/build.sh all dist`,
@@ -146,4 +180,5 @@ Goal: let people without a C64 Ultimate use PS64 with a built-in emulator. Spike
 - Try Assembly64 search end to end on the PS5 now that the client ID is configured.
 - Try emulator mode on the PS5 (speed, sound, controller, Assembly64 downloads).
 - Possible later: SID playback in the emulator (a PSID player stub), save states.
+- Convert PS64 to a native app (PPSA06464) using the spike's findings, then list it.
 - Optional: faster disk loading (Ultimate drive/speed settings), not investigated.
