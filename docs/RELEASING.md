@@ -37,6 +37,11 @@ Only one app runs at a time on the PS5, so the two never compete for the C64's s
 The dev ID is never listed in the catalog; reserving it too (up to five reservations per
 account) keeps anyone else from using it.
 
+A brand-new install (the first `dev deploy`) gets its tile when ShadowMountPlus next
+registers folders. On the user's PS5 (fw 13.42) that reliably happened only after a restart and
+the jailbreak (its start-up sync); new folders were not always picked up while it was running.
+Later deploys of the same title just replace files, and the tile stays.
+
 The dev build has its own games folder too (`/data/ps64-dev/games`); to share the store
 copy's, add `games-dir = /data/ps64/games` to `/data/ps64-dev/ps64.cfg`.
 `ps5/native/build.sh deploy <ps5-ip>` (without `dev`) installs the store app into
