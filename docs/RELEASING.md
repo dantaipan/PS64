@@ -3,8 +3,11 @@
 How PS64 gets to the Prospero Store, how updates reach people, and how to test a new
 version on the PS5 next to the copy installed from the store.
 
-Status (2026-10-19): the native app works; title ID `PPSA06464` is reserved in the catalog;
-the dev build and `ps5/native/release.sh` are ready. Not done yet: the first store release.
+Status (2026-10-19): **1.0.0 released** (GitHub release `01.000.000`); the repository is
+public; catalog pull request darkxex/ps5-homebrew-catalog#435 (filling in the `PPSA06464`
+reservation) passed its checks and awaits a maintainer's review. The old websrv "alpha"
+release was deleted. Commits use the private GitHub address
+`642598+dantaipan@users.noreply.github.com` (history rewritten before going public).
 
 ## How the store works
 

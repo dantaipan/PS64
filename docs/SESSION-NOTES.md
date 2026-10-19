@@ -214,6 +214,7 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
 - Try Assembly64 search end to end on the PS5 now that the client ID is configured.
 - Try emulator mode on the PS5 (speed, sound, controller, Assembly64 downloads).
 - Possible later: SID playback in the emulator (a PSID player stub), save states.
+- 1.0.0 released 2026-10-19; catalog PR #435 awaiting review (see `docs/RELEASING.md`).
 - Store release and the update process: `docs/RELEASING.md`; dev build
   (`ps5/native/build.sh dev`, PPSA06465 "PS64 Dev", /data/ps64-dev) and
   `ps5/native/release.sh` (with `--dry-run`) are ready. Publishing only with the user's go-ahead.
