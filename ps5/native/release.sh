@@ -67,7 +67,7 @@ sed -i '' "s/^#define PS64_VERSION \".*\"/#define PS64_VERSION \"$HUMAN\"/" src/
 grep -q "PS64_VERSION \"$HUMAN\"" src/version.h || { restore; die "couldn't set src/version.h"; }
 
 echo "== tests"
-make -s test >/dev/null || { restore; die "make test failed"; }
+make -s test >/dev/null 2>&1 || { restore; die "make test failed (run make test to see why)"; }
 echo "== building PPSA06464.zip"
 ps5/native/build.sh >/dev/null || { restore; die "native build failed"; }
 ZIP=ps5/native/out/PPSA06464.zip

@@ -3,9 +3,8 @@
 How PS64 gets to the Prospero Store, how updates reach people, and how to test a new
 version on the PS5 next to the copy installed from the store.
 
-Status (2026-10-19): the native app works; title ID `PPSA06464` is reserved in the catalog.
-Not done yet: first store release, the dev build option and `release.sh` (marked
-**planned** below).
+Status (2026-10-19): the native app works; title ID `PPSA06464` is reserved in the catalog;
+the dev build and `ps5/native/release.sh` are ready. Not done yet: the first store release.
 
 ## How the store works
 
@@ -26,19 +25,22 @@ Not done yet: first store release, the dev build option and `release.sh` (marked
 The PS5 allows one install per title ID, so a dev build can't use `PPSA06464` once the store
 copy is installed: deploying into `/data/homebrew/PPSA06464` would overwrite the store's copy.
 
-| | Store copy | Dev build (**planned**) |
+| | Store copy | Dev build |
 | --- | --- | --- |
 | Title ID | `PPSA06464` | a second ID, e.g. `PPSA06465` |
 | Tile name | PS64 | PS64 Dev |
 | Installed by | Prospero Store (Install / Update) | `ps5/native/build.sh dev deploy <ps5-ip>` |
-| Settings and data | `/data/ps64` | `/data/ps64-dev` (first start copies settings from `/data/ps64`) |
+| Built in | `ps5/native/out/PPSA06464/` | `ps5/native/out/PPSA06465/` |
+| Settings and data | `/data/ps64` | `/data/ps64-dev` (first start copies settings, lists and indexes from `/data/ps64`, else `/data/homebrew/PS64`) |
 
 Only one app runs at a time on the PS5, so the two never compete for the C64's streams.
 The dev ID is never listed in the catalog; reserving it too (up to five reservations per
 account) keeps anyone else from using it.
 
-Until the dev option exists, `ps5/native/build.sh deploy <ps5-ip>` installs into
-`/data/homebrew/PPSA06464` (fine while no store copy is installed).
+The dev build has its own games folder too (`/data/ps64-dev/games`); to share the store
+copy's, add `games-dir = /data/ps64/games` to `/data/ps64-dev/ps64.cfg`.
+`ps5/native/build.sh deploy <ps5-ip>` (without `dev`) installs the store app into
+`/data/homebrew/PPSA06464`: only for testing before PS64 is installed from the store.
 
 ## Release cycle
 
@@ -47,7 +49,12 @@ Until the dev option exists, `ps5/native/build.sh deploy <ps5-ip>` installs into
    - `contentVersion` in `ps5/native/sce_sys/param.json`, e.g. `01.000.001`
      (format `NN.NNN.NNN`; consoles only see an update when it goes up);
    - `PS64_VERSION` in `src/version.h`, e.g. `1.0.1` (shown in About).
-3. **Commit, tag and release** (**planned**: `ps5/native/release.sh 01.000.001` does all of it):
+3. **Commit, tag and release**: `ps5/native/release.sh 01.000.001 notes.md` does steps 2-3
+   (try it first with `--dry-run`: tests and builds, publishes nothing, restores the version
+   files). It checks the repo is clean, on `main` and public, the version is higher and not
+   tagged yet; runs `make test`; builds; shows a summary and asks before it commits, tags,
+   pushes and publishes; then prints the SHA-256 and writes the catalog record to
+   `ps5/native/out/PPSA06464.json`. By hand, the steps are:
    - commit, then tag the commit with the version (`01.000.001`; never a moving tag such
      as `latest`);
    - `ps5/native/build.sh`, which gives `ps5/native/out/PPSA06464.zip`;
@@ -74,9 +81,11 @@ Until the dev option exists, `ps5/native/build.sh deploy <ps5-ip>` installs into
   or keep it as a clearly websrv-only release; it shouldn't look like a store release.
 - Optional: turn on GitHub's **immutable releases** for the repository (recommended by the
   catalog), so a listed asset can't be replaced by accident.
-- Release `01.000.000` as above.
+- Release `01.000.000` as above: `ps5/native/release.sh 01.000.000 notes.md` (the first
+  release may use the current version).
 - Open the catalog pull request that fills in the reservation `apps/PPSA06464.json`
-  (it currently has nulls): `version` `01.000.000`, `source_repo`
+  (it currently has nulls) with the record `release.sh` wrote to
+  `ps5/native/out/PPSA06464.json`: `version` `01.000.000`, `source_repo`
   `https://github.com/dantaipan/PS64`, `artifact_url`
   `https://github.com/dantaipan/PS64/releases/download/01.000.000/PPSA06464.zip`, `sha256`,
   `icon_url` pinned to the tag

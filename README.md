@@ -254,6 +254,8 @@ of being launched from websrv, and it is the form the Prospero Store installs.
 ```sh
 ps5/native/build.sh                         # -> ps5/native/out/PPSA06464/ and PPSA06464.zip
 ps5/native/build.sh deploy <ps5-ip>         # build and copy to /data/homebrew/PPSA06464
+ps5/native/build.sh dev deploy <ps5-ip>     # "PS64 Dev" (PPSA06465), next to the store copy
+ps5/native/release.sh 01.000.001 notes.md   # store release (--dry-run to try it)
 ```
 
 Install by hand: copy the `PPSA06464` folder (from the zip) to `/data/homebrew/` on the PS5,
