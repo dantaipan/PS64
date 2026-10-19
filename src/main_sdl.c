@@ -708,6 +708,16 @@ static void copy_file(const char *from, const char *to)
     fclose(in);
 }
 
+/* (access() doesn't report existing files reliably in a native app: it said
+ * "missing" for a file it had just written, so the copied config was overwritten.) */
+static int file_exists(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (f)
+        fclose(f);
+    return f != NULL;
+}
+
 static void native_first_run(void)
 {
     mkdir(NATIVE_DIR, 0777);
@@ -720,10 +730,10 @@ static void native_first_run(void)
         char from[256], to[256];
         snprintf(from, sizeof(from), "/data/homebrew/PS64/%s", files[i][0]);
         snprintf(to, sizeof(to), NATIVE_DIR "/%s", files[i][1]);
-        if (access(to, F_OK) != 0)
+        if (!file_exists(to))
             copy_file(from, to);
     }
-    if (access(NATIVE_DIR "/ps64.cfg", F_OK) != 0) {
+    if (!file_exists(NATIVE_DIR "/ps64.cfg")) {
         FILE *f = fopen(NATIVE_DIR "/ps64.cfg", "w");
         if (f) {
             fputs("# PS64 settings: one \"key = value\" per line (see INSTALL.txt).\n", f);

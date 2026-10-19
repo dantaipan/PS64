@@ -84,9 +84,15 @@ static void set_var(const char *key, const char *value)
 
 /* ---- libretro callbacks ------------------------------------------------------- */
 
+#ifdef PS64_NATIVE
+#define LOG_LEVEL RETRO_LOG_INFO          /* the native app's log is the only window into it */
+#else
+#define LOG_LEVEL RETRO_LOG_WARN
+#endif
+
 static void log_cb(enum retro_log_level level, const char *fmt, ...)
 {
-    if (level < RETRO_LOG_WARN)
+    if (level < LOG_LEVEL)
         return;
     va_list ap;
     va_start(ap, fmt);
@@ -374,7 +380,9 @@ int emulator_start(const char *dir, int joystick_port)
     retro_set_audio_sample_batch(audio_batch);
     retro_set_input_poll(input_poll);
     retro_set_input_state(input_state);
+    printf("emulator: starting the core\n");
     retro_init();
+    printf("emulator: booting\n");
     if (!retro_load_game(NULL)) {
         retro_deinit();
         return -1;
@@ -383,6 +391,7 @@ int emulator_start(const char *dir, int joystick_port)
     retro_get_system_av_info(&av);
     /* The core finishes setting up in its first frame; loading before that
      * would set it up a second time (and crash). */
+    printf("emulator: first frame\n");
     retro_run();
     running = 1;
     printf("emulator: %ux%u, %.3f fps, audio %.0f Hz\n", av.geometry.base_width,

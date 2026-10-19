@@ -283,6 +283,28 @@ uint32_t arc4random(void)
     return r;
 }
 
+/* ---- the current folder ------------------------------------------------------------- */
+
+/* The C library's getcwd crashes in a native app (VICE asks for it while booting).
+ * A native app's current folder is its own, /app0. Selected with --wrap=getcwd. */
+char *__wrap_getcwd(char *buf, size_t size);
+char *__wrap_getcwd(char *buf, size_t size)
+{
+    static const char cwd[] = "/app0";
+    if (!buf) {
+        size = size ? size : sizeof(cwd);
+        buf = malloc(size);
+        if (!buf)
+            return NULL;
+    }
+    if (size < sizeof(cwd)) {
+        errno = ERANGE;
+        return NULL;
+    }
+    memcpy(buf, cwd, sizeof(cwd));
+    return buf;
+}
+
 /* ---- odds and ends ------------------------------------------------------------------ */
 
 struct timespec;

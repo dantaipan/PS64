@@ -163,19 +163,25 @@ Assembly64 DNS + HTTP, the C64's UDP video stream at full rate. What it took:
   return address; map with llvm-symbolizer on `build/llvm-pie.elf`, base 0x400000). After PS5
   rest mode ShadowMountPlus stopped scanning until restarted (new tiles didn't appear).
 
-## Native app build (2026-10-19, not yet run on the PS5)
+## Native app build (2026-10-19): runs on the PS5
 
 `ps5/native/build.sh [deploy <ps5-ip>]` builds PS64 as `PPSA06464` (see README "Native PS5
-app"). Status: builds cleanly (eboot.bin 5.7 MB, zip 2.2 MB) with VICE; imports only system
-modules the spike proved (no WebKit POSIX, keyboard, IME or notification modules). Not yet
-run on the PS5: the PS5 was off when it was ready. Beyond the spike, it needed:
+app"). Status: tested by the user on the PS5 (fw 13.42): C64 streaming, controller and typing,
+on-screen keyboard, menu, file browser + search, Assembly64, and the emulator (Boulder Dash
+from Assembly64 with sound, keyboard and joystick) all work. Imports only system modules the
+spike proved. Beyond the spike, it needed:
 - the SDK's static libc++/libc++abi/libunwind for VICE's reSID-fp (iostreams, exceptions),
   so `libc_native.c` adds "C"-locale stand-ins (`*_l` functions, newlocale, rune tables,
   catopen...), `__emutls_get_address` (pthread keys), `__assert`, `__dso_handle`, and
   `arc4random`/`isatty`/`strcasestr` (otherwise only in libScePosixForWebKit);
 - boilerplate.patch: `-L` to the SDK libs (libc++ asks for libpthread by name) and
   `__eh_frame_*` symbols in the linker script for the C++ unwinder;
-- archive names limited to `[A-Za-z0-9_.-]` (libc++.a staged as libcxx.a).
+- archive names limited to `[A-Za-z0-9_.-]` (libc++.a staged as libcxx.a);
+- `getcwd` crashes in a native app (VICE calls it while booting): wrapped to return `/app0`;
+- `access()` reported an existing file as missing, so the first-run copy overwrote the copied
+  config: existence is checked with fopen. Like getaddrinfo, some libc calls that resolve
+  fine still fail in the sandbox; ShadowMountPlus logs crash details only in an app's first
+  60 s, so reproduce early (e.g. `c64 = emulator` to start straight into the emulator).
 Native-only behaviour in `main_sdl.c` (`PS64_NATIVE`): own `main` (no SDL_main; fake argv),
 quit via `sceSystemServiceLoadExec("exit")`, files in `/data/ps64` (first run copies cfg,
 favourites, recents, indexes from `/data/homebrew/PS64`), log `/data/ps64/ps64.log`, no

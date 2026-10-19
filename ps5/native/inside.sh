@@ -38,7 +38,7 @@ cp "$SDK/target/lib/libc++abi.a" "$STAGE/lib/libcxxabi.a"
 cp "$SDK/target/lib/libunwind.a" "$STAGE/lib/libunwind.a"
 
 # 4. Build. Wrapped functions (--wrap): see ps5/native/src.
-WRAP="malloc free calloc realloc posix_memalign memalign aligned_alloc fcntl
+WRAP="malloc free calloc realloc posix_memalign memalign aligned_alloc fcntl getcwd
       sceKeyboardInit sceKeyboardOpen sceKeyboardClose sceKeyboardReadState
       sceImeDialogInit sceImeDialogGetStatus sceImeDialogGetResult sceImeDialogTerm"
 ARGS=(APP_SOURCE_DIR=ps64/src APP_SCE_SYS=ps64/sce_sys APP_PARAM=ps64/sce_sys/param.json APP_ASSETS=
