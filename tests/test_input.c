@@ -777,6 +777,31 @@ static void test_favs(void)
     fav_free(&recents);
 }
 
+/* Drive A's device number from GET /v1/drives (the C64 Ultimate 1.1.0 layout). */
+static void test_drive_a(void)
+{
+    static const char real[] =
+        "{\n  \"drives\": [{\n      \"a\": {\n        \"enabled\": true,\n        \"bus_id\": 8,\n"
+        "        \"type\": \"1541\",\n        \"rom\": \"1541.rom\",\n"
+        "        \"image_file\": \"/SD/games/_favourites/H.E.R.O/Disk1.d64\",\n        \"image_path\": \"\"\n"
+        "      }\n    }, {\n      \"b\": {\n        \"enabled\": false,\n        \"bus_id\": 9\n      }\n"
+        "    }, {\n      \"IEC Drive\": {\n        \"bus_id\": 11,\n        \"enabled\": false,\n"
+        "        \"partitions\": [{\"id\": 0, \"path\": \"/USB0/\"}]\n      }\n    }],\n  \"errors\": []\n}";
+    int bus = 0, on = 0;
+    CHECK(files_parse_drive_a(real, &bus, &on) == 0 && bus == 8 && on == 1);
+    /* Moved to 9 to make room for a real 1541 on 8. */
+    CHECK(files_parse_drive_a("{\"drives\":[{\"a\":{\"bus_id\":9,\"enabled\":true}},"
+                              "{\"b\":{\"enabled\":false,\"bus_id\":8}}]}", &bus, &on) == 0 &&
+          bus == 9 && on == 1);
+    /* Drive B's values don't leak into drive A's. */
+    CHECK(files_parse_drive_a("{\"drives\":[{\"a\":{\"enabled\":false,\"bus_id\":10}},"
+                              "{\"b\":{\"enabled\":true,\"bus_id\":8}}]}", &bus, &on) == 0 &&
+          bus == 10 && on == 0);
+    CHECK(files_parse_drive_a("{\"drives\":[{\"b\":{\"bus_id\":9}}]}", &bus, &on) == -1);
+    CHECK(files_parse_drive_a("not json", &bus, &on) == -1);
+    CHECK(files_parse_drive_a("{\"a\": {\"enabled\": true}}", &bus, &on) == -1);   /* no bus_id */
+}
+
 /* The emulator's folders, and what each machine can do with a file type. */
 static void test_emulator_mode(void)
 {
@@ -916,6 +941,7 @@ static void test_emulator_mode(void)
 int main(void)
 {
     test_emulator_mode();
+    test_drive_a();
     test_favs();
     test_a64();
     test_index();

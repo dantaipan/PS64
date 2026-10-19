@@ -52,6 +52,13 @@ int  files_pick_launch(const char *const *names, int n);
 /* Find "READY." in 1000 bytes of screen memory (screen codes). */
 int  files_screen_ready(const unsigned char *screen, int len);
 
+/*
+ * Drive A in the Ultimate's GET /v1/drives answer: its bus ID (device number,
+ * 8 unless changed, e.g. to make room for a real 1541 on 8) and whether it's
+ * on. Returns 0 if drive A was found.
+ */
+int  files_parse_drive_a(const char *json, int *bus_id, int *enabled);
+
 enum { FR_NONE, FR_LISTING, FR_DONE, FR_ERROR };
 
 typedef struct {

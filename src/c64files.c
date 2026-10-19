@@ -135,6 +135,44 @@ int files_pick_launch(const char *const *names, int n)
     return -1;
 }
 
+/* The value after "key": inside [p, end), or NULL. */
+static const char *json_value(const char *p, const char *end, const char *key)
+{
+    size_t klen = strlen(key);
+    for (; p + klen + 2 < end; p++) {
+        if (*p == '"' && !strncmp(p + 1, key, klen) && p[1 + klen] == '"') {
+            const char *v = p + 2 + klen;
+            while (v < end && (*v == ' ' || *v == '\t' || *v == '\n' || *v == '\r'))
+                v++;
+            if (v < end && *v == ':') {
+                v++;
+                while (v < end && (*v == ' ' || *v == '\t' || *v == '\n' || *v == '\r'))
+                    v++;
+                return v;
+            }
+        }
+    }
+    return NULL;
+}
+
+int files_parse_drive_a(const char *json, int *bus_id, int *enabled)
+{
+    const char *end = json + strlen(json);
+    const char *a = json_value(json, end, "a");
+    if (!a || *a != '{')
+        return -1;
+    const char *close = strchr(a, '}');        /* drive objects hold no nested objects */
+    if (!close)
+        return -1;
+    const char *id = json_value(a, close, "bus_id");
+    const char *on = json_value(a, close, "enabled");
+    if (!id || *id < '0' || *id > '9')
+        return -1;
+    *bus_id = atoi(id);
+    *enabled = !on || !strncmp(on, "true", 4);
+    return 0;
+}
+
 int files_screen_ready(const unsigned char *screen, int len)
 {
     static const unsigned char ready[6] = { 0x12, 0x05, 0x01, 0x04, 0x19, 0x2E };  /* READY. */
@@ -213,6 +251,36 @@ static int restart_and_wait(c64files *f, const char *route)
     return -2;
 }
 
+/*
+ * Device number of the Ultimate's drive A, read just before loading (8 if the
+ * C64 doesn't say). Returns -1 with a message if drive A is switched off.
+ */
+static int drive_a_device(c64files *f, char *msg, size_t cap)
+{
+    char json[2048];
+    size_t got = 0;
+    int bus = 8, on = 1;
+    if (c64api_request(&f->api, "GET", "/v1/drives", NULL, NULL, 0, json, sizeof(json) - 1,
+                       &got) == 200) {
+        json[got] = 0;
+        if (files_parse_drive_a(json, &bus, &on) != 0)
+            bus = 8, on = 1;
+    }
+    if (!on) {
+        snprintf(msg, cap, "Drive A is switched off in the C64 Ultimate's settings");
+        return -1;
+    }
+    return bus;
+}
+
+/* LOAD"*",<device>,1 and RUN. */
+static void type_load_run(c64files *f, int device)
+{
+    char cmd[40];
+    snprintf(cmd, sizeof(cmd), "LOAD\"*\",%d,1\nRUN\n", device);
+    type_text(f->rem, cmd);
+}
+
 static int post_data(c64files *f, const char *route, const unsigned char *data, size_t len)
 {
     return c64api_request(&f->api, "POST", route, "application/octet-stream", data, len,
@@ -243,7 +311,10 @@ static int do_data_action(c64files *f, const char *name, const unsigned char *da
                  action == FA_MOUNT_A ? 'a' : 'b', type);
         status = post_data(f, route, data, len);
         break;
-    case FA_MOUNT_RUN:
+    case FA_MOUNT_RUN: {
+        int device = drive_a_device(f, msg, cap);
+        if (device < 0)
+            return -1;
         status = restart_and_wait(f, "/v1/machine:reboot");
         if (status == -2) {
             snprintf(msg, cap, "The C64 didn't reach READY. after rebooting");
@@ -254,8 +325,9 @@ static int do_data_action(c64files *f, const char *name, const unsigned char *da
         snprintf(route, sizeof(route), "/v1/drives/a:mount?type=%s", type);
         status = post_data(f, route, data, len);
         if (status >= 200 && status < 300 && f->rem)
-            type_text(f->rem, "LOAD\"*\",8,1\nRUN\n");
+            type_load_run(f, device);
         break;
+    }
     default:
         snprintf(msg, cap, "Nothing to do for %s", name);
         return -1;
@@ -308,6 +380,10 @@ static int do_action(c64files *f, const char *path, int action, char *msg, size_
         snprintf(msg, cap, "Mounted %s on drive %c", name, action == FA_MOUNT_A ? 'A' : 'B');
         break;
     case FA_MOUNT_RUN: {
+        /* Drive A's device number: 8 unless moved (e.g. for a real 1541 on 8). */
+        int device = drive_a_device(f, msg, cap);
+        if (device < 0)
+            return -1;
         /* Reboot first: mounting while a game runs can crash it, and a plain
          * reset would restart a cartridge game instead of reaching BASIC. */
         status = restart_and_wait(f, "/v1/machine:reboot");
@@ -321,8 +397,11 @@ static int do_action(c64files *f, const char *path, int action, char *msg, size_
         if (status < 200 || status >= 300)
             break;
         if (f->rem)
-            type_text(f->rem, "LOAD\"*\",8,1\nRUN\n");
-        snprintf(msg, cap, "Mounted %s - loading", name);
+            type_load_run(f, device);
+        if (device == 8)
+            snprintf(msg, cap, "Mounted %s - loading", name);
+        else
+            snprintf(msg, cap, "Mounted %s - loading from drive %d", name, device);
         return 0;
     }
     case FA_LAUNCH_FOLDER: {
