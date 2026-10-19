@@ -38,7 +38,7 @@ def pixel(x, y):
     if x < 40 or x >= 472 or y < 40 or y >= 472:
         return BORDER
     width = len(TEXT_STR) * 8 * SCALE
-    tx = (W - width) // 2
+    tx = STRIPE_X                 # the P lines up with the rainbow bands
     if TEXT_Y <= y < TEXT_Y + 8 * SCALE and tx <= x < tx + width:
         ch = TEXT_STR[(x - tx) // (8 * SCALE)]
         gx = ((x - tx) % (8 * SCALE)) // SCALE
