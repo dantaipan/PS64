@@ -3,9 +3,10 @@
 How PS64 gets to the Prospero Store, how updates reach people, and how to test a new
 version on the PS5 next to the copy installed from the store.
 
-Status (2026-10-19): **1.0.0 released** (GitHub release `01.000.000`); the repository is
-public; catalog pull request darkxex/ps5-homebrew-catalog#435 (filling in the `PPSA06464`
-reservation) passed its checks and awaits a maintainer's review. The old websrv "alpha"
+Status (2026-10-19): **1.0.0 released and listed** (GitHub release `01.000.000`;
+https://prosperostore.net/app/PPSA06464/, catalog pull request #435 merged). The repository
+is public. **Next release** collects fixes for a few days: changes go into
+`docs/release-notes/01.000.001.md` as they're made; release when it's ready. The old websrv "alpha"
 release was deleted. Commits use the private GitHub address
 `642598+dantaipan@users.noreply.github.com` (history rewritten before going public).
 
