@@ -25,12 +25,16 @@ from gen_icon import RAINBOW, SCREEN  # noqa: E402  (same colours as the icon)
 W, H = 3840, 2160
 STRIPE_X = 1920                  # stripes run from here to the right edge
 STRIPE_H = 120
+STRIPE_GAP = 24                  # C64 blue between the stripes
 STRIPE_TOP = 1000                # a little below the middle, like the badge
 
 
 def colour(x, y):
-    if x >= STRIPE_X and STRIPE_TOP <= y < STRIPE_TOP + len(RAINBOW) * STRIPE_H:
-        return RAINBOW[(y - STRIPE_TOP) // STRIPE_H]
+    pitch = STRIPE_H + STRIPE_GAP
+    if x >= STRIPE_X and STRIPE_TOP <= y < STRIPE_TOP + len(RAINBOW) * pitch:
+        i, within = divmod(y - STRIPE_TOP, pitch)
+        if within < STRIPE_H:
+            return RAINBOW[i]
     return SCREEN
 
 
