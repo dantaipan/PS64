@@ -92,7 +92,8 @@ if [[ $YES != --yes ]]; then
 fi
 
 git add "$PARAM" src/version.h
-git commit -q -m "Release PS64 $HUMAN ($VERSION)"
+# (The first release keeps the current version: nothing to commit then.)
+git diff --cached --quiet || git commit -q -m "Release PS64 $HUMAN ($VERSION)"
 git tag -a "$VERSION" -m "PS64 $HUMAN"
 git push -q origin main
 git push -q origin "$VERSION"
