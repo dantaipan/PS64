@@ -163,6 +163,27 @@ Assembly64 DNS + HTTP, the C64's UDP video stream at full rate. What it took:
   return address; map with llvm-symbolizer on `build/llvm-pie.elf`, base 0x400000). After PS5
   rest mode ShadowMountPlus stopped scanning until restarted (new tiles didn't appear).
 
+## Native app build (2026-10-19, not yet run on the PS5)
+
+`ps5/native/build.sh [deploy <ps5-ip>]` builds PS64 as `PPSA06464` (see README "Native PS5
+app"). Status: builds cleanly (eboot.bin 5.7 MB, zip 2.2 MB) with VICE; imports only system
+modules the spike proved (no WebKit POSIX, keyboard, IME or notification modules). Not yet
+run on the PS5: the PS5 was off when it was ready. Beyond the spike, it needed:
+- the SDK's static libc++/libc++abi/libunwind for VICE's reSID-fp (iostreams, exceptions),
+  so `libc_native.c` adds "C"-locale stand-ins (`*_l` functions, newlocale, rune tables,
+  catopen...), `__emutls_get_address` (pthread keys), `__assert`, `__dso_handle`, and
+  `arc4random`/`isatty`/`strcasestr` (otherwise only in libScePosixForWebKit);
+- boilerplate.patch: `-L` to the SDK libs (libc++ asks for libpthread by name) and
+  `__eh_frame_*` symbols in the linker script for the C++ unwinder;
+- archive names limited to `[A-Za-z0-9_.-]` (libc++.a staged as libcxx.a).
+Native-only behaviour in `main_sdl.c` (`PS64_NATIVE`): own `main` (no SDL_main; fake argv),
+quit via `sceSystemServiceLoadExec("exit")`, files in `/data/ps64` (first run copies cfg,
+favourites, recents, indexes from `/data/homebrew/PS64`), log `/data/ps64/ps64.log`, no
+PS5 notifications, no 4 ms loop delay (present already waits for the display).
+Test plan on the PS5: tile appears; streaming + controller + typing; menu; file browser and
+search over FTP; Assembly64 search + download; emulator (Boulder Dash) with sound and
+joystick; favourites/recents carried over; Options > Quit returns cleanly.
+
 ## Working conventions
 
 - Build: `make` / `make test` (Mac; run `tools/get_sdl2.sh` once), `ps5/build.sh all dist`,
@@ -180,5 +201,6 @@ Assembly64 DNS + HTTP, the C64's UDP video stream at full rate. What it took:
 - Try Assembly64 search end to end on the PS5 now that the client ID is configured.
 - Try emulator mode on the PS5 (speed, sound, controller, Assembly64 downloads).
 - Possible later: SID playback in the emulator (a PSID player stub), save states.
-- Convert PS64 to a native app (PPSA06464) using the spike's findings, then list it.
+- Run the native app on the PS5 (test plan above), then: public repo, tag 01.000.000 with
+  PPSA06464.zip, catalog PR (only with the user's go-ahead).
 - Optional: faster disk loading (Ultimate drive/speed settings), not investigated.

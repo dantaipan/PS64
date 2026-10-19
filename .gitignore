@@ -8,6 +8,7 @@
 *.o
 *.dSYM/
 ps5/out/
+ps5/native/out/
 
 # Downloaded by tools/get_sdl2.sh and tools/get_vice.sh
 third_party/

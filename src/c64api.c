@@ -60,6 +60,9 @@ static int resolve(const char *host, struct in_addr *out)
 {
     if (inet_pton(AF_INET, host, out) == 1)
         return 0;
+#ifdef PS64_NATIVE
+    return sce_resolve(host, out);          /* getaddrinfo isn't usable in a native app */
+#endif
     struct addrinfo hints, *res = NULL;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;

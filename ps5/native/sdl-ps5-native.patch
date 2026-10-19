@@ -1,0 +1,50 @@
+diff --git a/src/video/ps5/SDL_ps5video.c b/src/video/ps5/SDL_ps5video.c
+index a62be0e8e..5915a9eda 100644
+--- a/src/video/ps5/SDL_ps5video.c
++++ b/src/video/ps5/SDL_ps5video.c
+@@ -64,6 +64,21 @@ static int PS5_CreateWindowFramebuffer(_THIS, SDL_Window *window,
+     return 0;
+ }
+ 
++/* Counters the app can read (PS64 native build): flips that timed out waiting. */
++int SDL_PS5_flip_timeouts = 0;
++int SDL_PS5_frames = 0;
++
++/* Make sure the frame left the CPU caches before the display reads it. */
++static void PS5_FlushRange(void *address, size_t length)
++{
++    uint8_t *at = (uint8_t *)address;
++    uint8_t *end = at + length;
++    for (; at < end; at += 64) {
++        __asm__ volatile("clflush (%0)" : : "r"(at) : "memory");
++    }
++    __asm__ volatile("mfence" ::: "memory");
++}
++
+ static int PS5_UpdateWindowFramebuffer(_THIS, SDL_Window *window,
+                                        const SDL_Rect *rects, int numrects)
+ {
+@@ -98,14 +113,21 @@ static int PS5_UpdateWindowFramebuffer(_THIS, SDL_Window *window,
+                          (device_data->surface->h - surface->h) / 2);
+     }
+ 
++    /* A 1920x1080 tiled frame: 1088 rows of 32-bit pixels. */
++    PS5_FlushRange(device_data->vbuf[idx].data, (size_t)device_data->surface->w * 1088 * 4);
++
+     if (sceVideoOutSubmitFlip(device_data->handle, idx, 1, frame_id)) {
+         return SDL_SetError("sceVideoOutSubmitFlip: %s", strerror(errno));
+     }
+ 
+-    if (sceKernelWaitEqueue(device_data->evt_queue, &evt, 1, &junk, 0)) {
+-        return SDL_SetError("sceKernelWaitEqueue: %s", strerror(errno));
++    {
++        uint timeout_us = 100000;           /* don't hang if the flip event never comes */
++        if (sceKernelWaitEqueue(device_data->evt_queue, &evt, 1, &junk, &timeout_us)) {
++            SDL_PS5_flip_timeouts++;
++        }
+     }
+     frame_id++;
++    SDL_PS5_frames++;
+ 
+     return 0;
+ }

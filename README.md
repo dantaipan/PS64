@@ -133,6 +133,7 @@ settings, and **FTP** for the file browser.
 | `ps5/ps64.cfg` | Default settings copied next to `eboot.elf` |
 | `ps5/INSTALL.txt` | Install notes shipped in the zip |
 | `ps5/icon0.png` | Launcher icon |
+| `ps5/native/` | Native-app build (`PPSA06464`): scripts, `param.json`, patches, native-only sources |
 
 ## Controlling the C64
 
@@ -241,6 +242,37 @@ actions), newest first; Triangle there makes one a favourite.
 Both lists are saved next to the config as `ps64-favourites.txt` and
 `ps64-recents.txt`.
 
+## Native PS5 app (PPSA06464)
+
+PS64 also builds as a **native PS5 app**, title ID `PPSA06464` (reserved in the
+[Prospero Store catalog](https://github.com/darkxex/ps5-homebrew-catalog)). It gets its own
+home-screen tile through [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus) instead
+of being launched from websrv, and it is the form the Prospero Store installs.
+
+```sh
+ps5/native/build.sh                         # -> ps5/native/out/PPSA06464/ and PPSA06464.zip
+ps5/native/build.sh deploy <ps5-ip>         # build and copy to /data/homebrew/PPSA06464
+```
+
+Install by hand: copy the `PPSA06464` folder (from the zip) to `/data/homebrew/` on the PS5,
+with ShadowMountPlus running; the PS64 tile appears within seconds.
+
+The native app keeps its files in **`/data/ps64/`** (settings `ps64.cfg`, favourites,
+recents, search indexes, the emulator's `games/` and `emulator/` folders), because a store
+update replaces the app's own folder. On first start it copies the settings, lists and
+indexes of the websrv version from `/data/homebrew/PS64/`. It also writes a log,
+`/data/ps64/ps64.log`.
+
+How it's built: the [PS5 Native App Boilerplate](https://github.com/blackbearreloaded/ps5-native-app-boilerplate)
+(pinned in `build.sh`, with `boilerplate.patch`) links PS64, VICE and PS64's SDL2 (pinned
+ps5-payload-dev/SDL, with `sdl-ps5-native.patch`) into a signed development `eboot.bin`.
+A native app runs in a stricter environment than a payload, so `ps5/native/src/` adds:
+its own memory allocator (the C library's heap is only about 5 MB; dlmalloc in a 256 MB
+block), non-blocking sockets via the console's `SO_NBIO` option, C library stand-ins for
+what the C++ runtime and VICE expect, and stand-ins for SDL's USB-keyboard and text-dialog
+calls (their system modules aren't available to apps). `ps5/native/missing-symbols.sh`
+lists what the linked libraries need that the console doesn't provide.
+
 ## Built-in emulator (no C64 Ultimate needed)
 
 PS64 can run its own C64 instead of showing a C64 Ultimate: the VICE
@@ -285,4 +317,6 @@ through its libretro core (https://github.com/libretro/vice-libretro, PS5 port
 https://github.com/mihawk-99/PS5_VICE); `tools/get_vice.sh` names the exact
 source commit used. Binaries of PS64 that include it are distributed under
 GPL-3.0 with that source.
+The native app is built with the PS5 Native App Boilerplate (GPL-3.0-or-later) and includes
+dlmalloc by Doug Lea (public domain / MIT-0 style licence).
 

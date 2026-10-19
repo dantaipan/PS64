@@ -49,6 +49,7 @@
 #include <string.h>
 #include <strings.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 typedef struct {
@@ -270,7 +271,7 @@ static int load_config(const char *path, int argc, char **argv, int *out_argc, c
 
 /* ---- notifications ------------------------------------------------------ */
 
-#ifdef __PROSPERO__
+#if defined(__PROSPERO__) && !defined(PS64_NATIVE)
 int sceNotificationSend(int userId, bool isLogged, const char *payload);
 
 /* Show a toast on the PS5; there is no window title or terminal to read. */
@@ -682,7 +683,83 @@ static void connect_error(char *msg, size_t cap, int rc, const char *host)
 
 /* ---- main ------------------------------------------------------------- */
 
-#ifdef __PROSPERO__
+#ifdef PS64_NATIVE
+/*
+ * The native app (PPSA06464) keeps its files in /data/ps64, because a store
+ * update replaces the app's own folder. The first time, it brings over the
+ * settings, lists and indexes of the payload version in /data/homebrew/PS64.
+ */
+#define NATIVE_DIR "/data/ps64"
+
+static void copy_file(const char *from, const char *to)
+{
+    FILE *in = fopen(from, "rb");
+    if (!in)
+        return;
+    FILE *out = fopen(to, "wb");
+    if (out) {
+        char buf[16384];
+        size_t n;
+        while ((n = fread(buf, 1, sizeof(buf), in)) > 0)
+            fwrite(buf, 1, n, out);
+        fclose(out);
+        printf("copied %s -> %s\n", from, to);
+    }
+    fclose(in);
+}
+
+static void native_first_run(void)
+{
+    mkdir(NATIVE_DIR, 0777);
+    static const char *const files[][2] = {
+        { "ps64.cfg", "ps64.cfg" }, { "c64view.cfg", "ps64.cfg" },
+        { "ps64-favourites.txt", "ps64-favourites.txt" }, { "ps64-recents.txt", "ps64-recents.txt" },
+        { "ps64-index.txt", "ps64-index.txt" }, { "ps64-emu-index.txt", "ps64-emu-index.txt" },
+    };
+    for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
+        char from[256], to[256];
+        snprintf(from, sizeof(from), "/data/homebrew/PS64/%s", files[i][0]);
+        snprintf(to, sizeof(to), NATIVE_DIR "/%s", files[i][1]);
+        if (access(to, F_OK) != 0)
+            copy_file(from, to);
+    }
+    if (access(NATIVE_DIR "/ps64.cfg", F_OK) != 0) {
+        FILE *f = fopen(NATIVE_DIR "/ps64.cfg", "w");
+        if (f) {
+            fputs("# PS64 settings: one \"key = value\" per line (see INSTALL.txt).\n", f);
+            fclose(f);
+        }
+    }
+}
+
+int sceSystemServiceLoadExec(const char *path, char *const argv[]);
+static int ps64_main(int argc, char **argv);
+
+/* The app's entry point: it can't return from main, the system closes it. */
+int main(int argc, char **argv)
+{
+    static char *fallback[] = { "/app0/eboot.bin", NULL };
+    if (argc < 1 || !argv || !argv[0]) {
+        argc = 1;
+        argv = fallback;
+    }
+    native_first_run();
+    /* No terminal: keep what PS64 prints in a log next to its settings. */
+    if (freopen(NATIVE_DIR "/ps64.log", "w", stdout)) {
+        setvbuf(stdout, NULL, _IOLBF, 0);
+        dup2(fileno(stdout), fileno(stderr));
+        setvbuf(stderr, NULL, _IONBF, 0);
+    }
+    printf("PS64 native app starting\n");
+    ps64_main(argc, argv);
+    printf("PS64 closing\n");
+    fflush(stdout);
+    sceSystemServiceLoadExec("exit", NULL);
+    for (;;)
+        sleep(1);
+}
+#define main ps64_main
+#elif defined(__PROSPERO__)
 /* SDL2main provides main() on PS5 and calls SDL_main. */
 #define main SDL_main
 #endif
@@ -696,7 +773,10 @@ int main(int argc, char **argv)
     for (int i = 1; i + 1 < argc; i++)
         if (!strcmp(argv[i], "--config"))
             config = argv[i + 1];
-#ifdef __PROSPERO__
+#ifdef PS64_NATIVE
+    if (!config)
+        config = NATIVE_DIR "/ps64.cfg";
+#elif defined(__PROSPERO__)
     char default_config[512];
     if (!config) {
         const char *slash = strrchr(argv[0], '/');
@@ -1590,8 +1670,11 @@ int main(int argc, char **argv)
             running = 0;
         }
         SDL_RenderPresent(ren);   /* blocks on vsync */
+#ifndef PS64_NATIVE
+        /* (The native app's present already waits for the display.) */
         if (!has_vsync)
             SDL_Delay(4);         /* don't spin; packets wait in the socket buffer */
+#endif
 
         Uint32 now = SDL_GetTicks();
         if (now - stats_at >= 1000) {
