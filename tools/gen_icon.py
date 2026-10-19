@@ -20,7 +20,8 @@ TEXT = (0x70, 0x6D, 0xEB)
 # the C64-blue screen so it stays visible on it.
 RAINBOW = [(0xE0, 0x3A, 0x2F), (0xF0, 0x8A, 0x24), (0xF5, 0xD0, 0x2E), (0x3F, 0xA3, 0x4D),
            (0x3B, 0x7D, 0xD8)]
-STRIPE_TOP, STRIPE_H = 286, 30    # five stripes, edge to edge across the screen
+STRIPE_TOP, STRIPE_H = 286, 28    # five stripes from STRIPE_X to the screen's right edge,
+STRIPE_GAP, STRIPE_X = 2, 72      # with a little blue between them and on their left
 
 GLYPHS = {
     "P": ["#####...", "##..##..", "##..##..", "#####...", "##......", "##......", "##......", "........"],
@@ -44,8 +45,11 @@ def pixel(x, y):
         gy = (y - TEXT_Y) // SCALE
         if GLYPHS[ch][gy][gx] == "#":
             return TEXT
-    if STRIPE_TOP <= y < STRIPE_TOP + len(RAINBOW) * STRIPE_H:
-        return RAINBOW[(y - STRIPE_TOP) // STRIPE_H]
+    pitch = STRIPE_H + STRIPE_GAP
+    if x >= STRIPE_X and STRIPE_TOP <= y < STRIPE_TOP + len(RAINBOW) * pitch:
+        i, within = divmod(y - STRIPE_TOP, pitch)
+        if within < STRIPE_H:
+            return RAINBOW[i]
     return SCREEN
 
 
