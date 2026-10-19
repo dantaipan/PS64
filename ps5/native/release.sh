@@ -3,6 +3,8 @@
 #
 #   ps5/native/release.sh 01.000.001 notes.md          ask before publishing
 #   ps5/native/release.sh 01.000.001 notes.md --yes    don't ask
+#   ps5/native/release.sh 01.000.001 notes.md --dry-run  everything but publishing (no commit,
+#                                                       tag or release; version files restored)
 #
 # VERSION is the new contentVersion (NN.NNN.NNN); notes.md becomes the release notes on
 # prosperostore.net and in the store (write it for players, what changed first).
@@ -21,7 +23,7 @@ VERSION=${1:-}
 NOTES=${2:-}
 YES=${3:-}
 [[ $VERSION =~ ^[0-9]{2}\.[0-9]{3}\.[0-9]{3}$ ]] ||
-    die "usage: $0 NN.NNN.NNN notes.md [--yes]  (e.g. 01.000.001)"
+    die "usage: $0 NN.NNN.NNN notes.md [--yes|--dry-run]  (e.g. 01.000.001)"
 [[ -s $NOTES ]] || die "release notes file missing or empty: $NOTES"
 
 PARAM=ps5/native/sce_sys/param.json
@@ -45,7 +47,10 @@ if [[ $VERSION == "$CURRENT" ]] && git rev-parse -q --verify "refs/tags/$CURRENT
     die "$VERSION is already released: raise the version"
 fi
 VIS=$(gh repo view "$REPO" --json visibility -q .visibility)
-[[ $VIS == PUBLIC ]] || die "the repository is $VIS: the catalog needs it public (gh repo edit $REPO --visibility public --accept-visibility-change-consequences)"
+if [[ $VIS != PUBLIC ]]; then
+    MSG="the repository is $VIS: the catalog needs it public (gh repo edit $REPO --visibility public --accept-visibility-change-consequences)"
+    [[ $YES == --dry-run ]] && echo "release: (dry run) $MSG" || die "$MSG"
+fi
 
 # ---- version, tests, build -------------------------------------------------------------
 restore() { git checkout -q -- "$PARAM" src/version.h; }
@@ -76,6 +81,11 @@ echo "Release PS64 $HUMAN (contentVersion $VERSION)"
 echo "  zip     $ZIP ($(du -h "$ZIP" | cut -f1), sha256 $SHA)"
 echo "  notes   $NOTES"
 echo "  then    commit + tag $VERSION, push to $REPO, publish the GitHub release"
+if [[ $YES == --dry-run ]]; then
+    restore
+    echo "Dry run: nothing published; version files restored. The zip is in $ZIP."
+    exit 0
+fi
 if [[ $YES != --yes ]]; then
     read -r -p "Publish? [y/N] " answer
     [[ $answer == [yY]* ]] || { restore; echo "Nothing published; version files restored."; exit 1; }
