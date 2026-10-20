@@ -86,6 +86,7 @@ typedef struct {
     const char *a64_id;       /* Assembly64 client ID */
     const char *a64_url;      /* Assembly64 API base URL */
     const char *a64_search;   /* debug: search Assembly64 for this at launch */
+    const char *a64_latest;   /* debug: show Assembly64's latest releases in this category */
     int         launch_fav;   /* debug: launch this favourite (1-based) at startup */
     int         use_emulator; /* c64 = emulator: the built-in emulator is the machine */
     const char *games_dir;    /* the emulator's games folder (default: "games" next to the config) */
@@ -104,6 +105,7 @@ static void usage(const char *argv0)
         "          [--joystick-port 1|2] [--button-NAME KEY] [--type TEXT] [--browse-dir DIR]\n"
         "          [--search-roots /SD,/USB0] [--build-index] [--search TEXT]\n"
         "          [--assembly64-client-id ID] [--assembly64-url URL] [--a64-search TEXT]\n"
+        "          [--a64-latest CATEGORY]\n"
         "          [--c64 emulator] [--games-dir DIR] [--dpad joystick|keys] [--emu-load FILE]\n"
         "\n"
         "--c64 (alias --start) streams from and controls that C64; --remote only controls it;\n"
@@ -151,6 +153,7 @@ static int parse_args(int argc, char **argv, options *o)
     o->a64_id = NULL;
     o->a64_url = A64_DEFAULT_URL;
     o->a64_search = NULL;
+    o->a64_latest = NULL;
     o->launch_fav = 0;
     o->use_emulator = 0;
     o->games_dir = NULL;
@@ -181,6 +184,7 @@ static int parse_args(int argc, char **argv, options *o)
         else if (!strcmp(a, "--assembly64-client-id") && next) { o->a64_id = next; i++; }
         else if (!strcmp(a, "--assembly64-url") && next)       { o->a64_url = next; i++; }
         else if (!strcmp(a, "--a64-search") && next)           { o->a64_search = next; i++; }
+        else if (!strcmp(a, "--a64-latest") && next)           { o->a64_latest = next; i++; }
         else if (!strcmp(a, "--launch-favourite") && next)      { o->launch_fav = atoi(next); i++; }
         else if (!strcmp(a, "--remote") && next)    { o->remote_host = next; i++; }
         else if (!strcmp(a, "--password") && next)  { o->password = next; i++; }
@@ -1041,6 +1045,14 @@ int main(int argc, char **argv)
         ui_action dbg = ui_input(&ui, IN_R2);
         ctl.actions[ctl.nactions++] = dbg;
     }
+    if (opt.a64_latest && a64c) {
+        /* As if R1 was pressed with that category chosen (the list may not be loaded yet). */
+        ui_open_a64(&ui);
+        ui_action dbg = ui_input(&ui, IN_R1);
+        snprintf(dbg.category_key, sizeof(dbg.category_key), "%s", opt.a64_latest);
+        snprintf(ui.a64_search_cat, sizeof(ui.a64_search_cat), "%s", opt.a64_latest);
+        ctl.actions[ctl.nactions++] = dbg;
+    }
 
     /* Assembly64 item waiting for its file list before it starts. */
     char auto_item[64] = "";
@@ -1313,6 +1325,10 @@ int main(int argc, char **argv)
             case UA_A64_SEARCH:
                 if (a64c)
                     a64_search(a64c, a.text, a.category_key, a.offset);
+                break;
+            case UA_A64_LATEST:
+                if (a64c)
+                    a64_latest(a64c, a.category_key);
                 break;
             case UA_A64_ENTRIES:
                 if (a64c)

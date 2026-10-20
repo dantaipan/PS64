@@ -107,6 +107,28 @@ int a64_json_string(const char *obj, size_t len, const char *key, char *out, siz
     return 0;
 }
 
+void a64_decode_entities(char *s)
+{
+    static const struct { const char *code; char ch; } map[] = {
+        { "&lt;", '<' }, { "&gt;", '>' }, { "&amp;", '&' }, { "&quot;", '"' },
+        { "&#39;", '\'' }, { "&apos;", '\'' },
+    };
+    char *out = s;
+    for (const char *p = s; *p; ) {
+        size_t i, n = sizeof(map) / sizeof(map[0]);
+        for (i = 0; i < n; i++)
+            if (!strncmp(p, map[i].code, strlen(map[i].code)))
+                break;
+        if (i < n) {
+            *out++ = map[i].ch;
+            p += strlen(map[i].code);
+        } else {
+            *out++ = *p++;
+        }
+    }
+    *out = 0;
+}
+
 int a64_parse_items(const char *json, size_t len, a64_item **out)
 {
     int cap = 64, n = 0;
@@ -126,6 +148,10 @@ int a64_parse_items(const char *json, size_t len, a64_item **out)
             a64_json_string(obj, olen, "handle", it.group, sizeof(it.group));
         if (a64_json_number(obj, olen, "year", &v) == 0) it.year = (int)v;
         if (a64_json_number(obj, olen, "rating", &v) == 0) it.rating = (int)v;
+        if (a64_json_string(obj, olen, "released", it.released, sizeof(it.released)) != 0)
+            it.released[0] = 0;
+        a64_decode_entities(it.name);           /* some names arrive as "Hello &lt;3" */
+        a64_decode_entities(it.group);
         if (n == cap) {
             cap *= 2;
             a64_item *bigger = realloc(items, sizeof(*items) * (size_t)cap);
@@ -219,6 +245,30 @@ void a64_build_query(const char *text, const char *category_key, char *out, size
         snprintf(out, cap, "(name:\"%s\")", esc);
 }
 
+void a64_build_latest_query(const char *window, const char *category_key, char *out, size_t cap)
+{
+    if (category_key && *category_key)
+        snprintf(out, cap, "(latest:%s) & (category:%s) & (sort:year) & (order:desc)", window,
+                 category_key);
+    else
+        snprintf(out, cap, "(latest:%s) & (sort:year) & (order:desc)", window);
+}
+
+static int latest_order(const void *pa, const void *pb)
+{
+    const a64_item *a = pa, *b = pb;
+    if (!a->released[0] != !b->released[0])
+        return a->released[0] ? -1 : 1;                 /* dated first */
+    int c = strcmp(b->released, a->released);           /* ISO dates: newest first */
+    return c ? c : strcasecmp(a->name, b->name);
+}
+
+void a64_sort_latest(a64_item *items, int n)
+{
+    if (n > 1)
+        qsort(items, (size_t)n, sizeof(*items), latest_order);
+}
+
 void a64_unwrap_multipart(const char *content_type, unsigned char **data, size_t *len)
 {
     const char *b = content_type ? strstr(content_type, "boundary=") : NULL;
@@ -252,7 +302,7 @@ void a64_unwrap_multipart(const char *content_type, unsigned char **data, size_t
 
 /* ---- worker ------------------------------------------------------------------ */
 
-enum { REQ_NONE, REQ_SEARCH, REQ_ENTRIES, REQ_FILE, REQ_CATS };
+enum { REQ_NONE, REQ_SEARCH, REQ_ENTRIES, REQ_FILE, REQ_CATS, REQ_LATEST };
 
 struct a64 {
     char            host[128], base[128], client_id[128];
@@ -337,6 +387,44 @@ static void do_request(a64 *a, int req, a64_result *res)
             body = NULL;                       /* handed to the result */
         } else if (status == 200) {
             status = 204;
+        }
+        break;
+    }
+    case REQ_LATEST: {
+        /* What Assembly64 added recently, newest years first; then by release date. A window
+         * holding fewer than A64_LATEST dated items is widened. */
+        static const char *const windows[] = { "1month", "3months", "1year" };
+        status = 0;
+        for (size_t w = 0; w < sizeof(windows) / sizeof(windows[0]); w++) {
+            char q[200], enc[600];
+            a64_build_latest_query(windows[w], a->req_cat, q, sizeof(q));
+            c64api_url_encode(q, enc, sizeof(enc));
+            snprintf(path, sizeof(path), "/search/aql/0/200?query=%s", enc);
+            free(body);
+            body = NULL;
+            status = get(a, path, &body, &len, NULL, 0);
+            if (status != 200)
+                break;
+            free(res->items);
+            res->items = NULL;
+            res->count = a64_parse_items(body, len, &res->items);
+            int dated = 0;
+            for (int i = 0; i < res->count; i++)
+                dated += res->items[i].released[0] != 0;
+            if (dated >= A64_LATEST)
+                break;
+        }
+        if (status == 200) {
+            a64_sort_latest(res->items, res->count);
+            if (res->count > A64_LATEST)
+                res->count = A64_LATEST;
+            res->kind = A64R_SEARCH;
+            res->offset = 0;
+            res->latest = 1;
+        } else {
+            free(res->items);
+            res->items = NULL;
+            res->count = 0;
         }
         break;
     }
@@ -437,6 +525,13 @@ void a64_search(a64 *a, const char *text, const char *category_key, int offset)
     snprintf(a->req_cat, sizeof(a->req_cat), "%s", category_key ? category_key : "");
     a->req_offset = offset;
     request(a, REQ_SEARCH);
+}
+
+void a64_latest(a64 *a, const char *category_key)
+{
+    pthread_mutex_lock(&a->lock);
+    snprintf(a->req_cat, sizeof(a->req_cat), "%s", category_key ? category_key : "");
+    request(a, REQ_LATEST);
 }
 
 void a64_entries(a64 *a, const char *item_id, int category)

@@ -10,6 +10,7 @@
 
 #define A64_DEFAULT_URL "http://hackerswithstyle.se/leet"
 #define A64_PAGE        50
+#define A64_LATEST      25    /* items in "latest releases" */
 #define A64_MAX_CATS    32
 
 typedef struct {
@@ -19,6 +20,7 @@ typedef struct {
     char group[64];
     int  year;
     int  rating;
+    char released[11];        /* "YYYY-MM-DD", or empty if unknown */
 } a64_item;
 
 typedef struct {
@@ -47,6 +49,7 @@ typedef struct {
     /* A64R_SEARCH (items malloc'd; caller frees) */
     a64_item *items;
     int       count, offset;
+    int       latest;                 /* the "latest releases" list (no more pages) */
 
     /* A64R_ENTRIES (files malloc'd; caller frees) */
     a64_file *files;
@@ -69,6 +72,12 @@ typedef struct a64 a64;
 a64 *a64_start(const char *base_url, const char *client_id);
 void a64_stop(a64 *a);
 void a64_search(a64 *a, const char *text, const char *category_key, int offset);
+/*
+ * The A64_LATEST newest releases (by release date) in a category: what Assembly64
+ * added in the last month (widening to 3 months, then a year, if that holds fewer),
+ * sorted by release date. Arrives as an A64R_SEARCH result with latest set.
+ */
+void a64_latest(a64 *a, const char *category_key);
 void a64_entries(a64 *a, const char *item_id, int category);
 void a64_download(a64 *a, const char *item_id, int category, int file_id, const char *name,
                   int action);
@@ -82,6 +91,12 @@ void a64_result_free(a64_result *res);
 
 /* AQL for a name search: (name:"text") [& (category:key)], quotes escaped. */
 void a64_build_query(const char *text, const char *category_key, char *out, size_t cap);
+/* AQL for recent additions, newest years first: (latest:window) [& (category:key)] & sort. */
+void a64_build_latest_query(const char *window, const char *category_key, char *out, size_t cap);
+/* The HTML entities some names arrive with (&lt; &gt; &amp; &quot; &#39;), in place. */
+void a64_decode_entities(char *s);
+/* Newest release date first; items without a date last; then by name. */
+void a64_sort_latest(a64_item *items, int n);
 
 /* Find the next {...} object in a JSON array; returns 0 and sets obj/len. */
 int  a64_json_next_object(const char **p, const char *end, const char **obj, size_t *len);

@@ -393,13 +393,21 @@ static void draw_a64(SDL_Renderer *ren, const ui_state *u, Uint32 now)
         char text[200], name[64], group[40];
         if (i < u->a64_count) {
             const a64_item *it = &u->a64_items[i];
-            fit(it->name, 44, name, sizeof(name));
-            fit(it->group, 22, group, sizeof(group));
-            char year[8] = "";
-            if (it->year > 0)
-                snprintf(year, sizeof(year), "%d", it->year);
-            snprintf(text, sizeof(text), "%c%-44s %-22s %4s", ui_is_fav_a64(u, it, NULL) ? STAR : ' ',
-                     name, group, year);
+            char when[12] = "";
+            int star = ui_is_fav_a64(u, it, NULL) ? STAR : ' ';
+            if (u->a64_latest) {
+                /* The latest releases: the full release date, so the order shows. */
+                fit(it->name, 40, name, sizeof(name));
+                fit(it->group, 20, group, sizeof(group));
+                snprintf(when, sizeof(when), "%s", it->released[0] ? it->released : "");
+                snprintf(text, sizeof(text), "%c%-40s %-20s %10s", star, name, group, when);
+            } else {
+                fit(it->name, 44, name, sizeof(name));
+                fit(it->group, 22, group, sizeof(group));
+                if (it->year > 0)
+                    snprintf(when, sizeof(when), "%d", it->year);
+                snprintf(text, sizeof(text), "%c%-44s %-22s %4s", star, name, group, when);
+            }
         } else {
             snprintf(text, sizeof(text), "More results...");
         }
@@ -411,7 +419,7 @@ static void draw_a64(SDL_Renderer *ren, const ui_state *u, Uint32 now)
     }
 
     if (u->a64_focus == 0) {
-        font_draw(ren, "X type  [] del  /\\ space  R2 search  L2 category  L1 shift  O close",
+        font_draw(ren, "X type  [] del  /\\ space  R2 search  R1 latest  L2 category  L1 shift  O close",
                   PX + 16, ry + UI_SEARCH_PAGE * ROW_H + 4, 1, DIM);
         osk_draw(ren, &u->kbd);
     } else {

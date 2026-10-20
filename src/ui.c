@@ -532,6 +532,20 @@ static ui_action a64_search_action(ui_state *u, int offset)
     return a;
 }
 
+/* The latest releases in the chosen category, or games when none is chosen. */
+static ui_action a64_latest_action(ui_state *u)
+{
+    int chosen = u->a64_cat >= 0 && u->a64_cat < u->a64_cats.count;
+    ui_action a = act(UA_A64_LATEST);
+    snprintf(a.category_key, sizeof(a.category_key), "%s",
+             chosen ? u->a64_cats.keys[u->a64_cat] : "games");
+    snprintf(u->a64_search_cat, sizeof(u->a64_search_cat), "%s",
+             chosen ? u->a64_cats.names[u->a64_cat] : "Games");
+    u->a64_loading = 1;
+    snprintf(u->a64_status, sizeof(u->a64_status), "Finding the latest releases...");
+    return a;
+}
+
 static ui_action a64_file_action(ui_state *u, int file_action)
 {
     const a64_file *f = &u->a64_files[u->a64_fsel];
@@ -577,10 +591,16 @@ void ui_a64_results(ui_state *u, a64_result *r)
             free(r->items);
         }
         r->items = NULL;
-        u->a64_more = r->count == A64_PAGE;
-        snprintf(u->a64_status, sizeof(u->a64_status), u->a64_count ? "%d result%s%s"
-                 : "No results%.0d%.0s%.0s", u->a64_count, u->a64_count == 1 ? "" : "s",
-                 u->a64_more ? " so far" : "");
+        u->a64_latest = r->latest;
+        u->a64_more = !r->latest && r->count == A64_PAGE;
+        if (r->latest)
+            snprintf(u->a64_status, sizeof(u->a64_status), u->a64_count
+                     ? "Latest %d releases: %s" : "No recent releases in %.0d%s",
+                     u->a64_count, u->a64_search_cat);
+        else
+            snprintf(u->a64_status, sizeof(u->a64_status), u->a64_count ? "%d result%s%s"
+                     : "No results%.0d%.0s%.0s", u->a64_count, u->a64_count == 1 ? "" : "s",
+                     u->a64_more ? " so far" : "");
         if (u->screen == UI_A64 && u->a64_count)
             u->a64_focus = 1;
     } else if (r->kind == A64R_ENTRIES) {
@@ -651,6 +671,8 @@ static ui_action input_a64(ui_state *u, int in)
             u->a64_cat = u->a64_cat + 1 >= u->a64_cats.count ? -1 : u->a64_cat + 1;
             return none();
         }
+        if (in == IN_R1)
+            return u->a64_loading ? none() : a64_latest_action(u);
         int submit = in == IN_R2 || kbd_text(u, u->a64_query, sizeof(u->a64_query), in, &changed);
         if (submit && u->a64_query[0] && !u->a64_loading)
             return a64_search_action(u, 0);
@@ -1053,7 +1075,8 @@ static const char *const about_text[] = {
     "   and sound stream to the PS5, the controller types on it.",
     " - Or use the built-in C64 emulator (VICE): no C64 needed.",
     "Find games on the C64's storage, in the emulator's games folder",
-    "(/data/ps64/games), or in the online Assembly64 database.",
+    "(/data/ps64/games), or in the online Assembly64 database (R1 there shows",
+    "the latest releases).",
     "Options > Choose C64 stream or emulator switches between the two.",
     "",
     "Controller",

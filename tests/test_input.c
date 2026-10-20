@@ -777,6 +777,86 @@ static void test_favs(void)
     fav_free(&recents);
 }
 
+/* Assembly64's latest releases: dates, query, order, and the R1 view. */
+static void test_a64_latest(void)
+{
+    static const char json[] =
+        "[{\"name\":\"Old Game\",\"id\":\"1\",\"category\":0,\"year\":1986,\"released\":\"1986-01-01\"},"
+        " {\"name\":\"No Date\",\"id\":\"2\",\"category\":0,\"year\":0,\"released\":null},"
+        " {\"name\":\"Bubble Pop\",\"id\":\"3\",\"category\":0,\"year\":2026,\"released\":\"2026-10-15\"},"
+        " {\"name\":\"Missing\",\"id\":\"4\",\"category\":0,\"year\":2026},"
+        " {\"name\":\"Alpha\",\"id\":\"5\",\"category\":0,\"year\":2026,\"released\":\"2026-10-15\"},"
+        " {\"name\":\"River Hawk\",\"id\":\"6\",\"category\":0,\"year\":2026,\"released\":\"2026-10-14\"}]";
+    a64_item *items = NULL;
+    int n = a64_parse_items(json, strlen(json), &items);
+    CHECK(n == 6 && !strcmp(items[0].released, "1986-01-01") && !items[1].released[0] &&
+          !items[3].released[0]);
+    a64_sort_latest(items, n);
+    /* Newest first, same date by name, undated last (by name). */
+    CHECK(!strcmp(items[0].name, "Alpha") && !strcmp(items[1].name, "Bubble Pop") &&
+          !strcmp(items[2].name, "River Hawk") && !strcmp(items[3].name, "Old Game") &&
+          !strcmp(items[4].name, "Missing") && !strcmp(items[5].name, "No Date"));
+    free(items);
+
+    char ent[64] = "Hello &lt;3 &amp; &quot;Tom&#39;s&quot; &unknown; &gt;";
+    a64_decode_entities(ent);
+    CHECK(!strcmp(ent, "Hello <3 & \"Tom's\" &unknown; >"));
+
+    char q[200];
+    a64_build_latest_query("1month", "games", q, sizeof(q));
+    CHECK(!strcmp(q, "(latest:1month) & (category:games) & (sort:year) & (order:desc)"));
+    a64_build_latest_query("1year", "", q, sizeof(q));
+    CHECK(!strcmp(q, "(latest:1year) & (sort:year) & (order:desc)"));
+
+    /* R1 while typing: games with "All", else the chosen category. */
+    static ui_state u;
+    ui_setup(&u);
+    u.a64_ready = 1;
+    u.a64_cats.count = 2;
+    strcpy(u.a64_cats.keys[0], "games");  strcpy(u.a64_cats.names[0], "Games");
+    strcpy(u.a64_cats.keys[1], "music");  strcpy(u.a64_cats.names[1], "Music");
+    ui_open_a64(&u);
+    CHECK(u.a64_focus == 0 && u.a64_cat == -1);
+    ui_action a = ui_input(&u, IN_R1);
+    CHECK(a.kind == UA_A64_LATEST && !strcmp(a.category_key, "games") && u.a64_loading &&
+          !strcmp(u.a64_search_cat, "Games"));
+    CHECK(ui_input(&u, IN_R1).kind == UA_NONE);                 /* not while one is running */
+
+    /* The answer: no "More results..." row, a latest status, dates shown. */
+    a64_result r;
+    memset(&r, 0, sizeof(r));
+    r.kind = A64R_SEARCH;
+    r.latest = 1;
+    r.count = A64_LATEST;
+    r.items = calloc(A64_LATEST, sizeof(a64_item));
+    for (int i = 0; i < A64_LATEST; i++)
+        snprintf(r.items[i].id, sizeof(r.items[i].id), "%d", i);
+    ui_a64_results(&u, &r);
+    CHECK(u.a64_count == A64_LATEST && !u.a64_more && u.a64_latest && u.a64_focus == 1 &&
+          !strcmp(u.a64_status, "Latest 25 releases: Games"));
+
+    /* A normal search afterwards is a normal list again. */
+    u.a64_focus = 0;
+    u.a64_cat = 1;                                               /* Music */
+    a = ui_input(&u, IN_R1);
+    CHECK(a.kind == UA_A64_LATEST && !strcmp(a.category_key, "music"));
+    memset(&r, 0, sizeof(r));
+    r.kind = A64R_SEARCH;
+    r.latest = 1;
+    ui_a64_results(&u, &r);
+    CHECK(u.a64_count == 0 && !strcmp(u.a64_status, "No recent releases in Music"));
+    strcpy(u.a64_query, "boulder");
+    a = ui_input(&u, IN_R2);
+    CHECK(a.kind == UA_A64_SEARCH);
+    memset(&r, 0, sizeof(r));
+    r.kind = A64R_SEARCH;
+    r.count = A64_PAGE;
+    r.items = calloc(A64_PAGE, sizeof(a64_item));
+    ui_a64_results(&u, &r);
+    CHECK(!u.a64_latest && u.a64_more);
+    ui_free(&u);
+}
+
 /* Drive A's device number from GET /v1/drives (the C64 Ultimate 1.1.0 layout). */
 static void test_drive_a(void)
 {
@@ -942,6 +1022,7 @@ int main(void)
 {
     test_emulator_mode();
     test_drive_a();
+    test_a64_latest();
     test_favs();
     test_a64();
     test_index();

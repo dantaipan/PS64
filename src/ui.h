@@ -32,7 +32,8 @@ enum { UA_NONE, UA_MUTE, UA_PORT, UA_QUIT, UA_CONNECT, UA_LISTEN_ONLY, UA_RESCAN
        UA_A64_SEARCH, UA_A64_ENTRIES, UA_A64_FILE, UA_A64_SET_ID, UA_FAV_TOGGLE, UA_FAV_LAUNCH,
        UA_EMULATOR,      /* use the built-in emulator */
        UA_DISK,          /* emulator: insert the next (offset 1) or previous (-1) disk */
-       UA_CONTROLLER };  /* emulator: D-pad as joystick <-> cursor keys */
+       UA_CONTROLLER,    /* emulator: D-pad as joystick <-> cursor keys */
+       UA_A64_LATEST };  /* Assembly64: the latest releases (category_key) */
 
 typedef struct {
     int  kind;
@@ -114,6 +115,7 @@ typedef struct {
     char           a64_seen_name[A64_MAX_CATS][40];
     int            a64_nseen;
     char           a64_search_cat[40];   /* filter name used by the pending search */
+    int            a64_latest;      /* the results are the latest releases (dates shown) */
 
     /* Favourites and recents (lists owned by main). */
     fav_list      *favs, *recents;
