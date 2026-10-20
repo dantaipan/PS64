@@ -835,6 +835,18 @@ static void test_a64_latest(void)
     CHECK(u.a64_count == A64_LATEST && !u.a64_more && u.a64_latest && u.a64_focus == 1 &&
           !strcmp(u.a64_status, "Latest 25 releases: Games"));
 
+    /* With the keyboard hidden, the whole panel: 20 rows before scrolling, paging by 20. */
+    CHECK(ui_search_rows(1) == 20 && ui_search_rows(0) == 10);
+    for (int i = 0; i < 19; i++)
+        ui_input(&u, IN_DOWN);
+    CHECK(u.a64_sel == 19 && u.a64_top == 0);
+    ui_input(&u, IN_DOWN);
+    CHECK(u.a64_sel == 20 && u.a64_top == 1);
+    ui_input(&u, IN_L1);
+    CHECK(u.a64_sel == 0 && u.a64_top == 0);
+    ui_input(&u, IN_R1);
+    CHECK(u.a64_sel == 20 && u.a64_top == 1);
+
     /* A normal search afterwards is a normal list again. */
     u.a64_focus = 0;
     u.a64_cat = 1;                                               /* Music */

@@ -311,7 +311,7 @@ static void draw_search(SDL_Renderer *ren, const ui_state *u, Uint32 now)
 
     /* Results. */
     const int ry = PY + 88;
-    for (int i = u->rtop; i < u->nresults && i < u->rtop + UI_SEARCH_PAGE; i++) {
+    for (int i = u->rtop; i < u->nresults && i < u->rtop + ui_search_rows(u->search_focus); i++) {
         /* Show "<folder>/<file>" (games are often Title/Disk1.d64) and the
          * rest of the path, shortened from the left. */
         const index_hit *h = &u->results[i];
@@ -389,7 +389,7 @@ static void draw_a64(SDL_Renderer *ren, const ui_state *u, Uint32 now)
 
     const int ry = PY + 88;
     int rows = u->a64_count + (u->a64_more ? 1 : 0);
-    for (int i = u->a64_top; i < rows && i < u->a64_top + UI_SEARCH_PAGE; i++) {
+    for (int i = u->a64_top; i < rows && i < u->a64_top + ui_search_rows(u->a64_focus); i++) {
         char text[200], name[64], group[40];
         if (i < u->a64_count) {
             const a64_item *it = &u->a64_items[i];

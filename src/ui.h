@@ -51,6 +51,7 @@ typedef struct {
 
 #define UI_PAGE 20          /* rows per page in the picker and browser */
 #define UI_SEARCH_PAGE 10   /* result rows shown above the on-screen keyboard */
+#define UI_RESULTS_PAGE 20  /* result rows when the results have focus (no keyboard) */
 #define UI_SEARCH_MAX 300   /* results kept per query */
 #define UI_ABOUT_ROWS 22    /* About text lines shown at once */
 
@@ -170,6 +171,10 @@ void ui_search_refresh(ui_state *u);
 void ui_text(ui_state *u, const char *text);
 
 ui_action ui_input(ui_state *u, int input);
+
+/* Result rows the search screens show: fewer while the on-screen keyboard is up
+ * (focus 0), the whole panel when the results have focus. */
+int ui_search_rows(int focus);
 
 /* Menu items shown for the current machine; returns the count. */
 int ui_menu_items(const ui_state *u, int *out);

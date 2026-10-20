@@ -681,10 +681,10 @@ static ui_action input_a64(ui_state *u, int in)
 
     int rows = u->a64_count + (u->a64_more ? 1 : 0);
     switch (in) {
-    case IN_UP:   move_in(&u->a64_sel, &u->a64_top, rows, UI_SEARCH_PAGE, -1, 1); break;
-    case IN_DOWN: move_in(&u->a64_sel, &u->a64_top, rows, UI_SEARCH_PAGE, 1, 1); break;
-    case IN_L1:   move_in(&u->a64_sel, &u->a64_top, rows, UI_SEARCH_PAGE, -UI_SEARCH_PAGE, 0); break;
-    case IN_R1:   move_in(&u->a64_sel, &u->a64_top, rows, UI_SEARCH_PAGE, UI_SEARCH_PAGE, 0); break;
+    case IN_UP:   move_in(&u->a64_sel, &u->a64_top, rows, ui_search_rows(1), -1, 1); break;
+    case IN_DOWN: move_in(&u->a64_sel, &u->a64_top, rows, ui_search_rows(1), 1, 1); break;
+    case IN_L1:   move_in(&u->a64_sel, &u->a64_top, rows, ui_search_rows(1), -ui_search_rows(1), 0); break;
+    case IN_R1:   move_in(&u->a64_sel, &u->a64_top, rows, ui_search_rows(1), ui_search_rows(1), 0); break;
     case IN_BACK:
     case IN_R2:   u->a64_focus = 0; break;
     case IN_TRIANGLE:
@@ -840,8 +840,14 @@ void ui_text(ui_state *u, const char *text)
     query_changed(u);
 }
 
+int ui_search_rows(int focus)
+{
+    return focus ? UI_RESULTS_PAGE : UI_SEARCH_PAGE;
+}
+
 static void move_results(ui_state *u, int delta, int wrap)
 {
+    int page = ui_search_rows(u->search_focus);
     if (!u->nresults)
         return;
     int s = u->rsel + delta;
@@ -852,8 +858,8 @@ static void move_results(ui_state *u, int delta, int wrap)
     u->rsel = s;
     if (u->rsel < u->rtop)
         u->rtop = u->rsel;
-    if (u->rsel >= u->rtop + UI_SEARCH_PAGE)
-        u->rtop = u->rsel - UI_SEARCH_PAGE + 1;
+    if (u->rsel >= u->rtop + page)
+        u->rtop = u->rsel - page + 1;
 }
 
 static ui_action input_search(ui_state *u, int in)
@@ -933,8 +939,8 @@ static ui_action input_search(ui_state *u, int in)
     switch (in) {
     case IN_UP:   move_results(u, -1, 1); break;
     case IN_DOWN: move_results(u, 1, 1); break;
-    case IN_L1:   move_results(u, -UI_SEARCH_PAGE, 0); break;
-    case IN_R1:   move_results(u, UI_SEARCH_PAGE, 0); break;
+    case IN_L1:   move_results(u, -ui_search_rows(1), 0); break;
+    case IN_R1:   move_results(u, ui_search_rows(1), 0); break;
     case IN_BACK:
     case IN_R2:   u->search_focus = 0; break;
     case IN_OK: {
