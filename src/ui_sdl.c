@@ -371,6 +371,42 @@ static void draw_a64_id(SDL_Renderer *ren, const ui_state *u, Uint32 now)
     osk_draw(ren, &u->kbd);
 }
 
+/* The screenshot beside the Assembly64 results: half size (192x136 for a C64 screen). */
+#define SHOT_W 192
+#define SHOT_H 136
+#define SHOT_X (PX + PW - 16 - SHOT_W)
+
+static void draw_shot(SDL_Renderer *ren, const ui_state *u, int y)
+{
+    static SDL_Texture *tex;
+    static const uint32_t *tex_pixels;
+    static int tex_w, tex_h;
+    fill_rect(ren, SHOT_X - 2, y - 2, SHOT_W + 4, SHOT_H + 4, 0x70, 0x6D, 0xEB, 255);
+    if (u->a64_shot_state == SHOT_READY && u->a64_shot) {
+        if (u->a64_shot != tex_pixels) {
+            if (!tex || tex_w != u->a64_shot_w || tex_h != u->a64_shot_h) {
+                if (tex)
+                    SDL_DestroyTexture(tex);
+                tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC,
+                                        u->a64_shot_w, u->a64_shot_h);
+                tex_w = u->a64_shot_w;
+                tex_h = u->a64_shot_h;
+            }
+            if (tex)
+                SDL_UpdateTexture(tex, NULL, u->a64_shot, u->a64_shot_w * 4);
+            tex_pixels = u->a64_shot;
+        }
+        if (tex) {
+            SDL_Rect dst = { SHOT_X, y, SHOT_W, SHOT_H };
+            SDL_RenderCopy(ren, tex, NULL, &dst);
+            return;
+        }
+    }
+    fill_rect(ren, SHOT_X, y, SHOT_W, SHOT_H, 0x10, 0x10, 0x20, 255);
+    const char *text = u->a64_shot_state == SHOT_LOADING ? "Loading..." : "No screenshot";
+    font_draw(ren, text, SHOT_X + (SHOT_W - font_width(text, 1)) / 2, y + SHOT_H / 2 - 4, 1, DIM);
+}
+
 static void draw_a64(SDL_Renderer *ren, const ui_state *u, Uint32 now)
 {
     panel(ren, "Search Assembly64");
@@ -389,13 +425,28 @@ static void draw_a64(SDL_Renderer *ren, const ui_state *u, Uint32 now)
 
     const int ry = PY + 88;
     int rows = u->a64_count + (u->a64_more ? 1 : 0);
+    /* With the results focused, the highlighted release's screenshot sits at the top right. */
+    int shot = u->a64_focus == 1 && u->a64_count > 0;
+    if (shot)
+        draw_shot(ren, u, ry - 5);
     for (int i = u->a64_top; i < rows && i < u->a64_top + ui_search_rows(u->a64_focus); i++) {
         char text[200], name[64], group[40];
         if (i < u->a64_count) {
             const a64_item *it = &u->a64_items[i];
             char when[12] = "";
             int star = ui_is_fav_a64(u, it, NULL) ? STAR : ' ';
-            if (u->a64_latest) {
+            if (shot && u->a64_latest) {
+                fit(it->name, 26, name, sizeof(name));
+                fit(it->group, 14, group, sizeof(group));
+                snprintf(when, sizeof(when), "%s", it->released[0] ? it->released : "");
+                snprintf(text, sizeof(text), "%c%-26s %-14s %10s", star, name, group, when);
+            } else if (shot) {
+                fit(it->name, 30, name, sizeof(name));
+                fit(it->group, 16, group, sizeof(group));
+                if (it->year > 0)
+                    snprintf(when, sizeof(when), "%d", it->year);
+                snprintf(text, sizeof(text), "%c%-30s %-16s %4s", star, name, group, when);
+            } else if (u->a64_latest) {
                 /* The latest releases: the full release date, so the order shows. */
                 fit(it->name, 40, name, sizeof(name));
                 fit(it->group, 20, group, sizeof(group));
@@ -414,7 +465,8 @@ static void draw_a64(SDL_Renderer *ren, const ui_state *u, Uint32 now)
         int y = ry + (i - u->a64_top) * ROW_H;
         int selected = u->a64_focus == 1 && i == u->a64_sel;
         if (selected)
-            fill_rect(ren, PX + 8, y - 5, PW - 16, ROW_H, 0x70, 0x6D, 0xEB, 255);
+            fill_rect(ren, PX + 8, y - 5, shot ? SHOT_X - 10 - (PX + 8) : PW - 16, ROW_H,
+                      0x70, 0x6D, 0xEB, 255);
         font_draw(ren, text, PX + 16, y, 1, i < u->a64_count ? WHITE : CYAN);
     }
 

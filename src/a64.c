@@ -202,11 +202,26 @@ int a64_parse_categories(const char *json, size_t len, a64_categories *out)
     size_t olen;
     while (a64_json_next_object(&p, end, &obj, &olen) == 0) {
         char type[40];
-        if (a64_json_string(obj, olen, "type", type, sizeof(type)) != 0 || strcasecmp(type, "category"))
+        if (a64_json_string(obj, olen, "type", type, sizeof(type)) != 0)
             continue;
         const char *vals = json_value(obj, olen, "values");
         const char *vend = obj + olen, *e;
         size_t elen;
+        if (!strcasecmp(type, "subcat")) {
+            /* {"id":0,"aqlKey":"games","name":"CSDB games"}: CSDb's own category numbers. */
+            out->have_subcats = 1;
+            while (vals && a64_json_next_object(&vals, vend, &e, &elen) == 0) {
+                char name[64];
+                long long id;
+                if (a64_json_string(e, elen, "name", name, sizeof(name)) == 0 &&
+                    !strncasecmp(name, "CSDB", 4) && a64_json_number(e, elen, "id", &id) == 0 &&
+                    out->ncsdb < A64_MAX_CATS)
+                    out->csdb[out->ncsdb++] = (int)id;
+            }
+            continue;
+        }
+        if (strcasecmp(type, "category") || out->count)
+            continue;
         while (vals && out->count < A64_MAX_CATS && a64_json_next_object(&vals, vend, &e, &elen) == 0) {
             if (a64_json_string(e, elen, "aqlKey", out->keys[out->count], sizeof(out->keys[0])) != 0)
                 continue;
@@ -216,9 +231,18 @@ int a64_parse_categories(const char *json, size_t len, a64_categories *out)
             out->ids[out->count] = a64_json_number(e, elen, "id", &id) == 0 ? (int)id : -1;
             out->count++;
         }
-        break;
     }
     return out->count;
+}
+
+int a64_is_csdb(const a64_categories *c, int category)
+{
+    if (!c || !c->have_subcats)
+        return category >= 0 && category <= 10;
+    for (int i = 0; i < c->ncsdb; i++)
+        if (c->csdb[i] == category)
+            return 1;
+    return 0;
 }
 
 const char *a64_category_name(const a64_categories *c, int id)

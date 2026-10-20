@@ -28,6 +28,7 @@
 #include "localfs.h"
 #include "osk_sdl.h"
 #include "settings.h"
+#include "shots.h"
 #include "ui.h"
 #include "vicstream.h"
 #ifdef PS64_EMU
@@ -1054,6 +1055,11 @@ int main(int argc, char **argv)
         ctl.actions[ctl.nactions++] = dbg;
     }
 
+    /* Screenshots of Assembly64 results, from CSDb. */
+    shots *shotw = shots_start();
+    uint32_t *shot_px = NULL;           /* the one shown (owned here, handed to the UI) */
+    char shot_id[64] = "";
+
     /* Assembly64 item waiting for its file list before it starts. */
     char auto_item[64] = "";
     int auto_category = 0;
@@ -1577,6 +1583,36 @@ int main(int argc, char **argv)
             }
         }
 
+        /* The highlighted Assembly64 result's screenshot, from CSDb (CSDb releases only). */
+        if (ui.screen == UI_A64 && ui.a64_focus == 1 && ui.a64_sel < ui.a64_count) {
+            const a64_item *it = &ui.a64_items[ui.a64_sel];
+            if (strcmp(shot_id, it->id)) {
+                snprintf(shot_id, sizeof(shot_id), "%s", it->id);
+                free(shot_px);
+                shot_px = NULL;
+                ui.a64_shot = NULL;
+                if (shotw && a64_is_csdb(&ui.a64_cats, it->category)) {
+                    ui.a64_shot_state = SHOT_LOADING;
+                    shots_want(shotw, it->id);
+                } else {
+                    ui.a64_shot_state = SHOT_NONE;
+                }
+            }
+            if (ui.a64_shot_state == SHOT_LOADING) {
+                uint32_t *px;
+                int w, h, got = shots_fetch(shotw, shot_id, &px, &w, &h);
+                if (got == 1) {
+                    shot_px = px;
+                    ui.a64_shot = px;
+                    ui.a64_shot_w = w;
+                    ui.a64_shot_h = h;
+                    ui.a64_shot_state = SHOT_READY;
+                } else if (got < 0) {
+                    ui.a64_shot_state = SHOT_NONE;
+                }
+            }
+        }
+
         if (a64c) {
             a64_result r;
             while (a64_poll(a64c, &r)) {
@@ -1754,6 +1790,8 @@ int main(int argc, char **argv)
 
     discover_stop(scan);
     a64_stop(a64c);
+    shots_stop(shotw);
+    free(shot_px);
     fav_free(&favs);
     fav_free(&recents);
     session_end(&ses, &opt);

@@ -334,4 +334,7 @@ source commit used. Binaries of PS64 that include it are distributed under
 GPL-3.0 with that source.
 The native app is built with the PS5 Native App Boilerplate (GPL-3.0-or-later) and includes
 dlmalloc by Doug Lea (public domain / MIT-0 style licence).
+Search Assembly64 shows screenshots of CSDb releases from [CSDb](https://csdb.dk) (for
+CSDb-sourced items the Assembly64 id is the CSDb release id), decoded with
+[stb_image](https://github.com/nothings/stb) (`src/stb_image.h`, public domain / MIT).
 

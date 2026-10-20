@@ -34,7 +34,14 @@ typedef struct {
     char names[A64_MAX_CATS][40];     /* shown */
     char keys[A64_MAX_CATS][40];      /* aqlKey used in queries */
     int  ids[A64_MAX_CATS];           /* category number, as in ContentItem.category */
+    /* Result category numbers that come from CSDb (their ids are CSDb release ids). */
+    int  csdb[A64_MAX_CATS];
+    int  ncsdb, have_subcats;
 } a64_categories;
+
+/* Whether a result's category number is a CSDb one (presets' "CSDB ..." subcategories;
+ * 0..10 if the presets haven't said). */
+int a64_is_csdb(const a64_categories *c, int category);
 
 /* Display name of a category number, or NULL if unknown. */
 const char *a64_category_name(const a64_categories *c, int id);

@@ -13,6 +13,8 @@
 #include "favs.h"
 #include "osk.h"
 
+#include <stdint.h>
+
 enum { UI_CLOSED, UI_MENU, UI_PICKER, UI_ADDRESS, UI_PASSWORD, UI_BROWSER, UI_ACTIONS,
        UI_SEARCH, UI_A64, UI_A64_FILES, UI_A64_ID, UI_FAVS, UI_FAV_LIST, UI_ABOUT };
 
@@ -54,6 +56,8 @@ typedef struct {
 #define UI_RESULTS_PAGE 20  /* result rows when the results have focus (no keyboard) */
 #define UI_SEARCH_MAX 300   /* results kept per query */
 #define UI_ABOUT_ROWS 22    /* About text lines shown at once */
+
+enum { SHOT_NONE, SHOT_LOADING, SHOT_READY };
 
 typedef struct {
     int screen;
@@ -117,6 +121,10 @@ typedef struct {
     int            a64_nseen;
     char           a64_search_cat[40];   /* filter name used by the pending search */
     int            a64_latest;      /* the results are the latest releases (dates shown) */
+    /* Screenshot of the highlighted result (CSDb items; pixels owned by main). */
+    int             a64_shot_state;  /* SHOT_NONE / SHOT_LOADING / SHOT_READY */
+    const uint32_t *a64_shot;        /* ARGB8888, a64_shot_w x a64_shot_h, when READY */
+    int             a64_shot_w, a64_shot_h;
 
     /* Favourites and recents (lists owned by main). */
     fav_list      *favs, *recents;

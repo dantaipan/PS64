@@ -8,6 +8,8 @@
 #include "../src/discover.h"
 #include "../src/favs.h"
 #include "../src/ftp.h"
+#include "../src/image.h"
+#include "../src/shots.h"
 #include "../src/localfs.h"
 #include "../src/osk.h"
 #include "../src/settings.h"
@@ -869,6 +871,42 @@ static void test_a64_latest(void)
     ui_free(&u);
 }
 
+/* CSDb screenshots: which results have them, the URL, and decoding. */
+static void test_shots(void)
+{
+    char url[96];
+    CHECK(shots_url("265049", url, sizeof(url)) == 0 && !strcmp(url, "/gfx/releases/265000/265049.gif"));
+    CHECK(shots_url("812", url, sizeof(url)) == 0 && !strcmp(url, "/gfx/releases/0/812.gif"));
+    CHECK(shots_url("4d02cd71d36a3b54", url, sizeof(url)) == -1);         /* OneLoad64 ids */
+    CHECK(shots_url("", url, sizeof(url)) == -1);
+
+    /* The presets name the CSDb categories ("CSDB ..."); others aren't CSDb. */
+    static const char presets[] =
+        "[{\"type\":\"category\",\"values\":[{\"aqlKey\":\"games\",\"name\":\"Games\"}]},"
+        " {\"type\":\"subcat\",\"values\":[{\"id\":0,\"aqlKey\":\"games\",\"name\":\"CSDB games\"},"
+        "   {\"id\":4,\"aqlKey\":\"music\",\"name\":\"CSDB music\"},"
+        "   {\"id\":16,\"aqlKey\":\"gamebase\",\"name\":\"Gamebase64\"},"
+        "   {\"id\":18,\"aqlKey\":\"hvscmusic\",\"name\":\"HVSC Music\"}]}]";
+    a64_categories cats;
+    CHECK(a64_parse_categories(presets, strlen(presets), &cats) == 1 && cats.have_subcats &&
+          cats.ncsdb == 2);
+    CHECK(a64_is_csdb(&cats, 0) && a64_is_csdb(&cats, 4) && !a64_is_csdb(&cats, 16) &&
+          !a64_is_csdb(&cats, 18) && !a64_is_csdb(&cats, 1));
+    memset(&cats, 0, sizeof(cats));                                       /* presets not in yet */
+    CHECK(a64_is_csdb(&cats, 10) && !a64_is_csdb(&cats, 11) && !a64_is_csdb(&cats, 33));
+
+    /* A 1x1 GIF with one red pixel. */
+    static const unsigned char gif[] = {
+        'G', 'I', 'F', '8', '9', 'a', 1, 0, 1, 0, 0x80, 0, 0, 0xFF, 0, 0, 0, 0, 0,
+        0x2C, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 0x44, 1, 0, 0x3B };
+    uint32_t *px = NULL;
+    int w = 0, h = 0;
+    CHECK(image_decode(gif, sizeof(gif), &px, &w, &h) == 0 && w == 1 && h == 1 && px &&
+          px[0] == 0xFFFF0000u);
+    free(px);
+    CHECK(image_decode("not an image", 12, &px, &w, &h) == -1);
+}
+
 /* Drive A's device number from GET /v1/drives (the C64 Ultimate 1.1.0 layout). */
 static void test_drive_a(void)
 {
@@ -1035,6 +1073,7 @@ int main(void)
     test_emulator_mode();
     test_drive_a();
     test_a64_latest();
+    test_shots();
     test_favs();
     test_a64();
     test_index();
