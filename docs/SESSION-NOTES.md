@@ -197,6 +197,51 @@ Test plan on the PS5: tile appears; streaming + controller + typing; menu; file 
 search over FTP; Assembly64 search + download; emulator (Boulder Dash) with sound and
 joystick; favourites/recents carried over; Options > Quit returns cleanly.
 
+## Store release and after (2026-10-19 / 20)
+
+- **1.0.0 is in the Prospero Store** (https://prosperostore.net/app/PPSA06464/; GitHub release
+  `01.000.000`; catalog PR darkxex/ps5-homebrew-catalog#435 merged by a maintainer). The repo
+  is public. The old websrv "alpha" release was deleted.
+- **Privacy:** all commits use `642598+dantaipan@users.noreply.github.com` (history rewritten
+  twice: before going public, and after a README edit made on github.com used the Gmail
+  address). The user set this as their global git email; the earlier catalog reservation
+  commit (#427) still carries the Gmail address and can't be changed.
+- **Tile art** (`tools/gen_icon.py`, `tools/gen_backgrounds.py`): rainbow bands red->blue,
+  2 px gaps, inset from the left, "PS64" aligned with the bands; backgrounds are generated
+  BC7 DDS. After changing art of an installed tile: delete the tile, restart the PS5, jailbreak
+  (ShadowMountPlus re-registers on its start-up sync; new tiles also needed a restart).
+- **Dev build** "PS64 Dev" (`PPSA06465`, `/data/ps64-dev`) is installed on the PS5 next to
+  PS64; test changes there: `ps5/native/build.sh dev deploy 192.168.2.195`.
+- **Release** with `ps5/native/release.sh VERSION notes.md [--dry-run|--yes]`
+  (see `docs/RELEASING.md`). The user wants fixes **bundled into 1.0.1**, released only when
+  they say so. Draft notes: `docs/release-notes/01.000.001.md`.
+
+### Unreleased (on main, for 1.0.1)
+- Mount & run reads drive A's bus ID from `GET /v1/drives` (`files_parse_drive_a`) and types
+  `LOAD"*",<id>,1`; says so if drive A is off. (The user's FILE NOT FOUND turned out to be an
+  unpowered real 1541-II on device 9 hanging the serial bus: power it on or unplug it.)
+- Search Assembly64 **R1 = latest 25 releases** (category from L2, games if "All"). The API has
+  no such call: query `(latest:1month) & (category:KEY) & (sort:year) & (order:desc)`
+  (`latest` = added to Assembly64 recently, includes old games newly archived), fetch 200,
+  sort by `released` date client-side, widen to 3months / 1year if fewer than 25 dated items.
+  Debug: `--a64-latest CATEGORY`.
+- Assembly64 names decoded from HTML entities (`&lt;` etc.).
+- Search screens show 20 result rows when the results have focus (10 while typing).
+- **CSDb screenshots** beside Assembly64 results (`src/shots.[ch]` worker + cache of 16,
+  `src/image.[ch]` with vendored `src/stb_image.h`). Assembly64 metadata `images` fields are
+  always empty; for CSDb-sourced items the id is the CSDb release id and the picture is
+  `http://csdb.dk/gfx/releases/<id/1000*1000>/<id>.gif` (384x272 GIF). CSDb categories come
+  from the presets' `subcat` list (names "CSDB ...", ids 0..10; others: C64.org 11, C64.com
+  14/15, Gamebase64 16, HVSC 18-20, Guybrush 26-31, OneLoad64 33). `main_sdl.c` asks for the
+  highlighted item when the selection changes and hands the pixels to `ui` (`a64_shot*`);
+  `ui_sdl.c` `draw_shot` keeps one texture keyed on the pixel pointer.
+  **Open bug (user, 2026-10-20): the picture changes look "a bit buggy" when moving down the
+  list on the PS5** - not yet investigated. Things to check: the texture keyed by pixel pointer
+  (a freed+reallocated buffer can get the same address, so a new picture may not upload);
+  stale `SHOT_LOADING` when `shots_want` is replaced quickly (the worker only fetches the
+  latest want; earlier ids stay "loading" until revisited); the cache key vs ids longer than
+  23 chars; `shot_id` reset when results are replaced (new search with the same first id).
+
 ## Working conventions
 
 - Build: `make` / `make test` (Mac; run `tools/get_sdl2.sh` once), `ps5/build.sh all dist`,
@@ -214,11 +259,9 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
 - Try Assembly64 search end to end on the PS5 now that the client ID is configured.
 - Try emulator mode on the PS5 (speed, sound, controller, Assembly64 downloads).
 - Possible later: SID playback in the emulator (a PSID player stub), save states.
-- 1.0.0 released and listed in the Prospero Store 2026-10-19 (catalog PR #435 merged).
-- Unreleased, for 1.0.1 (draft notes `docs/release-notes/01.000.001.md`): Mount & run loads
-  from drive A's actual device number. Found while debugging the user's setup: an
-  unpowered real 1541-II on the serial bus (device 9) made all loads fail with FILE NOT FOUND;
-  powering it on (before the C64U) or unplugging it fixed that, no code needed.
+- **Next:** debug the CSDb screenshot updates when scrolling (see "Unreleased" above), then
+  more fixes for 1.0.1 as the user finds them; release when the user says so.
+- Possible: a README/About note that an unpowered real drive on the bus blocks loading.
 - Store release and the update process: `docs/RELEASING.md`; dev build
   (`ps5/native/build.sh dev`, PPSA06465 "PS64 Dev", /data/ps64-dev) and
   `ps5/native/release.sh` (with `--dry-run`) are ready. Publishing only with the user's go-ahead.
