@@ -8,7 +8,8 @@ Play the Commodore 64 on a jailbroken PS5 (or a Mac), with or without the real h
 - **Without one**: PS64's **built-in emulator** (VICE) runs a C64 itself.
   Copy games into its games folder or download them from Assembly64; the
   joystick and keyboard work in games, multi-disk games can swap disks, and
-  disks load at full speed. See [Built-in emulator](#built-in-emulator-no-c64-ultimate-needed).
+  disks load at full speed. See [Built-in emulator](#built-in-emulator-no-c64-ultimate-needed). 
+  NOTE: For now, this is a very basic implementation of Vice designed to emulate C64 only. If you want something more feature-rich, look elsewhere.
 
 Both modes can search the online **Assembly64** database and start what you
 find straight away. Pick the machine in **Options > Choose C64…**.
