@@ -42,6 +42,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <math.h>
 #include <netinet/in.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -70,6 +71,8 @@ typedef struct {
     const char *audio_multicast;
     int         audio_rate;
     int         audio_latency_ms;
+    int         stream_volume;    /* dB, C64 Ultimate stream (its SIDs come in near full scale) */
+    int         emulator_volume;  /* dB, built-in emulator */
     int         joystick_port;
     binding     bind[BTN_BINDABLE];
     int         bind_set[BTN_BINDABLE];
@@ -95,6 +98,16 @@ typedef struct {
     int         dpad_keys;    /* emulator: D-pad/stick/Cross as cursor keys and RETURN */
 } options;
 
+/* A saved level onto the menu's steps: UI_VOLUME_MIN..0 dB in UI_VOLUME_STEP dB. */
+static int clamp_volume(int db)
+{
+    if (db > 0)
+        db = 0;
+    if (db < UI_VOLUME_MIN)
+        db = UI_VOLUME_MIN;
+    return db / UI_VOLUME_STEP * UI_VOLUME_STEP;
+}
+
 static void usage(const char *argv0)
 {
     fprintf(stderr,
@@ -103,6 +116,7 @@ static void usage(const char *argv0)
         "          [--snapshot FILE.bmp] [--screenshot FILE.bmp] [--osk]\n"
         "          [--no-audio] [--audio-port N] [--audio-multicast GROUP]\n"
         "          [--audio-rate HZ] [--audio-latency MS] [--config FILE]\n"
+        "          [--stream-volume DB] [--emulator-volume DB]\n"
         "          [--joystick-port 1|2] [--button-NAME KEY] [--type TEXT] [--browse-dir DIR]\n"
         "          [--search-roots /SD,/USB0] [--build-index] [--search TEXT]\n"
         "          [--assembly64-client-id ID] [--assembly64-url URL] [--a64-search TEXT]\n"
@@ -138,6 +152,8 @@ static int parse_args(int argc, char **argv, options *o)
     o->audio_multicast = NULL;
     o->audio_rate = AUDIO_RATE_PAL;
     o->audio_latency_ms = 60;
+    o->stream_volume = -12;
+    o->emulator_volume = 0;
     o->joystick_port = 2;
     memset(o->bind_set, 0, sizeof(o->bind_set));
     o->type_text = NULL;
@@ -201,6 +217,8 @@ static int parse_args(int argc, char **argv, options *o)
         else if (!strcmp(a, "--audio-multicast") && next) { o->audio_multicast = next; i++; }
         else if (!strcmp(a, "--audio-rate") && next)      { o->audio_rate = atoi(next); i++; }
         else if (!strcmp(a, "--audio-latency") && next)   { o->audio_latency_ms = atoi(next); i++; }
+        else if (!strcmp(a, "--stream-volume") && next)   { o->stream_volume = atoi(next); i++; }
+        else if (!strcmp(a, "--emulator-volume") && next) { o->emulator_volume = atoi(next); i++; }
         else if (!strcmp(a, "--config") && next)          { i++; }   /* handled by load_config */
         else if (!strcmp(a, "--joystick-port") && next)   { o->joystick_port = atoi(next); i++; }
         else if (!strcmp(a, "--type") && next)            { o->type_text = next; i++; }
@@ -222,6 +240,8 @@ static int parse_args(int argc, char **argv, options *o)
         return usage(argv[0]), -1;
     if (o->snapshot)
         o->audio = 0;
+    o->stream_volume = clamp_volume(o->stream_volume);
+    o->emulator_volume = clamp_volume(o->emulator_volume);
     if (!o->remote_host)
         o->remote_host = o->start_host;
     return 0;
@@ -360,6 +380,7 @@ typedef struct {
     int      buffering;
     int      draining;
     int      muted;
+    int      gain;        /* Q15: 32768 is 0 dB */
     uint64_t underruns;
     uint64_t overflows;
 } audio_out;
@@ -380,6 +401,7 @@ static int audio_open(audio_out *a, int rate, int latency_ms)
     a->target = (Uint32)((Sint64)rate * latency_ms / 1000);
     a->prime = (Uint32)have.samples * 2;
     a->buffering = 1;
+    a->gain = 32768;
     return 0;
 }
 
@@ -401,7 +423,20 @@ static void audio_push(audio_out *a, const int16_t *samples, size_t frames)
         a->overflows++;
         return;
     }
-    SDL_QueueAudio(a->dev, samples, (Uint32)(frames * 4));
+    if (a->gain >= 32768) {
+        SDL_QueueAudio(a->dev, samples, (Uint32)(frames * 4));
+    } else {
+        int16_t scaled[1024];
+        size_t left = frames * 2;
+        while (left) {
+            size_t n = left < 1024 ? left : 1024;
+            for (size_t i = 0; i < n; i++)
+                scaled[i] = (int16_t)(((int32_t)samples[i] * a->gain) >> 15);
+            SDL_QueueAudio(a->dev, scaled, (Uint32)(n * 2));
+            samples += n;
+            left -= n;
+        }
+    }
     if (a->buffering && queued + frames >= a->target + a->prime) {
         SDL_PauseAudioDevice(a->dev, 0);
         a->buffering = 0;
@@ -411,11 +446,17 @@ static void audio_push(audio_out *a, const int16_t *samples, size_t frames)
 /* Reopen at another rate (the emulator makes 48 kHz, the Ultimate ~47983 Hz). */
 static void audio_reopen(audio_out *a, int rate, int latency_ms)
 {
-    int muted = a->muted;
+    int muted = a->muted, gain = a->gain;
     SDL_CloseAudioDevice(a->dev);
     if (audio_open(a, rate, latency_ms) != 0)
         fprintf(stderr, "audio: can't reopen at %d Hz\n", rate);
     a->muted = muted;
+    a->gain = gain;
+}
+
+static void audio_set_volume(audio_out *a, int db)
+{
+    a->gain = (int)(32768.0 * pow(10.0, db / 20.0) + 0.5);
 }
 
 static void audio_set_muted(audio_out *a, int muted)
@@ -1217,6 +1258,20 @@ int main(int argc, char **argv)
                     ui.muted = aout.muted;
                 }
                 break;
+            case UA_VOLUME:
+                if (opt.audio) {
+                    int muted = aout.muted, *db = ses.emu ? &opt.emulator_volume : &opt.stream_volume;
+                    ui_volume_step(db, &muted, a.offset);
+                    if (muted != aout.muted)
+                        audio_set_muted(&aout, muted);
+                    ui.muted = aout.muted;
+                    if (config) {
+                        char v[16];
+                        snprintf(v, sizeof(v), "%d", *db);
+                        config_set(config, ses.emu ? "emulator-volume" : "stream-volume", v, NULL);
+                    }
+                }
+                break;
             case UA_PORT:
                 ctl.port = ctl.port == 1 ? 2 : 1;
                 ui.port = ctl.port;
@@ -1546,6 +1601,10 @@ int main(int argc, char **argv)
             audio_reopen(&aout, want_rate, opt.audio_latency_ms);
             aout_rate = want_rate;
         }
+        /* Each source has its own level: the Ultimate's stream is much louder than the emulator. */
+        ui.volume_db = ses.emu ? opt.emulator_volume : opt.stream_volume;
+        if (opt.audio)
+            audio_set_volume(&aout, ui.volume_db);
 
         /* Search index: refresh results while it builds, report when done. */
         if (ses.index && index_was_building) {

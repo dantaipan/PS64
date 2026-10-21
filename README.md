@@ -154,7 +154,7 @@ DualSense; on the Mac any SDL-supported controller, plus **O** (menu), **B**
 | Touchpad click | On-screen keyboard (all keys, Shift/C=/CTRL) |
 | R3 | Ultimate menu button |
 | L3 | File browser |
-| Options | Menu: browse files, search files, search Assembly64, favourites, recents, reset / reboot C64, audio, joystick port 1/2, choose C64, update search index, quit |
+| Options | Menu: browse files, search files, search Assembly64, favourites, recents, reset / reboot C64, audio level (or off), joystick port 1/2, choose C64, update search index, quit |
 
 On-screen keyboard: D-pad moves, Cross types, Circle closes, Square DEL,
 Triangle SPACE, R2 RETURN, L1 Shift (twice locks), R1 C=, L2 CTRL. Key

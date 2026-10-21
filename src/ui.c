@@ -197,6 +197,23 @@ int ui_menu_items(const ui_state *u, int *out)
     return count;
 }
 
+void ui_volume_step(int *db, int *muted, int dir)
+{
+    if (*muted) {
+        if (dir > 0) {
+            *muted = 0;
+            *db = UI_VOLUME_MIN;
+        }
+        return;
+    }
+    int v = *db + dir * UI_VOLUME_STEP;
+    if (v < UI_VOLUME_MIN) {
+        *muted = 1;
+        return;
+    }
+    *db = v > 0 ? 0 : v;
+}
+
 static ui_action input_menu(ui_state *u, int in)
 {
     int items[MI_COUNT];
@@ -210,7 +227,12 @@ static ui_action input_menu(ui_state *u, int in)
     case IN_BACK: ui_close(u); break;
     case IN_LEFT: case IN_RIGHT: case IN_OK:
         switch (item) {
-        case MI_AUDIO: return act(UA_MUTE);
+        case MI_AUDIO:
+            if (in == IN_OK)
+                return act(UA_MUTE);
+            ui_action a = act(UA_VOLUME);
+            a.offset = in == IN_LEFT ? -1 : 1;
+            return a;
         case MI_PORT:  return act(UA_PORT);
         case MI_CONTROLLER: return act(UA_CONTROLLER);
         case MI_DISK: {

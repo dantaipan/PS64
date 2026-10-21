@@ -325,7 +325,25 @@ static void test_ui(void)
     CHECK(menu[ui_menu_items(&u, menu) - 1] == MI_QUIT && u.sel == ui_menu_items(&u, menu) - 1);
     CHECK(ui_input(&u, IN_OK).kind == UA_QUIT);
     u.sel = MI_AUDIO;
-    CHECK(ui_input(&u, IN_RIGHT).kind == UA_MUTE);
+    CHECK(ui_input(&u, IN_OK).kind == UA_MUTE);
+    ui_action va = ui_input(&u, IN_RIGHT);
+    CHECK(va.kind == UA_VOLUME && va.offset == 1);
+    va = ui_input(&u, IN_LEFT);
+    CHECK(va.kind == UA_VOLUME && va.offset == -1);
+    /* Volume steps: 2 dB, no louder than 0 dB, Off below -30 dB, back at -30 dB. */
+    int db = -12, off = 0;
+    ui_volume_step(&db, &off, 1);
+    CHECK(db == -10 && !off);
+    db = 0;
+    ui_volume_step(&db, &off, 1);
+    CHECK(db == 0 && !off);
+    db = UI_VOLUME_MIN;
+    ui_volume_step(&db, &off, -1);
+    CHECK(off && db == UI_VOLUME_MIN);
+    ui_volume_step(&db, &off, -1);
+    CHECK(off);
+    ui_volume_step(&db, &off, 1);
+    CHECK(!off && db == UI_VOLUME_MIN);
     u.sel = MI_RESET;
     CHECK(ui_input(&u, IN_OK).kind == UA_RESET && u.screen == UI_CLOSED);
     ui_open_menu(&u);

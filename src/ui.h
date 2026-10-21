@@ -35,7 +35,8 @@ enum { UA_NONE, UA_MUTE, UA_PORT, UA_QUIT, UA_CONNECT, UA_LISTEN_ONLY, UA_RESCAN
        UA_EMULATOR,      /* use the built-in emulator */
        UA_DISK,          /* emulator: insert the next (offset 1) or previous (-1) disk */
        UA_CONTROLLER,    /* emulator: D-pad as joystick <-> cursor keys */
-       UA_A64_LATEST };  /* Assembly64: the latest releases (category_key) */
+       UA_A64_LATEST,    /* Assembly64: the latest releases (category_key) */
+       UA_VOLUME };      /* audio: one step quieter (offset -1) or louder (1) */
 
 typedef struct {
     int  kind;
@@ -59,12 +60,21 @@ typedef struct {
 
 enum { SHOT_NONE, SHOT_LOADING, SHOT_READY };
 
+/* Audio level in the menu: 0 dB down to UI_VOLUME_MIN in UI_VOLUME_STEP steps, then Off. */
+#define UI_VOLUME_MIN  (-30)
+#define UI_VOLUME_STEP 2
+
+/* One step of the Audio item (dir -1 quieter, 1 louder): below the lowest level is Off,
+ * louder from Off comes back at the lowest level. Updates *db and *muted. */
+void ui_volume_step(int *db, int *muted, int dir);
+
 typedef struct {
     int screen;
     int sel, top;
 
     /* Shown in the menu. */
     int muted, port;
+    int volume_db;                /* level of the source playing (UI_VOLUME_MIN..0) */
     int emulator;                 /* the built-in emulator is the machine (set by main) */
     int disk, disks;              /* emulator: inserted disk (0-based) of a swappable set */
     int joy_keys;                 /* emulator: D-pad/stick/Cross are cursor keys and RETURN */

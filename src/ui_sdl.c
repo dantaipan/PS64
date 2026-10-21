@@ -62,8 +62,12 @@ static void row(SDL_Renderer *ren, int i, int selected, const char *text, SDL_Co
 static void draw_menu(SDL_Renderer *ren, const ui_state *u)
 {
     panel(ren, "PS64");
-    char port[32], disk[40];
+    char port[32], disk[40], audio[32];
     snprintf(port, sizeof(port), "Joystick port: < %d >", u->port);
+    if (u->muted)
+        snprintf(audio, sizeof(audio), "Audio: < Off >");
+    else
+        snprintf(audio, sizeof(audio), "Audio: < %d dB >", u->volume_db);
     snprintf(disk, sizeof(disk), "Disk: < %d of %d >", u->disk + 1, u->disks);
     const char *labels[MI_COUNT] = {
         [MI_RESUME] = "Resume",
@@ -73,7 +77,7 @@ static void draw_menu(SDL_Renderer *ren, const ui_state *u)
         [MI_FAVS] = "Favourites...", [MI_RECENTS] = "Recents...",
         [MI_RESET] = "Reset C64",
         [MI_REBOOT] = u->emulator ? "Switch off and on (removes disks)" : "Reboot C64 (clears cartridge)",
-        [MI_AUDIO] = u->muted ? "Audio: < Off >" : "Audio: < On >",
+        [MI_AUDIO] = audio,
         [MI_PORT] = port,
         [MI_CHOOSE] = "Choose C64 stream or emulator...",
         [MI_INDEX] = "Update search index", [MI_ABOUT] = "About PS64...", [MI_QUIT] = "Quit",
