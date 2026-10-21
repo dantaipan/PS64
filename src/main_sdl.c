@@ -72,7 +72,7 @@ typedef struct {
     int         audio_rate;
     int         audio_latency_ms;
     int         stream_volume;    /* dB, C64 Ultimate stream (its SIDs come in near full scale) */
-    int         emulator_volume;  /* dB, built-in emulator */
+    int         emulator_volume;  /* dB, built-in emulator (also loud next to other PS5 apps) */
     int         joystick_port;
     binding     bind[BTN_BINDABLE];
     int         bind_set[BTN_BINDABLE];
@@ -153,7 +153,7 @@ static int parse_args(int argc, char **argv, options *o)
     o->audio_rate = AUDIO_RATE_PAL;
     o->audio_latency_ms = 60;
     o->stream_volume = -12;
-    o->emulator_volume = 0;
+    o->emulator_volume = -12;
     o->joystick_port = 2;
     memset(o->bind_set, 0, sizeof(o->bind_set));
     o->type_text = NULL;
@@ -1601,7 +1601,7 @@ int main(int argc, char **argv)
             audio_reopen(&aout, want_rate, opt.audio_latency_ms);
             aout_rate = want_rate;
         }
-        /* Each source has its own level: the Ultimate's stream is much louder than the emulator. */
+        /* Each source keeps its own level (both start at -12 dB). */
         ui.volume_db = ses.emu ? opt.emulator_volume : opt.stream_volume;
         if (opt.audio)
             audio_set_volume(&aout, ui.volume_db);
