@@ -16,23 +16,26 @@
 #include <stdint.h>
 
 enum { UI_CLOSED, UI_MENU, UI_PICKER, UI_ADDRESS, UI_PASSWORD, UI_BROWSER, UI_ACTIONS,
-       UI_SEARCH, UI_A64, UI_A64_FILES, UI_A64_ID, UI_FAVS, UI_FAV_LIST, UI_ABOUT };
+       UI_SEARCH, UI_A64, UI_A64_FILES, UI_A64_ID, UI_FAVS, UI_FAV_LIST, UI_ABOUT,
+       UI_HOME };   /* home screen: emulator, C64 Ultimate stream, SID player (drawn by home_sdl.c) */
 
 /* Abstract inputs (controls.c maps buttons and keys to these). */
 enum { IN_UP, IN_DOWN, IN_LEFT, IN_RIGHT, IN_OK, IN_BACK, IN_ALT, IN_TRIANGLE,
        IN_L1, IN_R1, IN_L2, IN_R2 };
 
 /* Menu items (ui_menu_items() lists the ones shown, in order). */
-enum { MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS, MI_RECENTS, MI_RESET, MI_REBOOT,
-       MI_AUDIO, MI_PORT, MI_CHOOSE, MI_INDEX, MI_QUIT,
+enum { MI_HOME, MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS, MI_RECENTS, MI_RESET, MI_REBOOT,
+       MI_AUDIO, MI_PORT, MI_INDEX, MI_QUIT,
        MI_DISK, MI_CONTROLLER,          /* emulator only */
        MI_ABOUT,
        MI_COUNT };
 
-enum { UA_NONE, UA_MUTE, UA_PORT, UA_QUIT, UA_CONNECT, UA_LISTEN_ONLY, UA_RESCAN,
+enum { UA_NONE, UA_MUTE, UA_PORT, UA_QUIT, UA_CONNECT, UA_RESCAN,
        UA_LIST, UA_FILE, UA_OPEN_BROWSER, UA_OPEN_SEARCH, UA_BUILD_INDEX, UA_RESET, UA_REBOOT,
        UA_A64_SEARCH, UA_A64_ENTRIES, UA_A64_FILE, UA_A64_SET_ID, UA_FAV_TOGGLE, UA_FAV_LAUNCH,
-       UA_EMULATOR,      /* use the built-in emulator */
+       UA_HOME,          /* menu: back to the home screen */
+       UA_HOME_VICE,     /* home: the built-in emulator (resumes it if it ran) */
+       UA_HOME_STREAM,   /* home: the C64 Ultimate's stream (it's live) */
        UA_DISK,          /* emulator: insert the next (offset 1) or previous (-1) disk */
        UA_CONTROLLER,    /* emulator: D-pad as joystick <-> cursor keys */
        UA_A64_LATEST,    /* Assembly64: the latest releases (category_key) */
@@ -68,6 +71,15 @@ enum { SHOT_NONE, SHOT_LOADING, SHOT_READY };
  * louder from Off comes back at the lowest level. Updates *db and *muted. */
 void ui_volume_step(int *db, int *muted, int dir);
 
+/* Home screen items, focus and the C64 Ultimate stream's state. */
+enum { HOME_VICE, HOME_STREAM, HOME_SID, HOME_ITEMS };
+enum { HOME_ON_ITEMS, HOME_ON_POWER, HOME_ON_GEAR };
+enum { HOME_STREAM_SEARCHING,     /* looking for the C64 Ultimate */
+       HOME_STREAM_CONNECTING,    /* found: starting its stream */
+       HOME_STREAM_LIVE,          /* pictures arriving */
+       HOME_STREAM_LOCKED,        /* found, but it needs a password (settings) */
+       HOME_STREAM_NONE };        /* not found */
+
 typedef struct {
     int screen;
     int sel, top;
@@ -79,6 +91,15 @@ typedef struct {
     int disk, disks;              /* emulator: inserted disk (0-based) of a swappable set */
     int joy_keys;                 /* emulator: D-pad/stick/Cross are cursor keys and RETURN */
     char games_dir[256];          /* emulator: the real folder behind "/" (shown when empty) */
+
+    /* Home screen. */
+    int  home_sel;                /* HOME_VICE, HOME_STREAM, HOME_SID */
+    int  home_focus;              /* HOME_ON_ITEMS, or one of the icons at the top */
+    char home_snack[64];          /* snackbar text; home_snack_serial rises for each new one */
+    unsigned home_snack_serial;
+    int  home_stream;             /* HOME_STREAM_* (set by main) */
+    char home_ip[16];             /* the C64 Ultimate found (set by main) */
+    int  picker_from_home;        /* the picker is the home screen's settings */
 
     /* Picker. */
     c64_device devices[DISCOVER_MAX];
@@ -155,6 +176,8 @@ void ui_free(ui_state *u);
 
 void ui_open_menu(ui_state *u);
 void ui_open_picker(ui_state *u, const char *message);
+/* The home screen (keeps the item chosen last). */
+void ui_open_home(ui_state *u);
 /* Opens the browser at path; returns a UA_LIST action to fetch it. */
 ui_action ui_open_browser(ui_state *u, const char *path);
 void ui_close(ui_state *u);

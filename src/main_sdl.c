@@ -25,6 +25,7 @@
 #include "discover.h"
 #include "favs.h"
 #include "font_sdl.h"
+#include "home_sdl.h"
 #include "localfs.h"
 #include "osk_sdl.h"
 #include "settings.h"
@@ -96,6 +97,8 @@ typedef struct {
     const char *games_dir;    /* the emulator's games folder (default: "games" next to the config) */
     const char *emu_load;     /* debug: start this file in the emulator at launch */
     int         dpad_keys;    /* emulator: D-pad/stick/Cross as cursor keys and RETURN */
+    int         no_home;      /* start straight away (debug flags imply it) instead of on the home screen */
+    int         home_sel;     /* debug: the home screen's chosen object (-1: default) */
 } options;
 
 /* A saved level onto the menu's steps: UI_VOLUME_MIN..0 dB in UI_VOLUME_STEP dB. */
@@ -116,7 +119,7 @@ static void usage(const char *argv0)
         "          [--snapshot FILE.bmp] [--screenshot FILE.bmp] [--osk]\n"
         "          [--no-audio] [--audio-port N] [--audio-multicast GROUP]\n"
         "          [--audio-rate HZ] [--audio-latency MS] [--config FILE]\n"
-        "          [--stream-volume DB] [--emulator-volume DB]\n"
+        "          [--stream-volume DB] [--emulator-volume DB] [--no-home] [--home-sel N]\n"
         "          [--joystick-port 1|2] [--button-NAME KEY] [--type TEXT] [--browse-dir DIR]\n"
         "          [--search-roots /SD,/USB0] [--build-index] [--search TEXT]\n"
         "          [--assembly64-client-id ID] [--assembly64-url URL] [--a64-search TEXT]\n"
@@ -176,6 +179,8 @@ static int parse_args(int argc, char **argv, options *o)
     o->games_dir = NULL;
     o->emu_load = NULL;
     o->dpad_keys = 0;
+    o->no_home = 0;
+    o->home_sel = -1;
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
         const char *next = i + 1 < argc ? argv[i + 1] : NULL;
@@ -190,6 +195,8 @@ static int parse_args(int argc, char **argv, options *o)
         else if (!strcmp(a, "--emu-load") && next)  { o->emu_load = next; i++; }
         else if (!strcmp(a, "--dpad") && next)      { o->dpad_keys = !strcasecmp(next, "keys"); i++; }
         else if (!strcmp(a, "--pick"))              { o->pick = 1; }
+        else if (!strcmp(a, "--no-home"))           { o->no_home = 1; }
+        else if (!strcmp(a, "--home-sel") && next)  { o->home_sel = atoi(next); i++; }
         else if (!strcmp(a, "--browse-dir") && next) { o->browse_dir = next; i++; }
         else if (!strcmp(a, "--browse") && next)    { o->browse_path = next; i++; }
         else if (!strcmp(a, "--ui") && next)        { o->ui_screen = next; i++; }
@@ -244,6 +251,11 @@ static int parse_args(int argc, char **argv, options *o)
     o->emulator_volume = clamp_volume(o->emulator_volume);
     if (!o->remote_host)
         o->remote_host = o->start_host;
+    /* Debug flags that go straight to a machine skip the home screen. */
+    if (o->emu_load || o->browse_path || o->a64_search || o->a64_latest || o->launch_fav ||
+        o->snapshot || o->search_text || o->build_index || o->debug_connect || o->type_text ||
+        (o->ui_screen && strcmp(o->ui_screen, "home")))
+        o->no_home = 1;
     return 0;
 }
 
@@ -640,7 +652,10 @@ static void emu_release(void)                { emulator_release_keys(); }
 
 static int session_begin_emulator(session *s, const options *o)
 {
-    if (emulator_start(emu_dir, o->joystick_port) != 0)
+    /* Started before (then left for the home screen): carry on where it was. */
+    if (emulator_running())
+        emulator_joystick(o->joystick_port, 0);
+    else if (emulator_start(emu_dir, o->joystick_port) != 0)
         return -1;
     static const remote_sink sink = { emu_tap, emu_joy, emu_release };
     s->emu = 1;
@@ -1000,7 +1015,28 @@ int main(int argc, char **argv)
     discover *scan = NULL;
     int want_picker = opt.pick;
     char msg[160];
-    if (opt.use_emulator) {
+    /* The home screen: the C64 Ultimate (the saved one, or the only one on the network) is
+     * looked for in the background and its stream started, so the 1084 shows it live. */
+    char home_want[16] = "", home_pass[64] = "";
+    Uint32 home_search_at = 0, stream_since = 0, last_frame_tick = 0;
+    uint64_t frames_seen = 0;
+    int home_locked = 0;
+    if (opt.start_host)
+        snprintf(home_want, sizeof(home_want), "%s", opt.start_host);
+    if (opt.password)
+        snprintf(home_pass, sizeof(home_pass), "%s", opt.password);
+    if (!opt.no_home) {
+        ui_open_home(&ui);
+        if (opt.home_sel >= 0 && opt.home_sel < HOME_ITEMS)
+            ui.home_sel = opt.home_sel;
+        snprintf(msg, sizeof(msg), "PS64");
+        if (want_picker) {
+            ui_open_picker(&ui, NULL);
+            ui.picker_from_home = 1;
+            scan = discover_start(home_want[0] ? home_want : NULL, home_pass);
+        }
+        want_picker = 0;
+    } else if (opt.use_emulator) {
 #ifdef PS64_EMU
         if (session_begin_emulator(&ses, &opt) == 0) {
             snprintf(msg, sizeof(msg), "Built-in emulator");
@@ -1033,7 +1069,8 @@ int main(int argc, char **argv)
 #endif
         snprintf(msg, sizeof(msg), "Waiting for streams on ports %d and %d", opt.port, opt.audio_port);
     }
-    notify(msg);
+    if (opt.no_home)
+        notify(msg);
     if (want_picker) {
         ui_open_picker(&ui, opt.start_host ? msg : NULL);
         scan = discover_start(opt.start_host, opt.password);
@@ -1193,8 +1230,8 @@ int main(int argc, char **argv)
                     perror("recv audio");
                 break;
             }
-            if (SDL_TICKS_PASSED(SDL_GetTicks(), audio_from) == 0 || ses.emu)
-                continue;
+            if (SDL_TICKS_PASSED(SDL_GetTicks(), audio_from) == 0 || ses.emu || ui.screen == UI_HOME)
+                continue;   /* (the home screen is silent) */
             size_t frames = audio_feed(&adec, buf, (size_t)n, samples, AUDIO_MAX_FRAMES);
             if (frames)
                 audio_push(&aout, samples, frames);
@@ -1300,30 +1337,47 @@ int main(int argc, char **argv)
                     if (a.password[0])
                         config_set(config, "password", a.password, NULL);
                 }
+                snprintf(home_want, sizeof(home_want), "%s", a.ip);
+                snprintf(home_pass, sizeof(home_pass), "%s", a.password);
+                home_locked = 0;
+                stream_since = tick;
                 snprintf(msg, sizeof(msg), "Connected to the C64 at %s", a.ip);
                 notify(msg);
-                controls_banner(&ctl, msg);
+                if (ui.picker_from_home)
+                    ui_open_home(&ui);          /* the 1084 shows it from now on */
+                else
+                    controls_banner(&ctl, msg);
                 break;
             }
-            case UA_EMULATOR:
+            case UA_HOME:
+                /* Back to the home screen: the emulator pauses where it is (Vice resumes it);
+                 * a stream keeps running so the 1084 shows it. */
+                if (ses.emu) {
+                    session_end(&ses, &opt);
+                    home_search_at = tick;
+                }
+                break;
+            case UA_HOME_VICE:
 #ifdef PS64_EMU
                 discover_stop(scan);
                 scan = NULL;
                 session_end(&ses, &opt);
                 if (session_begin_emulator(&ses, &opt) != 0) {
                     session_end(&ses, &opt);
-                    ui_open_picker(&ui, "The built-in emulator didn't start");
+                    ui_open_home(&ui);
+                    snprintf(ui.home_snack, sizeof(ui.home_snack), "The built-in emulator didn't start");
+                    ui.home_snack_serial++;
                     break;
                 }
-                if (config) {
-                    static const char *const legacy[] = { "start", NULL };
-                    config_set(config, "c64", "emulator", legacy);
-                }
+                ui_close(&ui);
                 notify("Built-in emulator");
-                controls_banner(&ctl, "Built-in emulator: browse the games folder or search Assembly64");
 #else
-                controls_banner(&ctl, "This PS64 build has no built-in emulator");
+                snprintf(ui.home_snack, sizeof(ui.home_snack), "This PS64 build has no emulator");
+                ui.home_snack_serial++;
 #endif
+                break;
+            case UA_HOME_STREAM:
+                ui_close(&ui);
                 break;
 #ifdef PS64_EMU
             case UA_DISK: {
@@ -1346,16 +1400,6 @@ int main(int argc, char **argv)
                 controls_banner(&ctl, ctl.joy_keys ? "D-pad: cursor keys, Cross: RETURN"
                                                    : "D-pad: joystick, Cross: fire");
                 break;
-            case UA_LISTEN_ONLY:
-                discover_stop(scan);
-                scan = NULL;
-                session_end(&ses, &opt);
-                if (config) {
-                    static const char *const legacy[] = { "start", NULL };
-                    config_set(config, "c64", "none", legacy);
-                }
-                controls_banner(&ctl, "Listening only - start the streams from the C64 menu");
-                break;
             case UA_RESET:
             case UA_REBOOT:
 #ifdef PS64_EMU
@@ -1367,7 +1411,7 @@ int main(int argc, char **argv)
                 }
 #endif
                 if (!ses.files) {
-                    controls_banner(&ctl, "Choose a C64 first (Options > Choose C64)");
+                    controls_banner(&ctl, "No C64 Ultimate connected (Options > Home > settings)");
                     break;
                 }
                 files_action(ses.files, "", a.kind == UA_RESET ? FA_RESET : FA_REBOOT);
@@ -1420,7 +1464,7 @@ int main(int argc, char **argv)
                 }
 #endif
                 if (!ses.files) {
-                    controls_banner(&ctl, "Choose a C64 first (Options > Choose C64)");
+                    controls_banner(&ctl, "No C64 Ultimate connected (Options > Home > settings)");
                     break;
                 }
                 if (a64c) {
@@ -1432,7 +1476,7 @@ int main(int argc, char **argv)
                 break;
             case UA_OPEN_SEARCH:
                 if (!ses.index) {
-                    controls_banner(&ctl, "Choose a C64 first (Options > Choose C64)");
+                    controls_banner(&ctl, "No C64 Ultimate connected (Options > Home > settings)");
                     break;
                 }
                 ui.index = ses.index;
@@ -1440,7 +1484,7 @@ int main(int argc, char **argv)
                 break;
             case UA_BUILD_INDEX:
                 if (!ses.index) {
-                    controls_banner(&ctl, "Choose a C64 first (Options > Choose C64)");
+                    controls_banner(&ctl, "No C64 Ultimate connected (Options > Home > settings)");
                     break;
                 }
 #ifdef PS64_EMU
@@ -1463,7 +1507,7 @@ int main(int argc, char **argv)
                 }
 #endif
                 if (!ses.files) {
-                    controls_banner(&ctl, "Choose a C64 first (Options > Choose C64)");
+                    controls_banner(&ctl, "No C64 Ultimate connected (Options > Home > settings)");
                     break;
                 }
                 a = ui_open_browser(&ui, browse_dir);
@@ -1490,9 +1534,9 @@ int main(int argc, char **argv)
                 fav_entry *e = &a.fav;
                 int local = fav_is_path(e);
                 if (local && fav_is_emulator(e) != ses.emu) {
-                    controls_banner(&ctl, ses.emu ? "That's on a C64 Ultimate (Options > Choose C64)"
+                    controls_banner(&ctl, ses.emu ? "That's on a C64 Ultimate (Options > Home > Stream)"
                                                   : "That's in the built-in emulator's games folder "
-                                                    "(Options > Choose C64 > Built-in emulator)");
+                                                    "(Options > Home > Vice)");
                     break;
                 }
 #ifdef PS64_EMU
@@ -1522,7 +1566,7 @@ int main(int argc, char **argv)
                 }
 #endif
                 if (!ses.files) {
-                    controls_banner(&ctl, "Choose a C64 first (Options > Choose C64)");
+                    controls_banner(&ctl, "No C64 Ultimate connected (Options > Home > settings)");
                     break;
                 }
                 if (!local && !a64c) {
@@ -1601,6 +1645,23 @@ int main(int argc, char **argv)
             audio_reopen(&aout, want_rate, opt.audio_latency_ms);
             aout_rate = want_rate;
         }
+        /* The home screen's view of the stream: live while pictures arrive. A stream that
+         * stopped (the C64 switched off) is dropped after 10 s and looked for again. */
+        if (dec.stats.frames > frames_seen)
+            last_frame_tick = tick;
+        frames_seen = dec.stats.frames;
+        int live = !ses.emu && last_frame_tick && tick - last_frame_tick < 1500;
+        if (ui.screen == UI_HOME && ses.streaming && !live &&
+            tick - (last_frame_tick > stream_since ? last_frame_tick : stream_since) > 10000) {
+            session_end(&ses, &opt);
+            home_search_at = tick;
+        }
+        if (ses.streaming)
+            snprintf(ui.home_ip, sizeof(ui.home_ip), "%s", ses.host);
+        ui.home_stream = live ? HOME_STREAM_LIVE : ses.streaming ? HOME_STREAM_CONNECTING
+                       : home_locked ? HOME_STREAM_LOCKED : scan ? HOME_STREAM_SEARCHING
+                       : HOME_STREAM_NONE;
+
         /* Each source keeps its own level (both start at -12 dB). */
         ui.volume_db = ses.emu ? opt.emulator_volume : opt.stream_volume;
         if (opt.audio)
@@ -1747,14 +1808,52 @@ int main(int argc, char **argv)
             }
         }
 
+        /* Home: look for the C64 Ultimate (again every 15 s until one answers). */
+        int home_idle = ui.screen == UI_HOME && !ses.streaming && !ses.emu;
+        if (home_idle && !scan && SDL_TICKS_PASSED(tick, home_search_at))
+            scan = discover_start(home_want[0] ? home_want : NULL, home_pass);
         if (scan) {
             c64_device found[DISCOVER_MAX];
             int n, progress;
             int done = discover_poll(scan, found, &n, &progress);
             ui_set_devices(&ui, found, n, progress, done);
+            /* On the home screen, start the saved C64's stream as soon as it answers (or the
+             * only one found, the first time). */
+            const c64_device *pick = NULL;
+            for (int i = 0; home_idle && i < n; i++)
+                if (home_want[0] && !strcmp(found[i].ip, home_want))
+                    pick = &found[i];
+            if (home_idle && !pick && !home_want[0] && done && n == 1)
+                pick = &found[0];
+            if (pick) {
+                char ip[16];
+                snprintf(ip, sizeof(ip), "%s", pick->ip);
+                snprintf(ui.home_ip, sizeof(ui.home_ip), "%s", ip);
+                home_locked = pick->locked && !home_pass[0];
+                discover_stop(scan);
+                scan = NULL;
+                done = 0;
+                home_search_at = tick + 15000;
+                if (!home_locked) {
+                    int rc = session_begin(&ses, &opt, ip, home_pass, 1);
+                    if (rc == 0) {
+                        stream_since = tick;
+                        if (config && strcmp(home_want, ip)) {
+                            static const char *const legacy[] = { "start", NULL };
+                            config_set(config, "c64", ip, legacy);
+                        }
+                        snprintf(home_want, sizeof(home_want), "%s", ip);
+                    } else {
+                        session_end(&ses, &opt);
+                        home_locked = rc == 403;
+                    }
+                }
+            }
             if (done) {
                 discover_stop(scan);
                 scan = NULL;
+                if (home_idle)
+                    home_search_at = tick + 15000;
             }
         }
 
@@ -1796,7 +1895,9 @@ int main(int argc, char **argv)
             }
         }
 
-        if (tex) {
+        if (ui.screen == UI_HOME) {
+            home_draw(ren, &ui, tex, tick);
+        } else if (tex) {
             SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
             SDL_RenderClear(ren);
             SDL_RenderCopy(ren, tex, NULL, NULL);
@@ -1804,6 +1905,18 @@ int main(int argc, char **argv)
             draw_waiting(ren);
         }
         controls_draw(&ctl, ren, tick);
+        if (ui.screen == UI_HOME) {
+            /* How fast the home screen draws (the PS5 draws it on the CPU). */
+            static Uint32 home_fps_at, home_frames;
+            home_frames++;
+            if (!home_fps_at)
+                home_fps_at = tick;
+            if (tick - home_fps_at >= 10000) {
+                printf("home: %.1f fps\n", home_frames * 1000.0 / (tick - home_fps_at));
+                home_fps_at = tick;
+                home_frames = 0;
+            }
+        }
         if (opt.screenshot && tick - started > (Uint32)opt.screenshot_ms) {
             int w, h;
             SDL_GetRendererOutputSize(ren, &w, &h);
@@ -1873,6 +1986,7 @@ int main(int argc, char **argv)
     if (asock >= 0)
         close(asock);
     if (tex) SDL_DestroyTexture(tex);
+    home_cleanup();
     font_cleanup();
     SDL_DestroyRenderer(ren);
     SDL_DestroyWindow(win);

@@ -8,7 +8,10 @@
 #include "../src/discover.h"
 #include "../src/favs.h"
 #include "../src/ftp.h"
+#include "../src/home.h"
 #include "../src/image.h"
+#include "../src/mesh3d.h"
+#include "../src/models.h"
 #include "../src/shots.h"
 #include "../src/localfs.h"
 #include "../src/osk.h"
@@ -350,15 +353,16 @@ static void test_ui(void)
     u.sel = MI_REBOOT;
     CHECK(ui_input(&u, IN_OK).kind == UA_REBOOT && u.screen == UI_CLOSED);
     ui_open_menu(&u);
-    u.sel = MI_CHOOSE;
-    CHECK(ui_input(&u, IN_OK).kind == UA_RESCAN && u.screen == UI_PICKER);
+    u.sel = MI_HOME;
+    CHECK(ui_input(&u, IN_OK).kind == UA_HOME && u.screen == UI_HOME);
 
-    /* Picker: a found device connects; the fixed rows follow it. */
+    /* Picker (the home screen's settings): a found device connects; the fixed rows follow it. */
+    ui_open_picker(&u, NULL);
     c64_device dev[1];
     memset(dev, 0, sizeof(dev));
     strcpy(dev[0].ip, "192.168.2.64");
     ui_set_devices(&u, dev, 1, 100, 1);
-    CHECK(ui_picker_rows(&u) == 5);
+    CHECK(ui_picker_rows(&u) == 3);
     ui_action a = ui_input(&u, IN_OK);
     CHECK(a.kind == UA_CONNECT && !strcmp(a.ip, "192.168.2.64") && u.screen == UI_CLOSED);
 
@@ -1063,18 +1067,15 @@ static void test_emulator_mode(void)
     CHECK(ne == 15 && !has_disk && has_ctl && items[ne - 2] == MI_ABOUT);
     u.disks = 2;
     ne = ui_menu_items(&u, items);
-    CHECK(ne == 16 && items[6] == MI_DISK);
+    CHECK(ne == 16 && items[0] == MI_HOME && items[7] == MI_DISK);
     ui_open_menu(&u);
-    u.sel = 6;
+    u.sel = 7;
     ui_action a = ui_input(&u, IN_LEFT);
     CHECK(a.kind == UA_DISK && a.offset == -1);
     a = ui_input(&u, IN_OK);
     CHECK(a.kind == UA_DISK && a.offset == 1);
-    u.sel = 9;
+    u.sel = 10;
     CHECK(ui_input(&u, IN_OK).kind == UA_CONTROLLER);
-    ui_open_picker(&u, NULL);
-    u.sel = 2;                                                    /* no devices: emulator row */
-    CHECK(ui_input(&u, IN_OK).kind == UA_EMULATOR);
 
     /* About: opens from the menu, scrolls within the text, back returns to the menu. */
     ui_open_menu(&u);
@@ -1100,8 +1101,101 @@ static void test_emulator_mode(void)
     ui_free(&u);
 }
 
+/* The home screen: choosing objects, the snackbar, the icons, settings and back. */
+static void test_home(void)
+{
+    static ui_state u;
+    ui_setup(&u);
+    int items[MI_COUNT];
+    CHECK(ui_menu_items(&u, items) > 0 && items[0] == MI_HOME);
+    ui_open_home(&u);
+    CHECK(u.screen == UI_HOME && u.home_sel == HOME_VICE && u.home_focus == HOME_ON_ITEMS);
+    ui_input(&u, IN_LEFT);
+    CHECK(u.home_sel == HOME_VICE);
+    ui_input(&u, IN_RIGHT);
+    ui_input(&u, IN_RIGHT);
+    ui_input(&u, IN_RIGHT);
+    CHECK(u.home_sel == HOME_SID);
+    unsigned serial = u.home_snack_serial;
+    CHECK(ui_input(&u, IN_OK).kind == UA_NONE && u.home_snack_serial == serial + 1 &&
+          strstr(u.home_snack, "coming soon"));
+    ui_input(&u, IN_LEFT);
+    u.home_stream = HOME_STREAM_NONE;
+    CHECK(ui_input(&u, IN_OK).kind == UA_NONE &&
+          !strcmp(u.home_snack, "No stream found. Check settings."));
+    u.home_stream = HOME_STREAM_LOCKED;
+    ui_input(&u, IN_OK);
+    CHECK(strstr(u.home_snack, "password") != NULL);
+    u.home_stream = HOME_STREAM_LIVE;
+    CHECK(ui_input(&u, IN_OK).kind == UA_HOME_STREAM);
+    ui_input(&u, IN_LEFT);
+    CHECK(ui_input(&u, IN_OK).kind == UA_HOME_VICE);
+    /* Up to the icons: power quits, the gear opens the settings, Back returns home. */
+    ui_input(&u, IN_UP);
+    CHECK(u.home_focus == HOME_ON_GEAR);
+    ui_input(&u, IN_LEFT);
+    CHECK(u.home_focus == HOME_ON_POWER && ui_input(&u, IN_OK).kind == UA_QUIT);
+    ui_input(&u, IN_RIGHT);
+    CHECK(ui_input(&u, IN_OK).kind == UA_RESCAN && u.screen == UI_PICKER && u.picker_from_home);
+    ui_input(&u, IN_BACK);
+    CHECK(u.screen == UI_HOME && u.home_focus == HOME_ON_ITEMS && u.home_sel == HOME_VICE);
+    ui_input(&u, IN_UP);
+    ui_input(&u, IN_DOWN);
+    CHECK(u.home_focus == HOME_ON_ITEMS);
+    ui_free(&u);
+
+    /* 3D: projection, and a cube shows one face head on, three from an angle. */
+    pose3 p = { .cx = 960, .cy = 540, .scale = 100, .bright = 1 };
+    float x, y, d;
+    mesh_project(&p, (vec3){0, 0, 0}, &x, &y, &d);
+    CHECK(x == 960 && y == 540 && d == MESH3D_CAMERA);
+    mesh_project(&p, (vec3){1, 1, 0}, &x, &y, &d);
+    CHECK(x == 1060 && y == 440);
+    mesh cube = {0};
+    mesh_box(&cube, (vec3){-0.5f, -0.5f, -0.5f}, (vec3){0.5f, 0.5f, 0.5f}, 0x808080, 0);
+    CHECK(cube.count == 12);
+    tri2 tris[64];
+    CHECK(mesh_prepare(&cube, &p, tris, 64) == 2);
+    p.yaw = 0.5f;
+    p.pitch = -0.4f;
+    int n = mesh_prepare(&cube, &p, tris, 64);
+    CHECK(n == 6);
+    for (int i = 1; i < n; i++)
+        CHECK(tris[i - 1].depth >= tris[i].depth);                 /* far first */
+    mesh_free(&cube);
+    mesh models[3] = {{0}};
+    model_1702(&models[0]);
+    model_1084(&models[1]);
+    model_sid(&models[2]);
+    for (int i = 0; i < 3; i++) {
+        int textured = 0;
+        for (int k = 0; k < models[i].count; k++)
+            textured += models[i].tris[k].textured;
+        CHECK(models[i].count > 50 && models[i].count <= 700 && textured > 0);
+        mesh_free(&models[i]);
+    }
+
+    /* Pictures: the start-up screen, its cursor, and repeatable static. */
+    static uint32_t px[HOME_C64_W * HOME_C64_H];
+    home_basic_screen(px, 1);
+    CHECK(px[0] == 0xFF706DEBu && px[(HOME_C64_Y + 100) * HOME_C64_W + HOME_C64_X + 300] == 0xFF2E2C9Bu);
+    int ink = 0;
+    for (int yy = 0; yy < 8; yy++)                  /* the R of READY. (row 5, column 0) */
+        for (int xx = 0; xx < 8; xx++)
+            ink += px[(HOME_C64_Y + 40 + yy) * HOME_C64_W + HOME_C64_X + xx] == 0xFF706DEBu;
+    CHECK(ink > 10 && ink < 64);
+    CHECK(px[(HOME_C64_Y + 52) * HOME_C64_W + HOME_C64_X + 4] == 0xFF706DEBu);   /* cursor */
+    home_basic_screen(px, 0);
+    CHECK(px[(HOME_C64_Y + 52) * HOME_C64_W + HOME_C64_X + 4] == 0xFF2E2C9Bu);
+    uint32_t a[16], b[16], s1 = 7, s2 = 7;
+    home_noise(a, 16, &s1);
+    home_noise(b, 16, &s2);
+    CHECK(!memcmp(a, b, sizeof(a)) && s1 == s2 && a[0] != a[1]);
+}
+
 int main(void)
 {
+    test_home();
     test_emulator_mode();
     test_drive_a();
     test_a64_latest();

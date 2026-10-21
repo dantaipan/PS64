@@ -56,6 +56,13 @@ static void go(ui_state *u, int screen)
 void ui_open_menu(ui_state *u)  { go(u, UI_MENU); }
 void ui_close(ui_state *u)      { u->screen = UI_CLOSED; }
 
+void ui_open_home(ui_state *u)
+{
+    u->screen = UI_HOME;
+    u->home_focus = HOME_ON_ITEMS;
+    u->picker_from_home = 0;
+}
+
 void ui_open_picker(ui_state *u, const char *message)
 {
     go(u, UI_PICKER);
@@ -75,7 +82,7 @@ ui_action ui_open_browser(ui_state *u, const char *path)
 
 int ui_picker_rows(const ui_state *u)
 {
-    return u->ndevices + 4;     /* + Enter address, Search again, Built-in emulator, Listen only */
+    return u->ndevices + 2;     /* + Enter address, Search again */
 }
 
 void ui_set_devices(ui_state *u, const c64_device *d, int n, int progress, int done)
@@ -181,12 +188,12 @@ static int petscii_to_ascii(int p)
 
 int ui_menu_items(const ui_state *u, int *out)
 {
-    static const int ultimate[] = { MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS, MI_RECENTS,
-                                    MI_RESET, MI_REBOOT, MI_AUDIO, MI_PORT, MI_CHOOSE, MI_INDEX,
+    static const int ultimate[] = { MI_HOME, MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS,
+                                    MI_RECENTS, MI_RESET, MI_REBOOT, MI_AUDIO, MI_PORT, MI_INDEX,
                                     MI_ABOUT, MI_QUIT };
-    static const int emulator[] = { MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS, MI_RECENTS,
-                                    MI_DISK, MI_RESET, MI_REBOOT, MI_CONTROLLER, MI_AUDIO, MI_PORT,
-                                    MI_CHOOSE, MI_INDEX, MI_ABOUT, MI_QUIT };
+    static const int emulator[] = { MI_HOME, MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS,
+                                    MI_RECENTS, MI_DISK, MI_RESET, MI_REBOOT, MI_CONTROLLER,
+                                    MI_AUDIO, MI_PORT, MI_INDEX, MI_ABOUT, MI_QUIT };
     const int *src = u->emulator ? emulator : ultimate;
     int n = u->emulator ? (int)(sizeof(emulator) / sizeof(emulator[0]))
                         : (int)(sizeof(ultimate) / sizeof(ultimate[0]));
@@ -254,7 +261,7 @@ static ui_action input_menu(ui_state *u, int in)
         case MI_ABOUT:  ui_open_about(u); break;
         case MI_RESET:  ui_close(u); return act(UA_RESET);
         case MI_REBOOT: ui_close(u); return act(UA_REBOOT);
-        case MI_CHOOSE: ui_open_picker(u, NULL); return act(UA_RESCAN);
+        case MI_HOME:   ui_open_home(u); return act(UA_HOME);
         case MI_QUIT:   return act(UA_QUIT);
         }
         break;
@@ -268,7 +275,12 @@ static ui_action input_picker(ui_state *u, int in)
     switch (in) {
     case IN_UP:   move(u, rows, -1, 1); break;
     case IN_DOWN: move(u, rows, 1, 1); break;
-    case IN_BACK: ui_close(u); break;
+    case IN_BACK:
+        if (u->picker_from_home)
+            ui_open_home(u);
+        else
+            ui_close(u);
+        break;
     case IN_OK:
         if (u->sel < u->ndevices) {
             c64_device *d = &u->devices[u->sel];
@@ -284,8 +296,6 @@ static ui_action input_picker(ui_state *u, int in)
         switch (u->sel - u->ndevices) {
         case 0: start_address(u); break;
         case 1: u->message[0] = 0; return act(UA_RESCAN);
-        case 2: ui_close(u); return act(UA_EMULATOR);
-        case 3: ui_close(u); return act(UA_LISTEN_ONLY);
         }
         break;
     }
@@ -1105,7 +1115,7 @@ static const char *const about_text[] = {
     "Find games on the C64's storage, in the emulator's games folder",
     "(/data/ps64/games), or in the online Assembly64 database (R1 there shows",
     "the latest releases).",
-    "Options > Choose C64 stream or emulator switches between the two.",
+    "Options > Home goes back to the home screen to switch between them.",
     "",
     "Controller",
     "  D-pad / left stick    joystick (emulator) or cursor keys",
@@ -1162,6 +1172,54 @@ static ui_action input_about(ui_state *u, int in)
     return none();
 }
 
+static void home_snack(ui_state *u, const char *text)
+{
+    snprintf(u->home_snack, sizeof(u->home_snack), "%s", text);
+    u->home_snack_serial++;
+}
+
+/* Home: left/right choose an object, up/down move between the objects and the
+ * power and settings icons at the top. */
+static ui_action input_home(ui_state *u, int in)
+{
+    if (u->home_focus != HOME_ON_ITEMS) {
+        switch (in) {
+        case IN_LEFT:  u->home_focus = HOME_ON_POWER; break;
+        case IN_RIGHT: u->home_focus = HOME_ON_GEAR; break;
+        case IN_DOWN: case IN_BACK: u->home_focus = HOME_ON_ITEMS; break;
+        case IN_OK:
+            if (u->home_focus == HOME_ON_POWER)
+                return act(UA_QUIT);
+            ui_open_picker(u, NULL);
+            u->picker_from_home = 1;
+            return act(UA_RESCAN);
+        }
+        return none();
+    }
+    switch (in) {
+    case IN_LEFT:  if (u->home_sel > 0) u->home_sel--; break;
+    case IN_RIGHT: if (u->home_sel < HOME_ITEMS - 1) u->home_sel++; break;
+    case IN_UP:    u->home_focus = HOME_ON_GEAR; break;
+    case IN_OK:
+        switch (u->home_sel) {
+        case HOME_VICE:
+            return act(UA_HOME_VICE);
+        case HOME_STREAM:
+            if (u->home_stream == HOME_STREAM_LIVE)
+                return act(UA_HOME_STREAM);
+            home_snack(u, u->home_stream == HOME_STREAM_LOCKED
+                          ? "The C64 Ultimate needs its password. Check settings."
+                          : "No stream found. Check settings.");
+            break;
+        case HOME_SID:
+            home_snack(u, "SID player: coming soon.");
+            break;
+        }
+        break;
+    }
+    return none();
+}
+
 ui_action ui_input(ui_state *u, int in)
 {
     switch (u->screen) {
@@ -1178,6 +1236,7 @@ ui_action ui_input(ui_state *u, int in)
     case UI_FAVS:     return input_favs(u, in);
     case UI_FAV_LIST: return input_fav_list(u, in);
     case UI_ABOUT:    return input_about(u, in);
+    case UI_HOME:     return input_home(u, in);
     }
     return none();
 }

@@ -149,6 +149,8 @@ static void set_osk(controls *c, int open)
 
 static void toggle_menu(controls *c)
 {
+    if (c->ui && c->ui->screen == UI_HOME)      /* no Options menu on the home screen */
+        return;
     if (ui_open(c))
         ui_close(c->ui);
     else

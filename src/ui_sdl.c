@@ -70,6 +70,7 @@ static void draw_menu(SDL_Renderer *ren, const ui_state *u)
         snprintf(audio, sizeof(audio), "Audio: < %d dB >", u->volume_db);
     snprintf(disk, sizeof(disk), "Disk: < %d of %d >", u->disk + 1, u->disks);
     const char *labels[MI_COUNT] = {
+        [MI_HOME] = "Home",
         [MI_RESUME] = "Resume",
         [MI_BROWSE] = u->emulator ? "Browse games folder..." : "Browse files...",
         [MI_SEARCH] = u->emulator ? "Search games folder..." : "Search files...",
@@ -79,7 +80,6 @@ static void draw_menu(SDL_Renderer *ren, const ui_state *u)
         [MI_REBOOT] = u->emulator ? "Switch off and on (removes disks)" : "Reboot C64 (clears cartridge)",
         [MI_AUDIO] = audio,
         [MI_PORT] = port,
-        [MI_CHOOSE] = "Choose C64 stream or emulator...",
         [MI_INDEX] = "Update search index", [MI_ABOUT] = "About PS64...", [MI_QUIT] = "Quit",
         [MI_DISK] = disk,
         [MI_CONTROLLER] = u->joy_keys ? "D-pad: < Cursor keys >" : "D-pad: < Joystick >",
@@ -99,7 +99,7 @@ static void draw_menu(SDL_Renderer *ren, const ui_state *u)
 
 static void draw_picker(SDL_Renderer *ren, const ui_state *u, Uint32 now)
 {
-    panel(ren, "Choose C64 stream or emulator");
+    panel(ren, "C64 Ultimate settings");
     char status[96];
     if (u->scanning)
         snprintf(status, sizeof(status), "Searching the network %c %d%%",
@@ -122,18 +122,15 @@ static void draw_picker(SDL_Renderer *ren, const ui_state *u, Uint32 now)
                 snprintf(text, sizeof(text), "%-15s  %s  %s %s", d->ip,
                          d->hostname[0] ? d->hostname : "-", d->product, d->firmware);
         } else {
-            static const char *const fixed[4] = {
-                "Enter address...", "Search again",
-                "Built-in emulator (no C64 Ultimate needed)",
-                "No C64 - listen only (start streams from its menu)",
-            };
+            static const char *const fixed[2] = { "Enter address...", "Search again" };
             snprintf(text, sizeof(text), "%s", fixed[i - u->ndevices]);
             c = CYAN;
         }
         fit(text, CHARS, line, sizeof(line));
         row(ren, i - u->top, i == u->sel, line, c);
     }
-    footer(ren, "X choose   O close      The C64 needs its web remote control turned on");
+    footer(ren, u->picker_from_home ? "X choose   O back       The C64 needs its web remote control turned on"
+                                    : "X choose   O close      The C64 needs its web remote control turned on");
 }
 
 static void draw_about(SDL_Renderer *ren, const ui_state *u)
@@ -276,7 +273,7 @@ static void draw_search(SDL_Renderer *ren, const ui_state *u, Uint32 now)
     }
 
     if (!u->index) {
-        font_draw(ren, "Choose a C64 first (Options > Choose C64...)", PX + 16, LIST_Y, 1, YELLOW);
+        font_draw(ren, "No C64 Ultimate connected (Options > Home > settings)", PX + 16, LIST_Y, 1, YELLOW);
         footer(ren, "O close");
         return;
     }
@@ -588,7 +585,7 @@ static void draw_fav_list(SDL_Renderer *ren, const ui_state *u)
 
 void ui_draw(SDL_Renderer *ren, const ui_state *u, Uint32 now)
 {
-    if (u->screen == UI_CLOSED)
+    if (u->screen == UI_CLOSED || u->screen == UI_HOME)    /* home: home_draw, called by main */
         return;
     int saved_w, saved_h;
     canvas_begin(ren, &saved_w, &saved_h);
