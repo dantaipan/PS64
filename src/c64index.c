@@ -240,6 +240,8 @@ static void *builder(void *arg)
     }
 
     int local = x->local_root[0] != 0;
+    if (local)      /* a native PS5 app can't list folders: refresh games.txt over FTP first */
+        localfs_refresh_manifest(x->local_root, err, sizeof(err));
     ftp_session *s = local ? NULL : ftp_open(x->host, pw, err, sizeof(err));
     int fatal = !local && s == NULL;
     char *dir;

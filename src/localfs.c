@@ -4,6 +4,7 @@
 
 #include <dirent.h>
 #include <errno.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,6 +42,7 @@ void localfs_real_path(const char *root, const char *path, char *out, size_t cap
  */
 #define MANIFEST_NAME "games.txt"
 
+static pthread_mutex_t manifest_lock = PTHREAD_MUTEX_INITIALIZER;
 static char *manifest;             /* cached text of games.txt, reread when "/" is listed */
 static char manifest_root[1024];
 
@@ -79,7 +81,7 @@ static int manifest_load(const char *root, int reload)
     return 0;
 }
 
-static int manifest_list(const char *root, const char *path, ftp_entry *out, int max)
+static int manifest_list_locked(const char *root, const char *path, ftp_entry *out, int max)
 {
     /* path without surrounding slashes, "" for the root */
     char dir[1024];
@@ -137,6 +139,96 @@ static int manifest_list(const char *root, const char *path, ftp_entry *out, int
     return n;
 }
 
+static int manifest_list(const char *root, const char *path, ftp_entry *out, int max)
+{
+    pthread_mutex_lock(&manifest_lock);
+    int n = manifest_list_locked(root, path, out, max);
+    pthread_mutex_unlock(&manifest_lock);
+    return n;
+}
+
+/* ---- Writing games.txt over the console's FTP server ---- */
+
+#define PS5_FTP_HOST "127.0.0.1"
+#define PS5_FTP_PORT 2121
+#define MANIFEST_MAX_FILES 200000
+#define MANIFEST_MAX_DEPTH 10
+
+int localfs_refresh_manifest(const char *root, char *err, size_t errcap)
+{
+    DIR *probe = opendir(root);
+    if (probe || errno == ENOENT) {
+        if (probe)
+            closedir(probe);
+        return 0;                        /* listable: no games.txt needed */
+    }
+    ftp_session *s = ftp_open_port(PS5_FTP_HOST, PS5_FTP_PORT, NULL, err, errcap);
+    if (!s) {
+        snprintf(err, errcap, "Can't reach the PS5's FTP server (is it running?)");
+        return -1;
+    }
+    char file[1100];
+    snprintf(file, sizeof(file), "%s/" MANIFEST_NAME, root);
+    FILE *out = NULL;                    /* opened once the root lists, so a failure keeps the old file */
+    ftp_entry *list = malloc(sizeof(ftp_entry) * 4096);
+    char **stack = malloc(sizeof(char *) * 4096);
+    int sp = 0, files = 0, rc = 0;
+    if (!list || !stack) {
+        snprintf(err, errcap, "Out of memory");
+        rc = -1;
+        goto done;
+    }
+    stack[sp++] = strdup("");            /* folders relative to root, no slashes at the ends */
+    while (sp > 0) {
+        char *rel = stack[--sp];
+        char dir[1100];
+        snprintf(dir, sizeof(dir), "%s%s%s", root, *rel ? "/" : "", rel);
+        int n = ftp_list_dir(s, dir, list, 4096, err, errcap);
+        if (!out) {
+            out = n >= 0 ? fopen(file, "wb") : NULL;
+            if (!out) {
+                if (n >= 0)
+                    snprintf(err, errcap, "Can't write %s", file);
+                rc = -1;
+                free(rel);
+                break;
+            }
+        }
+        for (int i = 0; i < n && files < MANIFEST_MAX_FILES; i++) {
+            if (list[i].name[0] == '.' || (!*rel && !strcmp(list[i].name, MANIFEST_NAME)))
+                continue;
+            char path[1300];
+            snprintf(path, sizeof(path), "%s%s%s", rel, *rel ? "/" : "", list[i].name);
+            if (list[i].is_dir) {
+                int depth = 0;
+                for (const char *c = path; *c; c++)
+                    depth += *c == '/';
+                if (sp < 4096 && depth < MANIFEST_MAX_DEPTH)
+                    stack[sp++] = strdup(path);
+            } else {
+                fprintf(out, "%s\t%llu\n", path, list[i].size);
+                files++;
+            }
+        }
+        free(rel);
+    }
+done:
+    while (sp > 0)
+        free(stack[--sp]);
+    free(stack);
+    free(list);
+    if (out && fclose(out) != 0 && rc == 0) {
+        snprintf(err, errcap, "Can't write %s", file);
+        rc = -1;
+    }
+    ftp_close(s);
+    pthread_mutex_lock(&manifest_lock);
+    free(manifest);                      /* so the next listing rereads it */
+    manifest = NULL;
+    pthread_mutex_unlock(&manifest_lock);
+    return rc == 0 ? files : rc;
+}
+
 int localfs_list(const char *root, const char *path, ftp_entry *out, int max,
                  char *err, size_t errcap)
 {
@@ -146,6 +238,8 @@ int localfs_list(const char *root, const char *path, ftp_entry *out, int max,
     if (!d) {
         if (errno != ENOENT) {
             int n = manifest_list(root, path, out, max);
+            if (n < 0 && localfs_refresh_manifest(root, err, errcap) >= 0)
+                n = manifest_list(root, path, out, max);
             if (n >= 0)
                 return n;
             snprintf(err, errcap, "Can't open %s (no " MANIFEST_NAME " either)", dir);

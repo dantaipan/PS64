@@ -23,6 +23,14 @@ void localfs_real_path(const char *root, const char *path, char *out, size_t cap
 int  localfs_list(const char *root, const char *path, ftp_entry *out, int max,
                   char *err, size_t errcap);
 
+/*
+ * Where a native PS5 app can't list folders (see localfs_list), write
+ * games.txt in root by walking it over the console's own FTP server
+ * (127.0.0.1:2121). Does nothing (returns 0) if root can be listed
+ * directly. Returns the number of files listed, or -1 with a message in err.
+ */
+int  localfs_refresh_manifest(const char *root, char *err, size_t errcap);
+
 /* mkdir -p. 0 or -1. */
 int  localfs_mkdirs(const char *dir);
 /* Write a file, creating its folder. 0 or -1. */

@@ -132,11 +132,16 @@ struct ftp_session {
 
 ftp_session *ftp_open(const char *host, const char *password, char *err, size_t errcap)
 {
+    return ftp_open_port(host, 21, password, err, errcap);
+}
+
+ftp_session *ftp_open_port(const char *host, int port, const char *password, char *err, size_t errcap)
+{
     ftp_session *s = calloc(1, sizeof(*s));
     if (!s)
         return NULL;
     snprintf(s->host, sizeof(s->host), "%s", host);
-    s->c.fd = c64api_connect(host, 21, 2000);
+    s->c.fd = c64api_connect(host, port, 2000);
     char msg[512], cmd[600];
     if (s->c.fd < 0) {
         snprintf(err, errcap, "Can't connect - turn on the C64's FTP service");

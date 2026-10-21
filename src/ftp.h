@@ -24,6 +24,8 @@ int ftp_list(const char *host, const char *password, const char *dir,
 /* A logged-in connection for listing many folders in a row. */
 typedef struct ftp_session ftp_session;
 ftp_session *ftp_open(const char *host, const char *password, char *err, size_t errcap);
+/* The same on another port (the PS5's own FTP server listens on 2121). */
+ftp_session *ftp_open_port(const char *host, int port, const char *password, char *err, size_t errcap);
 /* List one folder (sorted); returns the count or -1 with a message in err. */
 int  ftp_list_dir(ftp_session *s, const char *dir, ftp_entry *out, int max,
                   char *err, size_t errcap);
