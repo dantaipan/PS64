@@ -3,11 +3,11 @@
 How PS64 gets to the Prospero Store, how updates reach people, and how to test a new
 version on the PS5 next to the copy installed from the store.
 
-Status (2026-10-19): **1.0.0 released and listed** (GitHub release `01.000.000`;
-https://prosperostore.net/app/PPSA06464/, catalog pull request #435 merged). The repository
-is public. **Next release** collects fixes for a few days: changes go into
-`docs/release-notes/01.000.001.md` as they're made; release when it's ready. The old websrv "alpha"
-release was deleted. Commits use the private GitHub address
+Status (2026-10-20): **1.0.1 released** (GitHub release `01.000.001`: R1 latest releases,
+20-row results, CSDb screenshots, Drive A device number, entity fix). 1.0.0 is listed at
+https://prosperostore.net/app/PPSA06464/ (catalog pull request #435); the catalog's daily check
+moves the listing to 1.0.1. **Next release**: collect fixes in `docs/release-notes/01.000.002.md`
+as they're made; release when it's ready. Commits use the private GitHub address
 `642598+dantaipan@users.noreply.github.com` (history rewritten before going public).
 
 ## How the store works
