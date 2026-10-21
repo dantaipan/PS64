@@ -1606,6 +1606,7 @@ int main(int argc, char **argv)
                     ui.a64_shot = px;
                     ui.a64_shot_w = w;
                     ui.a64_shot_h = h;
+                    ui.a64_shot_serial++;
                     ui.a64_shot_state = SHOT_READY;
                 } else if (got < 0) {
                     ui.a64_shot_state = SHOT_NONE;

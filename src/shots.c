@@ -12,7 +12,7 @@
 #define CSDB_HOST "csdb.dk"
 
 typedef struct {
-    char      id[24];
+    char      id[64];
     uint32_t *pixels;           /* NULL: no screenshot */
     int       w, h;
     unsigned  used;             /* for least-recently-used replacement */
@@ -23,7 +23,7 @@ struct shots {
     pthread_mutex_t lock;
     pthread_cond_t  wake;
     int             quit;
-    char            want[24];   /* id to fetch next, "" if none */
+    char            want[64];   /* id to fetch next, "" if none */
     entry           cache[CACHE];
     int             count;
     unsigned        clock;
@@ -82,7 +82,7 @@ static void *worker(void *arg)
             pthread_cond_wait(&s->wake, &s->lock);
             continue;
         }
-        char id[24], path[96];
+        char id[64], path[96];
         snprintf(id, sizeof(id), "%s", s->want);
         pthread_mutex_unlock(&s->lock);
 

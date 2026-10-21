@@ -125,6 +125,7 @@ typedef struct {
     int             a64_shot_state;  /* SHOT_NONE / SHOT_LOADING / SHOT_READY */
     const uint32_t *a64_shot;        /* ARGB8888, a64_shot_w x a64_shot_h, when READY */
     int             a64_shot_w, a64_shot_h;
+    unsigned        a64_shot_serial; /* raised for each new picture (the UI re-uploads it) */
 
     /* Favourites and recents (lists owned by main). */
     fav_list      *favs, *recents;

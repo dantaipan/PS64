@@ -379,11 +379,12 @@ static void draw_a64_id(SDL_Renderer *ren, const ui_state *u, Uint32 now)
 static void draw_shot(SDL_Renderer *ren, const ui_state *u, int y)
 {
     static SDL_Texture *tex;
-    static const uint32_t *tex_pixels;
+    static unsigned tex_serial;
     static int tex_w, tex_h;
     fill_rect(ren, SHOT_X - 2, y - 2, SHOT_W + 4, SHOT_H + 4, 0x70, 0x6D, 0xEB, 255);
     if (u->a64_shot_state == SHOT_READY && u->a64_shot) {
-        if (u->a64_shot != tex_pixels) {
+        /* By serial, not pointer: same-size pictures often reuse the freed buffer's address. */
+        if (!tex || u->a64_shot_serial != tex_serial) {
             if (!tex || tex_w != u->a64_shot_w || tex_h != u->a64_shot_h) {
                 if (tex)
                     SDL_DestroyTexture(tex);
@@ -394,7 +395,7 @@ static void draw_shot(SDL_Renderer *ren, const ui_state *u, int y)
             }
             if (tex)
                 SDL_UpdateTexture(tex, NULL, u->a64_shot, u->a64_shot_w * 4);
-            tex_pixels = u->a64_shot;
+            tex_serial = u->a64_shot_serial;
         }
         if (tex) {
             SDL_Rect dst = { SHOT_X, y, SHOT_W, SHOT_H };
