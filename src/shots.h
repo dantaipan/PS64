@@ -19,10 +19,12 @@ void   shots_stop(shots *s);
 void shots_want(shots *s, const char *id);
 
 /*
- * The screenshot for id: 1 with a malloc'd ARGB8888 copy (free() it), 0 while
- * it's still being fetched, -1 if there is none (or it couldn't be fetched).
+ * The screenshot for id: 1 with malloc'd copies (free() both) of its frames, an
+ * ARGB8888 strip w x h*frames, and each frame's delay in ms; 0 while it's still
+ * being fetched; -1 if there is none (or it couldn't be fetched).
  */
-int shots_fetch(shots *s, const char *id, uint32_t **pixels, int *w, int *h);
+int shots_fetch(shots *s, const char *id, uint32_t **pixels, int *w, int *h,
+                int *frames, int **delays);
 
 /* Path of a CSDb release's screenshot: 265049 -> /gfx/releases/265000/265049.gif.
  * Returns 0, or -1 if id isn't a release number. */

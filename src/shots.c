@@ -13,8 +13,9 @@
 
 typedef struct {
     char      id[64];
-    uint32_t *pixels;           /* NULL: no screenshot */
-    int       w, h;
+    uint32_t *pixels;           /* NULL: no screenshot; else w x h*frames */
+    int       w, h, frames;
+    int      *delays;           /* ms per frame */
     unsigned  used;             /* for least-recently-used replacement */
 } entry;
 
@@ -53,7 +54,8 @@ static entry *find(shots *s, const char *id)
 }
 
 /* (lock held) Store a result, replacing the least recently used entry when full. */
-static void store(shots *s, const char *id, uint32_t *pixels, int w, int h)
+static void store(shots *s, const char *id, uint32_t *pixels, int w, int h,
+                  int frames, int *delays)
 {
     entry *e = NULL;
     if (s->count < CACHE) {
@@ -64,11 +66,14 @@ static void store(shots *s, const char *id, uint32_t *pixels, int w, int h)
             if (s->cache[i].used < e->used)
                 e = &s->cache[i];
         free(e->pixels);
+        free(e->delays);
     }
     snprintf(e->id, sizeof(e->id), "%s", id);
     e->pixels = pixels;
     e->w = w;
     e->h = h;
+    e->frames = frames;
+    e->delays = delays;
     e->used = ++s->clock;
 }
 
@@ -87,18 +92,18 @@ static void *worker(void *arg)
         pthread_mutex_unlock(&s->lock);
 
         uint32_t *pixels = NULL;
-        int w = 0, h = 0;
+        int w = 0, h = 0, frames = 0, *delays = NULL;
         if (shots_url(id, path, sizeof(path)) == 0) {
             c64api api = { .host = CSDB_HOST, .timeout_s = 10 };
             char *body = NULL;
             size_t len = 0;
             if (c64api_request_alloc(&api, "GET", path, NULL, NULL, 0, &body, &len, NULL, 0) == 200)
-                image_decode(body, len, &pixels, &w, &h);
+                image_decode(body, len, &pixels, &w, &h, &frames, &delays);
             free(body);
         }
 
         pthread_mutex_lock(&s->lock);
-        store(s, id, pixels, w, h);       /* a miss is remembered too: asked once per item */
+        store(s, id, pixels, w, h, frames, delays);       /* a miss is remembered too: asked once per item */
         if (!strcmp(s->want, id))
             s->want[0] = 0;
     }
@@ -132,7 +137,10 @@ void shots_stop(shots *s)
     pthread_mutex_unlock(&s->lock);
     pthread_join(s->thread, NULL);
     for (int i = 0; i < s->count; i++)
+    {
         free(s->cache[i].pixels);
+        free(s->cache[i].delays);
+    }
     pthread_mutex_destroy(&s->lock);
     pthread_cond_destroy(&s->wake);
     free(s);
@@ -148,7 +156,8 @@ void shots_want(shots *s, const char *id)
     pthread_mutex_unlock(&s->lock);
 }
 
-int shots_fetch(shots *s, const char *id, uint32_t **pixels, int *w, int *h)
+int shots_fetch(shots *s, const char *id, uint32_t **pixels, int *w, int *h,
+                int *frames, int **delays)
 {
     if (!s || !id)
         return -1;
@@ -158,14 +167,20 @@ int shots_fetch(shots *s, const char *id, uint32_t **pixels, int *w, int *h)
     if (e && !e->pixels) {
         rc = -1;
     } else if (e) {
-        size_t bytes = (size_t)e->w * (size_t)e->h * sizeof(uint32_t);
+        size_t bytes = (size_t)e->w * (size_t)e->h * (size_t)e->frames * sizeof(uint32_t);
+        size_t dbytes = (size_t)e->frames * sizeof(int);
         *pixels = malloc(bytes);
-        if (*pixels) {
+        *delays = malloc(dbytes);
+        if (*pixels && *delays) {
             memcpy(*pixels, e->pixels, bytes);
+            memcpy(*delays, e->delays, dbytes);
             *w = e->w;
             *h = e->h;
+            *frames = e->frames;
             rc = 1;
         } else {
+            free(*pixels);
+            free(*delays);
             rc = -1;
         }
     }

@@ -1058,6 +1058,7 @@ int main(int argc, char **argv)
     /* Screenshots of Assembly64 results, from CSDb. */
     shots *shotw = shots_start();
     uint32_t *shot_px = NULL;           /* the one shown (owned here, handed to the UI) */
+    int *shot_delays = NULL;
     char shot_id[64] = "";
 
     /* Assembly64 item waiting for its file list before it starts. */
@@ -1589,8 +1590,11 @@ int main(int argc, char **argv)
             if (strcmp(shot_id, it->id)) {
                 snprintf(shot_id, sizeof(shot_id), "%s", it->id);
                 free(shot_px);
+                free(shot_delays);
                 shot_px = NULL;
+                shot_delays = NULL;
                 ui.a64_shot = NULL;
+                ui.a64_shot_delays = NULL;
                 if (shotw && a64_is_csdb(&ui.a64_cats, it->category)) {
                     ui.a64_shot_state = SHOT_LOADING;
                     shots_want(shotw, it->id);
@@ -1600,10 +1604,14 @@ int main(int argc, char **argv)
             }
             if (ui.a64_shot_state == SHOT_LOADING) {
                 uint32_t *px;
-                int w, h, got = shots_fetch(shotw, shot_id, &px, &w, &h);
+                int w, h, frames, *delays;
+                int got = shots_fetch(shotw, shot_id, &px, &w, &h, &frames, &delays);
                 if (got == 1) {
                     shot_px = px;
+                    shot_delays = delays;
                     ui.a64_shot = px;
+                    ui.a64_shot_frames = frames;
+                    ui.a64_shot_delays = delays;
                     ui.a64_shot_w = w;
                     ui.a64_shot_h = h;
                     ui.a64_shot_serial++;
@@ -1793,6 +1801,7 @@ int main(int argc, char **argv)
     a64_stop(a64c);
     shots_stop(shotw);
     free(shot_px);
+    free(shot_delays);
     fav_free(&favs);
     fav_free(&recents);
     session_end(&ses, &opt);

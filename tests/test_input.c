@@ -900,11 +900,25 @@ static void test_shots(void)
         'G', 'I', 'F', '8', '9', 'a', 1, 0, 1, 0, 0x80, 0, 0, 0xFF, 0, 0, 0, 0, 0,
         0x2C, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 0x44, 1, 0, 0x3B };
     uint32_t *px = NULL;
-    int w = 0, h = 0;
-    CHECK(image_decode(gif, sizeof(gif), &px, &w, &h) == 0 && w == 1 && h == 1 && px &&
-          px[0] == 0xFFFF0000u);
+    int w = 0, h = 0, frames = 0, *delays = NULL;
+    CHECK(image_decode(gif, sizeof(gif), &px, &w, &h, &frames, &delays) == 0 && w == 1 &&
+          h == 1 && frames == 1 && px && px[0] == 0xFFFF0000u && delays && delays[0] == 1500);
     free(px);
-    CHECK(image_decode("not an image", 12, &px, &w, &h) == -1);
+    free(delays);
+    CHECK(image_decode("not an image", 12, &px, &w, &h, &frames, &delays) == -1);
+
+    /* An animated 1x1 GIF (how CSDb holds several pictures): red for 0.5 s, then blue for 0.2 s. */
+    static const unsigned char anim[] = {
+        'G', 'I', 'F', '8', '9', 'a', 1, 0, 1, 0, 0x80, 0, 0, 0xFF, 0, 0, 0, 0, 0xFF,
+        0x21, 0xF9, 4, 0, 50, 0, 0, 0,
+        0x2C, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 0x44, 1, 0,
+        0x21, 0xF9, 4, 0, 20, 0, 0, 0,
+        0x2C, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 0x4C, 1, 0, 0x3B };
+    CHECK(image_decode(anim, sizeof(anim), &px, &w, &h, &frames, &delays) == 0 && w == 1 &&
+          h == 1 && frames == 2 && px[0] == 0xFFFF0000u && px[1] == 0xFF0000FFu &&
+          delays[0] == 500 && delays[1] == 200);
+    free(px);
+    free(delays);
 }
 
 /* Drive A's device number from GET /v1/drives (the C64 Ultimate 1.1.0 layout). */

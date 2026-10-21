@@ -376,30 +376,44 @@ static void draw_a64_id(SDL_Renderer *ren, const ui_state *u, Uint32 now)
 #define SHOT_H 136
 #define SHOT_X (PX + PW - 16 - SHOT_W)
 
-static void draw_shot(SDL_Renderer *ren, const ui_state *u, int y)
+static void draw_shot(SDL_Renderer *ren, const ui_state *u, int y, Uint32 now)
 {
     static SDL_Texture *tex;
     static unsigned tex_serial;
+    static Uint32 shown_at;             /* when this picture appeared: frames count from it */
     static int tex_w, tex_h;
     fill_rect(ren, SHOT_X - 2, y - 2, SHOT_W + 4, SHOT_H + 4, 0x70, 0x6D, 0xEB, 255);
     if (u->a64_shot_state == SHOT_READY && u->a64_shot) {
         /* By serial, not pointer: same-size pictures often reuse the freed buffer's address. */
         if (!tex || u->a64_shot_serial != tex_serial) {
-            if (!tex || tex_w != u->a64_shot_w || tex_h != u->a64_shot_h) {
+            int strip_h = u->a64_shot_h * (u->a64_shot_frames > 0 ? u->a64_shot_frames : 1);
+            if (!tex || tex_w != u->a64_shot_w || tex_h != strip_h) {
                 if (tex)
                     SDL_DestroyTexture(tex);
                 tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC,
-                                        u->a64_shot_w, u->a64_shot_h);
+                                        u->a64_shot_w, strip_h);
                 tex_w = u->a64_shot_w;
-                tex_h = u->a64_shot_h;
+                tex_h = strip_h;
             }
             if (tex)
                 SDL_UpdateTexture(tex, NULL, u->a64_shot, u->a64_shot_w * 4);
             tex_serial = u->a64_shot_serial;
+            shown_at = now;
         }
         if (tex) {
+            /* An animated GIF (several pictures on CSDb): each frame for its delay, in turn. */
+            int frame = 0;
+            if (u->a64_shot_frames > 1 && u->a64_shot_delays) {
+                Uint32 total = 0;
+                for (int i = 0; i < u->a64_shot_frames; i++)
+                    total += (Uint32)u->a64_shot_delays[i];
+                Uint32 t = (now - shown_at) % (total ? total : 1);
+                while (frame < u->a64_shot_frames - 1 && t >= (Uint32)u->a64_shot_delays[frame])
+                    t -= (Uint32)u->a64_shot_delays[frame++];
+            }
+            SDL_Rect src = { 0, u->a64_shot_h * frame, u->a64_shot_w, u->a64_shot_h };
             SDL_Rect dst = { SHOT_X, y, SHOT_W, SHOT_H };
-            SDL_RenderCopy(ren, tex, NULL, &dst);
+            SDL_RenderCopy(ren, tex, &src, &dst);
             return;
         }
     }
@@ -429,7 +443,7 @@ static void draw_a64(SDL_Renderer *ren, const ui_state *u, Uint32 now)
     /* With the results focused, the highlighted release's screenshot sits at the top right. */
     int shot = u->a64_focus == 1 && u->a64_count > 0;
     if (shot)
-        draw_shot(ren, u, ry - 5);
+        draw_shot(ren, u, ry - 5, now);
     for (int i = u->a64_top; i < rows && i < u->a64_top + ui_search_rows(u->a64_focus); i++) {
         char text[200], name[64], group[40];
         if (i < u->a64_count) {

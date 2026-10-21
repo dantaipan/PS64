@@ -123,8 +123,10 @@ typedef struct {
     int            a64_latest;      /* the results are the latest releases (dates shown) */
     /* Screenshot of the highlighted result (CSDb items; pixels owned by main). */
     int             a64_shot_state;  /* SHOT_NONE / SHOT_LOADING / SHOT_READY */
-    const uint32_t *a64_shot;        /* ARGB8888, a64_shot_w x a64_shot_h, when READY */
+    const uint32_t *a64_shot;        /* ARGB8888 frames, a64_shot_w x a64_shot_h each, stacked */
     int             a64_shot_w, a64_shot_h;
+    int             a64_shot_frames; /* several for an animated GIF: shown in turn */
+    const int      *a64_shot_delays; /* ms per frame */
     unsigned        a64_shot_serial; /* raised for each new picture (the UI re-uploads it) */
 
     /* Favourites and recents (lists owned by main). */
