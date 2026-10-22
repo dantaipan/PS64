@@ -1043,6 +1043,8 @@ static void test_emulator_mode(void)
     CHECK(n == 1 && !strcmp(e[0].name, "elite.d64"));
     char drive[300];
     CHECK(localfs_usb_drive(1, drive, sizeof(drive)) && !localfs_usb_drive(0, drive, sizeof(drive)));
+    snprintf(file, sizeof(file), "%s/usb2", dir);                   /* an empty mount point */
+    CHECK(localfs_mkdirs(file) == 0 && !localfs_usb_drive(2, drive, sizeof(drive)));
     localfs_set_usb("none");
     CHECK(localfs_list(games, "/", e, 8, err, sizeof(err)) == 2);
     const char *paths[] = { "/a/Disk1.d64", "/a/Disk2.d64" };

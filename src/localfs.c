@@ -19,13 +19,24 @@ void localfs_set_usb(const char *prefix)
     snprintf(usb_prefix, sizeof(usb_prefix), "%s", prefix && strcmp(prefix, "none") ? prefix : "");
 }
 
+static int list_folder(const char *dir, ftp_entry *out, int max);
+
+/* A drive is there when its folder is a mount (another device than its parent's) or
+ * holds something: the PS5 keeps empty mount points /mnt/usb0..7 for drives not plugged in. */
 const char *localfs_usb_drive(int n, char *out, size_t cap)
 {
-    struct stat st;
+    struct stat st, parent;
     if (!usb_prefix[0] || n < 0 || n >= LOCALFS_USB_DRIVES)
         return NULL;
     snprintf(out, cap, "%s%d", usb_prefix, n);
-    return stat(out, &st) == 0 && S_ISDIR(st.st_mode) ? out : NULL;
+    if (stat(out, &st) != 0 || !S_ISDIR(st.st_mode))
+        return NULL;
+    char up[320];
+    snprintf(up, sizeof(up), "%s/..", out);
+    if (stat(up, &parent) == 0 && parent.st_dev != st.st_dev)
+        return out;
+    ftp_entry e[1];
+    return list_folder(out, e, 1) > 0 ? out : NULL;
 }
 
 /* A "/USBn" or "/USBn/..." path: the drive's number, with the rest of the path in *rest. */
@@ -177,24 +188,17 @@ static int add_usb_drives(const char *path, ftp_entry *out, int n, int max)
     return n;
 }
 
-int localfs_list(const char *root, const char *path, ftp_entry *out, int max,
-                 char *err, size_t errcap)
+/* A real folder's entries (unsorted); -1 with errno set. */
+static int list_folder(const char *dir, ftp_entry *out, int max)
 {
-    char dir[1024];
-    localfs_real_path(root, path, dir, sizeof(dir));
     DIR *d = opendir(dir);
     if (!d) {
-        int why = errno;
 #ifdef PS64_NATIVE
-        int n = list_raw(dir, out, max);
-        if (n >= 0) {
-            ftp_sort(out, n);
-            return add_usb_drives(path, out, n, max);
-        }
-        printf("localfs: %s: opendir: %s\n", dir, strerror(why));
+        int why = errno, n = list_raw(dir, out, max);
+        if (n >= 0)
+            return n;
+        errno = why;
 #endif
-        snprintf(err, errcap, why == ENOENT ? "Folder not found: %s" : "Can't open %s (%s)", dir,
-                 strerror(why));
         return -1;
     }
     int n = 0;
@@ -202,6 +206,22 @@ int localfs_list(const char *root, const char *path, ftp_entry *out, int max,
     while (n < max && (de = readdir(d)) != NULL)
         add_entry(dir, de->d_name, out, &n);
     closedir(d);
+    return n;
+}
+
+int localfs_list(const char *root, const char *path, ftp_entry *out, int max,
+                 char *err, size_t errcap)
+{
+    char dir[1024];
+    localfs_real_path(root, path, dir, sizeof(dir));
+    int n = list_folder(dir, out, max);
+    if (n < 0) {
+        int why = errno;
+        printf("localfs: %s: %s\n", dir, strerror(why));
+        snprintf(err, errcap, why == ENOENT ? "Folder not found: %s" : "Can't open %s (%s)", dir,
+                 strerror(why));
+        return -1;
+    }
     ftp_sort(out, n);
     return add_usb_drives(path, out, n, max);
 }
