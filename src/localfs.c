@@ -51,26 +51,68 @@ static void add_entry(const char *dir, const char *name, ftp_entry *out, int *n)
 }
 
 #ifdef PS64_NATIVE
-/* The native app's libc can't opendir() in its sandbox: read the folder's entries
- * with getdents() instead. Returns the count, or -1 with errno set. */
-static int list_getdents(const char *dir, ftp_entry *out, int max)
+/*
+ * The native app's libc can't opendir() in its sandbox (EPERM). Read the folder's
+ * entries directly instead: open() without O_DIRECTORY and getdents() into a large,
+ * aligned buffer works on the PS5 (fw 13.42; with O_DIRECTORY getdents() gave EINVAL).
+ * getdirentries() and the console's own calls are kept as fallbacks; failures go to
+ * the log. Returns the count, or -1.
+ */
+int sceKernelOpen(const char *path, int flags, int mode);
+int sceKernelClose(int fd);
+int sceKernelGetdents(int fd, char *buf, int nbytes);
+
+static int parse_dents(const char *dir, const char *buf, int got, ftp_entry *out, int *n, int max)
 {
-    int fd = open(dir, O_RDONLY | O_DIRECTORY);
-    if (fd < 0)
-        return -1;
-    static char buf[16384];
+    for (int at = 0; at < got && *n < max;) {
+        const struct dirent *de = (const struct dirent *)(buf + at);
+        if (!de->d_reclen)
+            break;
+        add_entry(dir, de->d_name, out, n);
+        at += de->d_reclen;
+    }
+    return 0;
+}
+
+static int list_raw(const char *dir, ftp_entry *out, int max)
+{
+    static char buf[65536] __attribute__((aligned(4096)));
     int n = 0, got;
-    while (n < max && (got = getdents(fd, buf, sizeof(buf))) > 0)
-        for (int at = 0; at < got && n < max;) {
-            struct dirent *de = (struct dirent *)(buf + at);
-            if (!de->d_reclen)
-                break;
-            add_entry(dir, de->d_name, out, &n);
-            at += de->d_reclen;
+    /* 1. open + getdents. */
+    int fd = open(dir, O_RDONLY);
+    if (fd >= 0) {
+        while (n < max && (got = getdents(fd, buf, sizeof(buf))) > 0)
+            parse_dents(dir, buf, got, out, &n, max);
+        if (got == 0 || n) {
+            close(fd);
+            return n;
         }
-    int saved = errno;
-    close(fd);
-    errno = saved;
+        printf("localfs: %s: getdents: %s\n", dir, strerror(errno));
+        /* 2. getdirentries on the same descriptor. */
+        long base = 0;
+        lseek(fd, 0, SEEK_SET);
+        while (n < max && (got = getdirentries(fd, buf, sizeof(buf), &base)) > 0)
+            parse_dents(dir, buf, got, out, &n, max);
+        int ok = got == 0 || n;
+        if (!ok)
+            printf("localfs: %s: getdirentries: %s\n", dir, strerror(errno));
+        close(fd);
+        if (ok)
+            return n;
+    } else {
+        printf("localfs: %s: open: %s\n", dir, strerror(errno));
+    }
+    /* 3. The console's own calls (they return 0x8002xxxx error codes). */
+    fd = sceKernelOpen(dir, O_RDONLY | O_DIRECTORY, 0);
+    if (fd < 0) {
+        printf("localfs: %s: sceKernelOpen: 0x%08x\n", dir, (unsigned)fd);
+        return -1;
+    }
+    while (n < max && (got = sceKernelGetdents(fd, buf, sizeof(buf))) > 0)
+        parse_dents(dir, buf, got, out, &n, max);
+    if (got < 0 && !n)
+        printf("localfs: %s: sceKernelGetdents: 0x%08x\n", dir, (unsigned)got);
+    sceKernelClose(fd);
     return got < 0 && !n ? -1 : n;
 }
 #endif
@@ -84,12 +126,12 @@ int localfs_list(const char *root, const char *path, ftp_entry *out, int max,
     if (!d) {
         int why = errno;
 #ifdef PS64_NATIVE
-        int n = list_getdents(dir, out, max);
+        int n = list_raw(dir, out, max);
         if (n >= 0) {
             ftp_sort(out, n);
             return n;
         }
-        printf("localfs: %s: opendir: %s; getdents: %s\n", dir, strerror(why), strerror(errno));
+        printf("localfs: %s: opendir: %s\n", dir, strerror(why));
 #endif
         snprintf(err, errcap, why == ENOENT ? "Folder not found: %s" : "Can't open %s (%s)", dir,
                  strerror(why));
