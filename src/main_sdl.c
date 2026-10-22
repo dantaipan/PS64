@@ -36,6 +36,9 @@
 #include "emugames.h"
 #include "emulator.h"
 #endif
+#ifdef PS64_SID
+#include "sidplay.h"
+#endif
 
 #include <SDL2/SDL.h>
 
@@ -99,6 +102,8 @@ typedef struct {
     int         dpad_keys;    /* emulator: D-pad/stick/Cross as cursor keys and RETURN */
     int         no_home;      /* start straight away (debug flags imply it) instead of on the home screen */
     int         home_sel;     /* debug: the home screen's chosen object (-1: default) */
+    const char *sid_file;     /* debug: play this .sid with the built-in SID player */
+    int         sid_song;     /* debug: its song (0: the start song) */
 } options;
 
 /* A saved level onto the menu's steps: UI_VOLUME_MIN..0 dB in UI_VOLUME_STEP dB. */
@@ -181,6 +186,8 @@ static int parse_args(int argc, char **argv, options *o)
     o->dpad_keys = 0;
     o->no_home = 0;
     o->home_sel = -1;
+    o->sid_file = NULL;
+    o->sid_song = 0;
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
         const char *next = i + 1 < argc ? argv[i + 1] : NULL;
@@ -197,6 +204,8 @@ static int parse_args(int argc, char **argv, options *o)
         else if (!strcmp(a, "--pick"))              { o->pick = 1; }
         else if (!strcmp(a, "--no-home"))           { o->no_home = 1; }
         else if (!strcmp(a, "--home-sel") && next)  { o->home_sel = atoi(next); i++; }
+        else if (!strcmp(a, "--sid") && next)       { o->sid_file = next; i++; }
+        else if (!strcmp(a, "--sid-song") && next)  { o->sid_song = atoi(next); i++; }
         else if (!strcmp(a, "--browse-dir") && next) { o->browse_dir = next; i++; }
         else if (!strcmp(a, "--browse") && next)    { o->browse_path = next; i++; }
         else if (!strcmp(a, "--ui") && next)        { o->ui_screen = next; i++; }
@@ -252,7 +261,7 @@ static int parse_args(int argc, char **argv, options *o)
     if (!o->remote_host)
         o->remote_host = o->start_host;
     /* Debug flags that go straight to a machine skip the home screen. */
-    if (o->emu_load || o->browse_path || o->a64_search || o->a64_latest || o->launch_fav ||
+    if (o->emu_load || o->sid_file || o->browse_path || o->a64_search || o->a64_latest || o->launch_fav ||
         o->snapshot || o->search_text || o->build_index || o->debug_connect || o->type_text ||
         (o->ui_screen && strcmp(o->ui_screen, "home")))
         o->no_home = 1;
@@ -694,6 +703,32 @@ static double now_ms(void)
  * disk loads, as many frames as fit in 12 ms without sound. Returns the
  * frames run (0: no new picture).
  */
+#ifdef PS64_SID
+/*
+ * The SID player: keep the audio queue topped up with freshly rendered sound.
+ * (It renders ahead by the queue's length, so sound and the picture stay in step.)
+ */
+static Uint32 sid_render_ms;          /* time spent rendering, for the log */
+static void sid_step(audio_out *a, sidplay *p)
+{
+    Uint32 queued = SDL_GetQueuedAudioSize(a->dev) / 4;
+    Uint32 want = a->target + a->prime + 256;
+    static int16_t buf[4096 * 2];
+    while (queued < want) {
+        int n = (int)(want - queued) > 4096 ? 4096 : (int)(want - queued);
+        Uint32 t0 = SDL_GetTicks();
+        int got = sidplay_render(p, buf, n);
+        sid_render_ms += SDL_GetTicks() - t0;
+        if (got <= 0)
+            break;
+        audio_push(a, buf, (size_t)got);
+        queued += (Uint32)got;
+        if (a->draining)
+            break;
+    }
+}
+#endif
+
 static int emu_step(audio_out *a, int audio_on)
 {
     static double next;
@@ -1010,6 +1045,32 @@ int main(int argc, char **argv)
     char browse_dir[512];
     snprintf(browse_dir, sizeof(browse_dir), "%s", opt.browse_dir ? opt.browse_dir : "/");
 
+    int sid_playing = 0;              /* the SID player has the sound */
+#ifdef PS64_SID
+    /* Debug: play a .sid straight away (the SID player's engine). */
+    sidplay *sidp = NULL;
+    if (opt.sid_file) {
+        static unsigned char tune[65536 + 1024];
+        FILE *f = fopen(opt.sid_file, "rb");
+        size_t len = f ? fread(tune, 1, sizeof(tune), f) : 0;
+        if (f)
+            fclose(f);
+        char err[128] = "can't read the file";
+        sidp = len ? sidplay_open(tune, len, err, sizeof(err)) : NULL;
+        if (sidp && opt.sid_song)
+            sidplay_select(sidp, opt.sid_song);
+        sid_playing = sidp != NULL;
+        if (sidp) {
+            sidplay_info si;
+            sidplay_get_info(sidp, &si);
+            printf("sid: %s / %s / %s  song %d of %d  %s\n", si.title, si.author, si.released,
+                   si.song, si.songs, si.model == SIDPLAY_MODEL_8580 ? "8580" : "6581");
+        } else {
+            printf("sid: %s: %s\n", opt.sid_file, err);
+        }
+    }
+#endif
+
     /* Attach to the configured C64, or let the user pick one. */
     static session ses;
     discover *scan = NULL;
@@ -1230,7 +1291,7 @@ int main(int argc, char **argv)
                     perror("recv audio");
                 break;
             }
-            if (SDL_TICKS_PASSED(SDL_GetTicks(), audio_from) == 0 || ses.emu || ui.screen == UI_HOME)
+            if (SDL_TICKS_PASSED(SDL_GetTicks(), audio_from) == 0 || ses.emu || ui.screen == UI_HOME || sid_playing)
                 continue;   /* (the home screen is silent) */
             size_t frames = audio_feed(&adec, buf, (size_t)n, samples, AUDIO_MAX_FRAMES);
             if (frames)
@@ -1641,6 +1702,10 @@ int main(int argc, char **argv)
 #else
         int want_rate = opt.audio_rate;
 #endif
+#ifdef PS64_SID
+        if (sidp)
+            want_rate = SIDPLAY_RATE;
+#endif
         if (opt.audio && want_rate != aout_rate) {
             audio_reopen(&aout, want_rate, opt.audio_latency_ms);
             aout_rate = want_rate;
@@ -1664,6 +1729,21 @@ int main(int argc, char **argv)
 
         /* Each source keeps its own level (both start at -12 dB). */
         ui.volume_db = ses.emu ? opt.emulator_volume : opt.stream_volume;
+#ifdef PS64_SID
+        if (sidp) {
+            ui.volume_db = opt.emulator_volume;
+            if (opt.audio && !aout.muted)
+                sid_step(&aout, sidp);
+            static Uint32 sid_log_at;
+            if (!sid_log_at)
+                sid_log_at = tick;
+            if (tick - sid_log_at >= 10000) {
+                printf("sid: rendering took %.1f%% of the time\n", sid_render_ms * 100.0 / (tick - sid_log_at));
+                sid_render_ms = 0;
+                sid_log_at = tick;
+            }
+        }
+#endif
         if (opt.audio)
             audio_set_volume(&aout, ui.volume_db);
 
@@ -1979,6 +2059,9 @@ int main(int argc, char **argv)
     session_end(&ses, &opt);
 #ifdef PS64_EMU
     emulator_stop();
+#endif
+#ifdef PS64_SID
+    sidplay_close(sidp);
 #endif
     ui_free(&ui);
     if (opt.audio)

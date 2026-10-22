@@ -19,6 +19,15 @@ STAGE=$B/ps64                      # the boilerplate only builds from inside its
 # 1. VICE and the libretro-common helpers (the same libraries as the payload build).
 make -C ps5 -s ../third_party/vice/vice_x64sc_libretro_ps5.a out/lrc.a
 
+# 1b. The SID player's engine (libresidfp + libsidplayfp) and PS64's wrapper around it,
+#     with exceptions and RTTI like VICE (the boilerplate's own C++ rule turns them off).
+tools/get_sidplayfp.sh ps5 >/dev/null
+SIDP=third_party/sidplay-ps5
+"$SDK/bin/prospero-clang++" -std=c++17 -O2 -DreSIDfp=ps64_reSIDfp -I"$SIDP/include" -c src/sidplay.cpp \
+    -o "$SIDP/sidplay.o"
+rm -f "$SIDP/libsidplay.a"
+"$SDK/bin/prospero-ar" rcs "$SIDP/libsidplay.a" "$SIDP/sidplay.o"
+
 # 2. PS64's SDL2 with the native-app patches.
 if [ ! -f third_party/sdl-native-build/libSDL2.a ]; then
     (source "$SDK/toolchain/prospero.sh" &&
@@ -53,6 +62,7 @@ cp -r third_party/vice/libretro-common/include/* "$STAGE/include-lrc/"
 cp third_party/sdl-native-build/libSDL2.a "$STAGE/lib/"
 cp third_party/vice/vice_x64sc_libretro_ps5.a "$STAGE/lib/vice.a"
 cp ps5/out/lrc.a "$STAGE/lib/lrc.a"
+cp "$SIDP/libsidplay.a" "$SIDP/lib/libsidplayfp.a" "$SIDP/lib/libresidfp.a" "$STAGE/lib/"
 # (renamed: the boilerplate accepts only [A-Za-z0-9_.-] in archive names)
 cp "$SDK/target/lib/libc++.a" "$STAGE/lib/libcxx.a"
 cp "$SDK/target/lib/libc++abi.a" "$STAGE/lib/libcxxabi.a"
@@ -63,9 +73,9 @@ WRAP="malloc free calloc realloc posix_memalign memalign aligned_alloc fcntl get
       sceKeyboardInit sceKeyboardOpen sceKeyboardClose sceKeyboardReadState
       sceImeDialogInit sceImeDialogGetStatus sceImeDialogGetResult sceImeDialogTerm"
 ARGS=(APP_SOURCE_DIR=ps64/src APP_SCE_SYS=ps64/sce_sys APP_PARAM=ps64/sce_sys/param.json APP_ASSETS=
-      "APP_DEFINITIONS=PS64_NATIVE PS64_EMU$([ $DEV = 1 ] && echo ' PS64_DEV')"
+      "APP_DEFINITIONS=PS64_NATIVE PS64_EMU PS64_SID$([ $DEV = 1 ] && echo ' PS64_DEV')"
       "APP_INCLUDE_PATHS=ps64/include ps64/include-lrc"
-      "APP_STATIC_ARCHIVES=ps64/lib/lrc.a ps64/lib/vice.a ps64/lib/libSDL2.a ps64/lib/libcxx.a ps64/lib/libcxxabi.a ps64/lib/libunwind.a"
+      "APP_STATIC_ARCHIVES=ps64/lib/lrc.a ps64/lib/vice.a ps64/lib/libsidplay.a ps64/lib/libsidplayfp.a ps64/lib/libresidfp.a ps64/lib/libSDL2.a ps64/lib/libcxx.a ps64/lib/libcxxabi.a ps64/lib/libunwind.a"
       "APP_WRAP_SYMBOLS=$(echo $WRAP)")
 make -C "$B" "${ARGS[@]}"
 

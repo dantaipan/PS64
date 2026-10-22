@@ -21,6 +21,18 @@ EMU_LIBS   := lrc.a $(VICE_LIB) -lc++ -lz
 EMU_DEPS   := lrc.a $(VICE_LIB)
 endif
 
+# SID player: libsidplayfp + libresidfp, included when tools/get_sidplayfp.sh has built them.
+SIDPLAY := third_party/sidplay-osx
+ifneq ($(wildcard $(SIDPLAY)/lib/libsidplayfp.a),)
+SID_CFLAGS := -DPS64_SID
+SID_LIBS   := sidplay.o $(SIDPLAY)/lib/libsidplayfp.a $(SIDPLAY)/lib/libresidfp.a -lc++
+SID_DEPS   := sidplay.o
+endif
+
+# The C wrapper around libsidplayfp (C++).
+sidplay.o: src/sidplay.cpp src/sidplay.h
+	c++ -std=c++17 -O2 -Wall -Wextra -DreSIDfp=ps64_reSIDfp -I$(SIDPLAY)/include -c $< -o $@
+
 # The libretro-common files are built with their own flags (they aren't -std=c11 clean).
 lrc.a: $(LRC_SRC)
 	rm -rf lrc-obj && mkdir -p lrc-obj
@@ -34,8 +46,8 @@ CORE_SRC := src/vicstream.c src/audiostream.c src/c64api.c src/c64keys.c src/c64
 UI_SRC   := src/main_sdl.c src/controls.c src/osk_sdl.c src/font_sdl.c src/ui_sdl.c src/home_sdl.c
 HDRS     := $(wildcard src/*.h)
 
-ps64: $(UI_SRC) $(CORE_SRC) $(EMU_SRC) $(HDRS) $(EMU_DEPS)
-	$(CC) $(CFLAGS) $(EMU_CFLAGS) -F$(SDL_FW) -o $@ $(UI_SRC) $(CORE_SRC) $(EMU_SRC) $(EMU_LIBS) \
+ps64: $(UI_SRC) $(CORE_SRC) $(EMU_SRC) $(HDRS) $(EMU_DEPS) $(SID_DEPS)
+	$(CC) $(CFLAGS) $(EMU_CFLAGS) $(SID_CFLAGS) -F$(SDL_FW) -o $@ $(UI_SRC) $(CORE_SRC) $(EMU_SRC) $(EMU_LIBS) $(SID_LIBS) \
 	      $(LDFLAGS_SDL) -lpthread
 
 fake_sender: tools/fake_sender.c
@@ -57,6 +69,6 @@ test: test_vicstream test_input $(if $(EMU_SRC),test_emulator)
 	$(if $(EMU_SRC),./test_emulator)
 
 clean:
-	rm -f ps64 fake_sender test_vicstream test_input test_emulator lrc.a
+	rm -f ps64 fake_sender test_vicstream test_input test_emulator lrc.a sidplay.o
 
 .PHONY: all test clean

@@ -35,6 +35,7 @@ fetch() {
 }
 
 tools/get_vice.sh fetch
+tools/get_sidplayfp.sh fetch
 fetch third_party/ps5-native-app-boilerplate "$BOILERPLATE_REPO" "$BOILERPLATE_COMMIT"
 # Two small changes to the boilerplate (boilerplate.patch): the linker searches the SDK's
 # libraries (the C++ runtime asks for libpthread by name), and the linker script marks the
