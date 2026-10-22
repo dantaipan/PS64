@@ -25,7 +25,7 @@
 
 /* Where the objects stand (all three in view, as in the mockup): the chosen one comes
  * forward in its place. */
-static const int SLOT_X[HOME_ITEMS] = { 700, 1210, 1680 };
+static const int SLOT_X[HOME_ITEMS] = { 630, 1140, 1600 };
 
 static const SDL_Color WHITE = { 255, 255, 255, 255 };
 static const SDL_Color DIM = { 150, 150, 190, 255 };
