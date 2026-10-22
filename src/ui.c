@@ -1165,6 +1165,7 @@ static const char *const about_text[] = {
     "  database of C64 software and its API.",
     "  CSDb (csdb.dk), the C64 Scene Database, for the release screenshots.",
     "  Icons: Material Icons by Google (Apache 2.0), drawn with nanosvg.",
+    "  Button prompts: Kenney's Input Prompts (CC0, kenney.nl).",
     "  SID player: libsidplayfp and reSIDfp (GPL-2.0+), song lengths from",
     "  the High Voltage SID Collection (hvsc.c64.org).",
     "",

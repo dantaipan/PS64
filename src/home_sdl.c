@@ -7,6 +7,7 @@
 #include "image.h"
 #include "mesh3d.h"
 #include "models.h"
+#include "prompts_sdl.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -316,9 +317,9 @@ void home_draw(SDL_Renderer *ren, const ui_state *u, SDL_Texture *live, Uint32 n
         centred(ren, status, cx, STATUS_Y, 3, c);
     }
     draw_icons(ren, u);
-    centred(ren, u->home_focus == HOME_ON_ITEMS ? "X start     < > choose     up: settings, power"
-                                                : "X select     < > choose     down: back",
-            HW / 2, 1036, 2, DIM);
+    const char *hint = u->home_focus == HOME_ON_ITEMS ? "{cross} start     {lr} choose     {ud} settings, power"
+                                                      : "{cross} select     {lr} choose     {ud} back";
+    prompts_draw(ren, hint, (HW - prompts_width(ren, hint, 2)) / 2, 1032, 2, DIM);
     draw_snack(ren, u, now);
     SDL_RenderSetLogicalSize(ren, saved_w, saved_h);
 }

@@ -372,6 +372,9 @@ The home screen's power and settings icons are [Material Icons](https://github.c
 by Google (Apache 2.0, `src/home_icons.h`), rasterised with
 [nanosvg](https://github.com/memononen/nanosvg) (`src/nanosvg.h`, `src/nanosvgrast.h`, zlib licence,
 commit 239e102e).
+The controller buttons in the hints are Kenney's [Input Prompts](https://kenney.nl/assets/input-prompts)
+1.5 (CC0; PlayStation set, embedded in `src/prompts_svg.h` by `tools/gen_prompts.sh`); hint
+strings write them as tokens, `"{cross} play  {l1}{r1} page"` (`src/prompts.[ch]`).
 The SID player plays tunes with [libsidplayfp](https://github.com/libsidplayfp/libsidplayfp) 3.1.1
 and [libresidfp](https://github.com/libsidplayfp/libresidfp) 1.2.3 (reSIDfp; both GPL-2.0-or-later,
 fetched and built by `tools/get_sidplayfp.sh`). Song lengths come from the

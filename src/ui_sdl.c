@@ -2,6 +2,7 @@
 
 #include "font_sdl.h"
 #include "osk_sdl.h"
+#include "prompts_sdl.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -28,9 +29,10 @@ static void panel(SDL_Renderer *ren, const char *title)
     font_draw(ren, title, PX + 16, PY + 11, 1, WHITE);
 }
 
+/* The hint line at the bottom: "{cross} play  {circle} close" with button icons. */
 static void footer(SDL_Renderer *ren, const char *text)
 {
-    font_draw(ren, text, PX + 16, PY + PH - 18, 1, DIM);
+    prompts_draw(ren, text, PX + 16, PY + PH - 18, 1, DIM);
 }
 
 /* Copy s into out, cutting it to at most width characters with "..". */
@@ -96,7 +98,7 @@ static void draw_menu(SDL_Renderer *ren, const ui_state *u)
                  u->current_ip);
         font_draw(ren, line, PX + 16, LIST_Y + (n + 1) * ROW_H, 1, DIM);
     }
-    footer(ren, "X select   O close   </> change");
+    footer(ren, "{cross} select   {circle} close   {lr} change");
 }
 
 static void draw_picker(SDL_Renderer *ren, const ui_state *u, Uint32 now)
@@ -131,8 +133,8 @@ static void draw_picker(SDL_Renderer *ren, const ui_state *u, Uint32 now)
         fit(text, CHARS, line, sizeof(line));
         row(ren, i - u->top, i == u->sel, line, c);
     }
-    footer(ren, u->picker_from_home ? "X choose   O back       The C64 needs its web remote control turned on"
-                                    : "X choose   O close      The C64 needs its web remote control turned on");
+    footer(ren, u->picker_from_home ? "{cross} choose   {circle} back     The C64 needs its web remote control turned on"
+                                    : "{cross} choose   {circle} close    The C64 needs its web remote control turned on");
 }
 
 static void draw_about(SDL_Renderer *ren, const ui_state *u)
@@ -148,7 +150,7 @@ static void draw_about(SDL_Renderer *ren, const ui_state *u)
                       strchr(line, ' ') == NULL;
         font_draw(ren, line, PX + 16, LIST_Y + i * ROW_H, 1, heading ? YELLOW : WHITE);
     }
-    footer(ren, count > UI_ABOUT_ROWS ? "Up/Down scroll   L1/R1 page   O back" : "O back");
+    footer(ren, count > UI_ABOUT_ROWS ? "{ud} scroll   {l1}{r1} page   {circle} back" : "{circle} back");
 }
 
 static void draw_address(SDL_Renderer *ren, const ui_state *u)
@@ -168,7 +170,7 @@ static void draw_address(SDL_Renderer *ren, const ui_state *u)
             x += 24;
         }
     }
-    footer(ren, "</> field   Up/Down +1/-1   L1/R1 -10/+10   X connect   O back");
+    footer(ren, "{lr} field   {ud} +1/-1   {l1}{r1} -10/+10   {cross} connect   {circle} back");
 }
 
 static void draw_password(SDL_Renderer *ren, const ui_state *u)
@@ -181,8 +183,8 @@ static void draw_password(SDL_Renderer *ren, const ui_state *u)
     masked[n] = 0;
     fill_rect(ren, PX + 16, PY + 60, PW - 32, 28, 0x30, 0x30, 0x40, 255);
     font_draw(ren, masked, PX + 24, PY + 70, 1, WHITE);
-    font_draw(ren, "X type   [] delete   R2 / RETURN connect   L1 shift   O back",
-              PX + 16, PY + 100, 1, DIM);
+    prompts_draw(ren, "{cross} type   {square} delete   {r2} / RETURN connect   {l1} shift   {circle} back",
+                 PX + 16, PY + 100, 1, DIM);
     osk_draw(ren, &u->kbd);
 }
 
@@ -231,7 +233,7 @@ static void draw_browser(SDL_Renderer *ren, const ui_state *u)
         fit(u->entries[u->sel].name, CHARS, full, sizeof(full));
         font_draw(ren, full, PX + 16, PY + PH - 36, 1, YELLOW);
     }
-    footer(ren, "X open/run  [] more  /\\ favourite  L2 search  O up  L1/R1 page");
+    footer(ren, "{cross} open/run  {square} more  {triangle} favourite  {l2} search  {circle} up  {l1}{r1} page");
 }
 
 static void draw_search(SDL_Renderer *ren, const ui_state *u, Uint32 now);
@@ -276,7 +278,7 @@ static void draw_search(SDL_Renderer *ren, const ui_state *u, Uint32 now)
 
     if (!u->index) {
         font_draw(ren, "No C64 Ultimate connected (Options > Home > settings)", PX + 16, LIST_Y, 1, YELLOW);
-        footer(ren, "O close");
+        footer(ren, "{circle} close");
         return;
     }
     if (count == 0 && !st.building) {
@@ -288,7 +290,7 @@ static void draw_search(SDL_Renderer *ren, const ui_state *u, Uint32 now)
                   PX + 16, LIST_Y + 2 * ROW_H, 1, DIM);
         font_draw(ren, "It can take a few minutes; you can search while it runs.",
                   PX + 16, LIST_Y + 3 * ROW_H, 1, DIM);
-        footer(ren, "X build the index   O close");
+        footer(ren, "{cross} build the index   {circle} close");
         return;
     }
 
@@ -338,11 +340,11 @@ static void draw_search(SDL_Renderer *ren, const ui_state *u, Uint32 now)
     }
 
     if (u->search_focus == 0) {
-        font_draw(ren, "X type  [] del  /\\ space  R2 results  L1 shift  O close",
-                  PX + 16, ry + UI_SEARCH_PAGE * ROW_H + 4, 1, DIM);
+        prompts_draw(ren, "{cross} type {square} del {triangle} space {r2} results {l1} shift {circle} close",
+                     PX + 16, ry + UI_SEARCH_PAGE * ROW_H + 4, 1, DIM);
         osk_draw(ren, &u->kbd);
     } else {
-        footer(ren, "X run  [] more  /\\ favourite  > show folder  O back to typing");
+        footer(ren, "{cross} run  {square} more  {triangle} favourite  > show folder  {circle} back to typing");
     }
 }
 
@@ -471,11 +473,12 @@ static void draw_a64(SDL_Renderer *ren, const ui_state *u, Uint32 now)
     }
 
     if (u->a64_focus == 0) {
-        font_draw(ren, "X type  [] del  /\\ space  R2 search  R1 latest  L2 category  L1 shift  O close",
-                  PX + 16, ry + UI_SEARCH_PAGE * ROW_H + 4, 1, DIM);
+        prompts_draw(ren, "{cross} type {square} del {triangle} space {r2} search {r1} latest "
+                          "{l2} category {l1} shift {circle} close",
+                     PX + 16, ry + UI_SEARCH_PAGE * ROW_H + 4, 1, DIM);
         osk_draw(ren, &u->kbd);
     } else {
-        footer(ren, "X open   /\\ favourite   O back to typing   L1/R1 page");
+        footer(ren, "{cross} open   {triangle} favourite   {circle} back to typing   {l1}{r1} page");
     }
 }
 
@@ -507,7 +510,7 @@ static void draw_a64_files(SDL_Renderer *ren, const ui_state *u, Uint32 now)
                  files_type_tag(type), CHARS - 16, name, size);
         row(ren, i - u->a64_ftop, i == u->a64_fsel, line, type == FT_OTHER ? DIM : WHITE);
     }
-    footer(ren, "X run   [] more   /\\ favourite   O back to results");
+    footer(ren, "{cross} run   {square} more   {triangle} favourite   {circle} back to results");
 }
 
 /* ---- favourites ---------------------------------------------------------------- */
@@ -523,7 +526,7 @@ static void draw_favs(SDL_Renderer *ren, const ui_state *u)
     font_draw(ren, "Add favourites with Triangle in the file browser, search, Assembly64",
               PX + 16, LIST_Y + 3 * ROW_H, 1, DIM);
     font_draw(ren, "or Recents.", PX + 16, LIST_Y + 4 * ROW_H, 1, DIM);
-    footer(ren, "X open   O close");
+    footer(ren, "{cross} open   {circle} close");
 }
 
 static const char *fav_tag(const fav_entry *e)
@@ -563,8 +566,8 @@ static void draw_fav_list(SDL_Renderer *ren, const ui_state *u)
         snprintf(line, sizeof(line), "%c%-4s %-44s %s", starred ? STAR : ' ', fav_tag(e), name, place);
         row(ren, i - u->fl_top, i == u->fl_sel, line, WHITE);
     }
-    footer(ren, u->fav_recents ? "X launch   [] more   /\\ favourite   O close"
-                               : "X launch   [] more   /\\ remove   O back");
+    footer(ren, u->fav_recents ? "{cross} launch   {square} more   {triangle} favourite   {circle} close"
+                               : "{cross} launch   {square} more   {triangle} remove   {circle} back");
 }
 
 /* ---- SID player ---------------------------------------------------------- */
@@ -653,7 +656,7 @@ static void draw_sid(SDL_Renderer *ren, const ui_state *u, Uint32 now)
     if (!u->sid_active) {
         font_draw(ren, u->sid_status[0] ? u->sid_status : "Nothing playing", x, y, 1,
                   u->sid_status[0] ? YELLOW : DIM);
-        footer(ren, "X play   < > Local / Assembly64   O home");
+        footer(ren, "{cross} play   {lr} Local / Assembly64   {circle} home");
         return;
     }
     fit(u->sid_title, ic, line, sizeof(line));
@@ -721,7 +724,7 @@ static void draw_sid(SDL_Renderer *ren, const ui_state *u, Uint32 now)
     SDL_RenderDrawLines(ren, pts, SID_SCOPE);
     if (u->sid_status[0])
         font_draw(ren, u->sid_status, x, sy + sh + 10, 1, YELLOW);
-    footer(ren, "X play  < > list  L1/R1 song  L2/R2 tune  [] pause  /\\ mode  O home");
+    footer(ren, "{cross} play  {lr} list  {l1}{r1} song  {l2}{r2} tune  {square} pause  {triangle} mode  {circle} home");
 }
 
 void ui_draw(SDL_Renderer *ren, const ui_state *u, Uint32 now)

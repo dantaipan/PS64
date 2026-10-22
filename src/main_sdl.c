@@ -26,6 +26,7 @@
 #include "favs.h"
 #include "font_sdl.h"
 #include "home_sdl.h"
+#include "prompts_sdl.h"
 #include "localfs.h"
 #include "playlist.h"
 #include "osk_sdl.h"
@@ -2541,6 +2542,7 @@ int main(int argc, char **argv)
         close(asock);
     if (tex) SDL_DestroyTexture(tex);
     home_cleanup();
+    prompts_cleanup();
     font_cleanup();
     SDL_DestroyRenderer(ren);
     SDL_DestroyWindow(win);

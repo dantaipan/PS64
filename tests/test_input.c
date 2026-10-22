@@ -17,6 +17,7 @@
 #include "../src/localfs.h"
 #include "../src/osk.h"
 #include "../src/playlist.h"
+#include "../src/prompts.h"
 #include "../src/settings.h"
 #include "../src/ui.h"
 
@@ -1359,8 +1360,37 @@ static void test_sid_player(void)
     CHECK(playlist_next(&p, 0, 0) == cur && playlist_next(&p, 1, 1) != -1);
 }
 
+/* Hint lines: "{token}" runs are button icons, the rest text; unknown tokens stay text. */
+static void test_prompts(void)
+{
+    const char *t = "{cross} play  {l1}{r1} page";
+    int kinds[8], n = 0, kind;
+    size_t lens[8];
+    for (size_t len; n < 8 && (len = prompts_next(t, &kind)) > 0; t += len, n++) {
+        kinds[n] = kind;
+        lens[n] = len;
+    }
+    CHECK(n == 5 && kinds[0] == PROMPT_CROSS && lens[0] == 7 && kinds[1] == PROMPT_TEXT &&
+          lens[1] == 7 && kinds[2] == PROMPT_L1 && kinds[3] == PROMPT_R1 && kinds[4] == PROMPT_TEXT);
+    CHECK(prompts_next("{nope} x", &kind) == 8 && kind == PROMPT_TEXT);
+    CHECK(prompts_next("a { b", &kind) == 5 && kind == PROMPT_TEXT);
+    CHECK(prompts_next("", &kind) == 0);
+    static uint32_t px[48 * 48];
+    for (int k = 0; k < PROMPT_COUNT; k++) {
+        int ink = 0;
+        CHECK(prompts_rasterize(k, px, 48) == 0);
+        for (int i = 0; i < 48 * 48; i++)
+            ink += (px[i] >> 24) > 128;
+        CHECK(ink > 50);
+    }
+    prompts_rasterize(PROMPT_CROSS, px, 48);                        /* its own colour (blue-violet) */
+    uint32_t c = px[24 * 48 + 10];
+    CHECK((c >> 24) > 200 && (c & 0xFF) > ((c >> 16) & 0xFF));
+}
+
 int main(void)
 {
+    test_prompts();
     test_home();
     test_sid_player();
     test_emulator_mode();
