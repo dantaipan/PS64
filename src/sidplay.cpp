@@ -32,8 +32,8 @@ void copy_string(char *dst, size_t cap, const char *src)
 }
 
 struct sidplay {
+    ReSIDfpBuilder builder{"PS64"};     // (declared first: outlives the engine using its SIDs)
     sidplayfp      engine;
-    ReSIDfpBuilder builder{"PS64"};
     SidTune       *tune = nullptr;
     int16_t        pending[PENDING * 2];
     int            npending = 0, at = 0;

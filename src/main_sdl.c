@@ -490,6 +490,7 @@ static void audio_push(audio_out *a, const int16_t *samples, size_t frames)
 /* Reopen at another rate (the emulator makes 48 kHz, the Ultimate ~47983 Hz). */
 static void audio_reopen(audio_out *a, int rate, int latency_ms)
 {
+    printf("audio: reopening at %d Hz\n", rate);
     int muted = a->muted, gain = a->gain;
     SDL_CloseAudioDevice(a->dev);
     if (audio_open(a, rate, latency_ms) != 0)
@@ -855,6 +856,8 @@ static void sid_show(ui_state *ui)
 /* Stop: the engine, and the C64 Ultimate if it was playing there. */
 static void sid_stop(ui_state *ui, c64files *files)
 {
+    if (sp.engine)
+        printf("sid: stop\n");
     if (sp.on_ultimate && sp.engine && files)
         files_action(files, "", FA_RESET);
     sidplay_close(sp.engine);
@@ -885,6 +888,8 @@ static int sid_play_bytes(ui_state *ui, c64files *files, const char *name, unsig
     sp.data = data;
     sp.len = len;
     snprintf(sp.name, sizeof(sp.name), "%s", name);
+    printf("sid: playing %s (%zu bytes)%s\n", name, len,
+           sp.prefer_ultimate && ui->sid_can_ultimate && files ? " on the C64 Ultimate" : "");
     ui->sid_status[0] = 0;
     sp.paused = 0;
     sp.on_ultimate = sp.prefer_ultimate && ui->sid_can_ultimate && files;
@@ -1117,6 +1122,42 @@ int sceSystemServiceLoadExec(const char *path, char *const argv[]);
 static int ps64_main(int argc, char **argv);
 
 /* The app's entry point: it can't return from main, the system closes it. */
+#include <ucontext.h>
+
+/*
+ * A crash: put where it happened in the log (the console only reports crashes in an
+ * app's first minute). The program counter less this handler's address, plus the
+ * handler's address in the build (nm eboot.elf), gives the function.
+ */
+static void crash_handler(int sig, siginfo_t *info, void *context)
+{
+    char line[200];
+    unsigned long long pc = 0;
+#if defined(__x86_64__)
+    pc = (unsigned long long)((ucontext_t *)context)->uc_mcontext.mc_rip;
+#endif
+    unsigned long long here = (unsigned long long)(uintptr_t)crash_handler;
+    int n = snprintf(line, sizeof(line),
+                     "CRASH: signal %d at address %p, pc 0x%llx (crash_handler%+lld)\n",
+                     sig, info ? info->si_addr : NULL, pc, (long long)(pc - here));
+    if (n > 0)
+        write(STDOUT_FILENO, line, (size_t)n);
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+static void crash_handlers(void)
+{
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = crash_handler;
+    sa.sa_flags = SA_SIGINFO;
+    sigemptyset(&sa.sa_mask);
+    const int sigs[] = { SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT };
+    for (size_t i = 0; i < sizeof(sigs) / sizeof(sigs[0]); i++)
+        sigaction(sigs[i], &sa, NULL);
+}
+
 int main(int argc, char **argv)
 {
     static char *fallback[] = { "/app0/eboot.bin", NULL };
@@ -1131,6 +1172,7 @@ int main(int argc, char **argv)
         dup2(fileno(stdout), fileno(stderr));
         setvbuf(stderr, NULL, _IONBF, 0);
     }
+    crash_handlers();
     printf("PS64 native app starting\n");
     ps64_main(argc, argv);
     printf("PS64 closing\n");
@@ -1793,6 +1835,7 @@ int main(int argc, char **argv)
                 break;
             case UA_SID_OUTPUT:
                 sp.prefer_ultimate = !sp.prefer_ultimate;
+                printf("sid: play on %s\n", sp.prefer_ultimate ? "the C64 Ultimate" : "PS64");
                 opt.sid_ultimate = sp.prefer_ultimate;
                 if (config)
                     config_set(config, "sid-output", sp.prefer_ultimate ? "ultimate" : "ps64", NULL);
