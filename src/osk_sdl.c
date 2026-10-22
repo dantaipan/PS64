@@ -10,7 +10,7 @@
 #define KEY_H  34
 #define GAP    4
 
-void osk_draw(SDL_Renderer *ren, const osk_state *s)
+void osk_draw(SDL_Renderer *ren, const osk_state *s, int hints)
 {
     int saved_w, saved_h;
     canvas_begin(ren, &saved_w, &saved_h);
@@ -27,8 +27,9 @@ void osk_draw(SDL_Renderer *ren, const osk_state *s)
               s->shift ? lit : dim);
     font_draw(ren, "C=", MARGIN + 96, panel_y + 7, 1, s->cbm ? lit : dim);
     font_draw(ren, "CTRL", MARGIN + 128, panel_y + 7, 1, s->ctrl ? lit : dim);
-    prompts_draw(ren, "{cross} type {circle} close {square} del {triangle} space {r2} return "
-                      "{l1} shift {r1} C= {l2} ctrl", MARGIN + 176, panel_y + 7, 1, dim);
+    if (hints)
+        prompts_draw(ren, "{cross} type {circle} close {square} del {triangle} space {r2} return "
+                          "{l1} shift {r1} C= {l2} ctrl", MARGIN + 176, panel_y + 7, 1, dim);
 
     for (int r = 0; r < OSK_ROWS; r++) {
         for (int c = 0; c < osk_row_len(r); c++) {

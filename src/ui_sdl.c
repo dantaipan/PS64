@@ -185,7 +185,7 @@ static void draw_password(SDL_Renderer *ren, const ui_state *u)
     font_draw(ren, masked, PX + 24, PY + 70, 1, WHITE);
     prompts_draw(ren, "{cross} type   {square} delete   {r2} / RETURN connect   {l1} shift   {circle} back",
                  PX + 16, PY + 100, 1, DIM);
-    osk_draw(ren, &u->kbd);
+    osk_draw(ren, &u->kbd, 0);     /* (the screen's hint line covers it) */
 }
 
 static void draw_browser(SDL_Renderer *ren, const ui_state *u)
@@ -342,7 +342,7 @@ static void draw_search(SDL_Renderer *ren, const ui_state *u, Uint32 now)
     if (u->search_focus == 0) {
         prompts_draw(ren, "{cross} type {square} del {triangle} space {r2} results {l1} shift {circle} close",
                      PX + 16, ry + UI_SEARCH_PAGE * ROW_H + 4, 1, DIM);
-        osk_draw(ren, &u->kbd);
+        osk_draw(ren, &u->kbd, 0);     /* (the screen's hint line covers it) */
     } else {
         footer(ren, "{cross} run  {square} more  {triangle} favourite  > show folder  {circle} back to typing");
     }
@@ -476,7 +476,7 @@ static void draw_a64(SDL_Renderer *ren, const ui_state *u, Uint32 now)
         prompts_draw(ren, "{cross} type {square} del {triangle} space {r2} search {r1} latest "
                           "{l2} category {l1} shift {circle} close",
                      PX + 16, ry + UI_SEARCH_PAGE * ROW_H + 4, 1, DIM);
-        osk_draw(ren, &u->kbd);
+        osk_draw(ren, &u->kbd, 0);     /* (the screen's hint line covers it) */
     } else {
         footer(ren, "{cross} open   {triangle} favourite   {circle} back to typing   {l1}{r1} page");
     }

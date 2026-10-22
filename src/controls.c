@@ -389,7 +389,7 @@ void controls_update(controls *c, Uint32 now)
 void controls_draw(controls *c, SDL_Renderer *ren, Uint32 now)
 {
     if (c->osk.open && !ui_open(c))
-        osk_draw(ren, &c->osk);
+        osk_draw(ren, &c->osk, 1);
     if (c->ui)
         ui_draw(ren, c->ui, now);
     if (c->banner[0] && !SDL_TICKS_PASSED(now, c->banner_until))
