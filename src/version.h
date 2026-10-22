@@ -5,6 +5,6 @@
 #ifndef VERSION_H
 #define VERSION_H
 
-#define PS64_VERSION "1.0.1"
+#define PS64_VERSION "1.0.2"
 
 #endif
