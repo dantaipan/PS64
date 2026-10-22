@@ -333,7 +333,7 @@ void a64_unwrap_multipart(const char *content_type, unsigned char **data, size_t
 enum { REQ_NONE, REQ_SEARCH, REQ_ENTRIES, REQ_FILE, REQ_CATS, REQ_LATEST };
 
 struct a64 {
-    char            host[128], base[128], client_id[128];
+    char            host[128], base[128];
     int             port;
     pthread_t       thread;
     pthread_mutex_t lock;
@@ -353,7 +353,7 @@ static void describe_error(int status, a64_result *res)
     } else if (status == 401 || status == 403 || status == 464) {
         res->auth_error = 1;
         snprintf(res->message, sizeof(res->message),
-                 "Assembly64 didn't accept the client ID (HTTP %d)", status);
+                 "Assembly64 refused PS64's request (HTTP %d)", status);
     } else {
         snprintf(res->message, sizeof(res->message), "Assembly64 error (HTTP %d)", status);
     }
@@ -361,7 +361,7 @@ static void describe_error(int status, a64_result *res)
 
 static int get(a64 *a, const char *path, char **body, size_t *len, char *type, size_t type_cap)
 {
-    c64api api = { .host = a->host, .port = a->port, .client_id = a->client_id, .timeout_s = 20 };
+    c64api api = { .host = a->host, .port = a->port, .client_id = A64_CLIENT_ID, .timeout_s = 20 };
     char full[1200];
     snprintf(full, sizeof(full), "%s%s", a->base, path);
     return c64api_request_alloc(&api, "GET", full, NULL, NULL, 0, body, len, type, type_cap);
@@ -503,7 +503,7 @@ static void *worker(void *arg)
     }
 }
 
-a64 *a64_start(const char *base_url, const char *client_id)
+a64 *a64_start(const char *base_url)
 {
     a64 *a = calloc(1, sizeof(*a));
     if (!a)
@@ -513,7 +513,6 @@ a64 *a64_start(const char *base_url, const char *client_id)
         free(a);
         return NULL;
     }
-    snprintf(a->client_id, sizeof(a->client_id), "%s", client_id);
     pthread_mutex_init(&a->lock, NULL);
     pthread_cond_init(&a->wake, NULL);
     if (pthread_create(&a->thread, NULL, worker, a) != 0) {

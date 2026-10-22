@@ -47,8 +47,8 @@ Controller
                        reset / reboot C64, audio,
                        joystick port, choose C64, update search index, quit
 
-Search Assembly64 (Options menu) needs a client ID from the Assembly64 team
-(hackerswithstyle.se); the app asks for it the first time and saves it.
+Search Assembly64 (Options menu) searches the online Assembly64 database
+(hackerswithstyle.se); there's nothing to set up.
 
 Search builds an index of the C64's storage over FTP the first time (a few
 minutes for a big collection), saved next to the app as ps64-index.txt.

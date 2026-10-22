@@ -75,7 +75,7 @@ static int typing(controls *c)
         return 0;
     const ui_state *u = c->ui;
     return (u->screen == UI_SEARCH && u->search_focus == 0) ||
-           (u->screen == UI_A64 && u->a64_focus == 0) || u->screen == UI_A64_ID;
+           (u->screen == UI_A64 && u->a64_focus == 0);
 }
 
 static void push_action(controls *c, ui_action a)

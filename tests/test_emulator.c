@@ -275,7 +275,7 @@ int main(void)
 
     /* Assembly64: the chosen disk plus the item's other disks are fetched, then started. */
     a64_file files[3] = { { 11, "Disk1.d64", 0 }, { 12, "Disk2.d64", 0 }, { 13, "readme.txt", 0 } };
-    a64 *net = a64_start("http://127.0.0.1:9/leet", "test");   /* downloads go nowhere; we feed them */
+    a64 *net = a64_start("http://127.0.0.1:9/leet");   /* downloads go nowhere; we feed them */
     CHECK(eg_a64_begin(&g, net, "item-1", 0, "Test Game", files, 3, 0, FA_NONE, msg, sizeof(msg)) ==
           EG_WAITING && strstr(msg, "1 of 2"), "waits for the downloads: %s", msg);
     static uint8_t img[174848];

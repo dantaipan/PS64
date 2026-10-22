@@ -535,19 +535,10 @@ static void kbd_open(ui_state *u)
     u->kbd.open = 1;
 }
 
-void ui_open_a64_id(ui_state *u, const char *message)
-{
-    go(u, UI_A64_ID);
-    kbd_open(u);
-    snprintf(u->a64_status, sizeof(u->a64_status), "%s", message ? message : "");
-}
-
 void ui_open_a64(ui_state *u)
 {
-    if (!u->a64_ready) {
-        ui_open_a64_id(u, NULL);
-        return;
-    }
+    if (!u->a64_ready)
+        snprintf(u->a64_status, sizeof(u->a64_status), "Assembly64 isn't available");
     u->screen = UI_A64;
     u->a64_focus = u->a64_count ? 1 : 0;
     kbd_open(u);
@@ -663,10 +654,9 @@ void ui_a64_results(ui_state *u, a64_result *r)
 
 void ui_a64_error(ui_state *u, const char *message, int auth_error)
 {
+    (void)auth_error;                   /* (PS64's client ID is fixed: nothing to ask for) */
     u->a64_loading = 0;
     snprintf(u->a64_status, sizeof(u->a64_status), "%s", message);
-    if (auth_error && (u->screen == UI_A64 || u->screen == UI_A64_FILES))
-        ui_open_a64_id(u, message);
 }
 
 static void move_in(int *sel, int *top, int rows, int page, int delta, int wrap)
@@ -683,24 +673,6 @@ static void move_in(int *sel, int *top, int rows, int page, int delta, int wrap)
         *top = *sel;
     if (*sel >= *top + page)
         *top = *sel - page + 1;
-}
-
-static ui_action input_a64_id(ui_state *u, int in)
-{
-    int changed;
-    if (in == IN_BACK) {
-        ui_close(u);
-        return none();
-    }
-    if ((in == IN_R2 || kbd_text(u, u->a64_id, sizeof(u->a64_id), in, &changed)) && u->a64_id[0]) {
-        ui_action a = act(UA_A64_SET_ID);
-        snprintf(a.text, sizeof(a.text), "%s", u->a64_id);
-        u->a64_status[0] = 0;
-        u->screen = UI_A64;
-        u->a64_focus = 0;
-        return a;
-    }
-    return none();
 }
 
 static ui_action input_a64(ui_state *u, int in)
@@ -888,10 +860,6 @@ static int append_text(char *buf, size_t cap, const char *text)
 
 void ui_text(ui_state *u, const char *text)
 {
-    if (u->screen == UI_A64_ID) {
-        append_text(u->a64_id, sizeof(u->a64_id), text);
-        return;
-    }
     if (u->screen == UI_A64 ) {
         u->a64_focus = 0;
         append_text(u->a64_query, sizeof(u->a64_query), text);
@@ -1423,7 +1391,6 @@ ui_action ui_input(ui_state *u, int in)
     case UI_SEARCH:   return input_search(u, in);
     case UI_A64:      return input_a64(u, in);
     case UI_A64_FILES: return input_a64_files(u, in);
-    case UI_A64_ID:   return input_a64_id(u, in);
     case UI_FAVS:     return input_favs(u, in);
     case UI_FAV_LIST: return input_fav_list(u, in);
     case UI_ABOUT:    return input_about(u, in);

@@ -16,7 +16,7 @@
 #include <stdint.h>
 
 enum { UI_CLOSED, UI_MENU, UI_PICKER, UI_ADDRESS, UI_PASSWORD, UI_BROWSER, UI_ACTIONS,
-       UI_SEARCH, UI_A64, UI_A64_FILES, UI_A64_ID, UI_FAVS, UI_FAV_LIST, UI_ABOUT,
+       UI_SEARCH, UI_A64, UI_A64_FILES, UI_FAVS, UI_FAV_LIST, UI_ABOUT,
        UI_HOME,     /* home screen: emulator, C64 Ultimate stream, SID player (drawn by home_sdl.c) */
        UI_SID };    /* the SID player */
 
@@ -33,7 +33,7 @@ enum { MI_HOME, MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS, MI_RECENTS, MI
 
 enum { UA_NONE, UA_MUTE, UA_PORT, UA_QUIT, UA_CONNECT, UA_RESCAN,
        UA_LIST, UA_FILE, UA_OPEN_BROWSER, UA_OPEN_SEARCH, UA_BUILD_INDEX, UA_RESET, UA_REBOOT,
-       UA_A64_SEARCH, UA_A64_ENTRIES, UA_A64_FILE, UA_A64_SET_ID, UA_FAV_TOGGLE, UA_FAV_LAUNCH,
+       UA_A64_SEARCH, UA_A64_ENTRIES, UA_A64_FILE, UA_FAV_TOGGLE, UA_FAV_LAUNCH,
        UA_HOME,          /* menu: back to the home screen */
        UA_HOME_VICE,     /* home: the built-in emulator (resumes it if it ran) */
        UA_HOME_STREAM,   /* home: the C64 Ultimate's stream (it's live) */
@@ -58,7 +58,7 @@ typedef struct {
     char path[512];
     int  file_action;
     /* Assembly64 requests. */
-    char text[128];               /* query, client ID, or item ID */
+    char text[128];               /* query, or item ID */
     char category_key[40];
     int  category, file_id, offset;
     /* Favourites: the entry to toggle or launch (fav.action = action to use). */
@@ -167,8 +167,7 @@ typedef struct {
     int        nresults, rsel, rtop;
 
     /* Assembly64. */
-    int            a64_ready;       /* a client ID is configured (set by main) */
-    char           a64_id[128];     /* client ID being entered */
+    int            a64_ready;       /* the Assembly64 client is running (set by main) */
     char           a64_query[64];
     int            a64_focus;       /* 0 keyboard, 1 results */
     int            a64_cat;         /* index into a64_cats, -1 = all */
@@ -235,7 +234,6 @@ void ui_open_search(ui_state *u);
 
 /* Assembly64 screens; results from the a64 worker are fed in here. */
 void ui_open_a64(ui_state *u);
-void ui_open_a64_id(ui_state *u, const char *message);
 void ui_a64_results(ui_state *u, a64_result *r);   /* takes ownership of r's lists */
 void ui_a64_error(ui_state *u, const char *message, int auth_error);
 

@@ -580,17 +580,17 @@ static void test_a64(void)
     CHECK(len == before);
     free(d);
 
-    /* Screens: no ID -> ID entry; save; search; open item; run a file. */
+    /* Screens: search (PS64's client ID is built in); open item; run a file. */
+    CHECK(!strcmp(A64_CLIENT_ID, "PS64"));
     static ui_state u;
     ui_setup(&u);
     ui_open_menu(&u);
     u.sel = MI_A64;
-    ui_input(&u, IN_OK);
-    CHECK(u.screen == UI_A64_ID);
-    ui_text(&u, "my-client");
-    ui_action a = ui_input(&u, IN_R2);
-    CHECK(a.kind == UA_A64_SET_ID && !strcmp(a.text, "my-client") && u.screen == UI_A64);
+    ui_input(&u, IN_OK);                                         /* (no client yet: says so) */
+    CHECK(u.screen == UI_A64 && strstr(u.a64_status, "isn't available"));
     u.a64_ready = 1;
+    u.a64_status[0] = 0;
+    ui_action a;
     u.a64_cats = cats;
     ui_text(&u, "boulder");
     ui_input(&u, IN_L2);                                          /* category: Games */
@@ -633,9 +633,9 @@ static void test_a64(void)
     a = ui_input(&u, IN_OK);
     CHECK(a.kind == UA_A64_FILE && a.file_action == FA_MOUNT_A && u.screen == UI_A64_FILES);
 
-    /* A rejected client ID goes back to ID entry with the message. */
-    ui_a64_error(&u, "Assembly64 didn't accept the client ID (HTTP 464)", 1);
-    CHECK(u.screen == UI_A64_ID && strstr(u.a64_status, "464"));
+    /* A refused request shows the message where it is (there's no ID to ask for). */
+    ui_a64_error(&u, "Assembly64 refused PS64's request (HTTP 464)", 1);
+    CHECK(u.screen == UI_A64_FILES && strstr(u.a64_status, "464") && !u.a64_loading);
     ui_free(&u);
 }
 

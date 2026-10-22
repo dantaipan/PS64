@@ -356,24 +356,6 @@ static void text_field(SDL_Renderer *ren, int y, const char *text, int cursor, U
     font_draw(ren, field, PX + 24, y + 7, 1, WHITE);
 }
 
-static void draw_a64_id(SDL_Renderer *ren, const ui_state *u, Uint32 now)
-{
-    panel(ren, "Assembly64 client ID");
-    font_draw(ren, "Searching Assembly64 needs a client ID from its team",
-              PX + 16, PY + 38, 1, DIM);
-    font_draw(ren, "(hackerswithstyle.se). Type it below; it's saved in ps64.cfg.",
-              PX + 16, PY + 52, 1, DIM);
-    text_field(ren, PY + 70, u->a64_id, 1, now);
-    if (u->a64_status[0]) {
-        char line[128];
-        fit(u->a64_status, CHARS, line, sizeof(line));
-        font_draw(ren, line, PX + 16, PY + 100, 1, RED);
-    }
-    font_draw(ren, "X type  [] del  R2 / RETURN save  L1 shift  O close",
-              PX + 16, PY + 120, 1, DIM);
-    osk_draw(ren, &u->kbd);
-}
-
 /* The screenshot beside the Assembly64 results: half size (192x136 for a C64 screen). */
 #define SHOT_W 192
 #define SHOT_H 136
@@ -758,7 +740,6 @@ void ui_draw(SDL_Renderer *ren, const ui_state *u, Uint32 now)
     case UI_SEARCH:   draw_search(ren, u, now); break;
     case UI_A64:      draw_a64(ren, u, now); break;
     case UI_A64_FILES: draw_a64_files(ren, u, now); break;
-    case UI_A64_ID:   draw_a64_id(ren, u, now); break;
     case UI_FAVS:     draw_favs(ren, u); break;
     case UI_FAV_LIST: draw_fav_list(ren, u); break;
     case UI_ABOUT:    draw_about(ren, u); break;

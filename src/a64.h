@@ -1,13 +1,15 @@
 /*
  * a64 - Assembly64 (hackerswithstyle.se) client: keyword search, an item's
  * file list and file downloads, on a worker thread. Every request carries
- * the user's client-id header; nothing works without one.
+ * PS64's client-id header: Assembly64 identifies apps, not users, so the ID is
+ * PS64's own (A64_CLIENT_ID), not a setting.
  */
 #ifndef A64_H
 #define A64_H
 
 #include <stddef.h>
 
+#define A64_CLIENT_ID "PS64"          /* PS64's client ID, from the Assembly64 team */
 #define A64_DEFAULT_URL "http://hackerswithstyle.se/leet"
 #define A64_PAGE        50
 #define A64_LATEST      25    /* items in "latest releases" */
@@ -51,7 +53,7 @@ enum { A64R_SEARCH, A64R_ENTRIES, A64R_FILE, A64R_CATEGORIES, A64R_ERROR };
 typedef struct {
     int       kind;
     char      message[160];
-    int       auth_error;             /* the server rejected the client ID */
+    int       auth_error;             /* the server refused PS64's client ID */
 
     /* A64R_SEARCH (items malloc'd; caller frees) */
     a64_item *items;
@@ -76,7 +78,7 @@ typedef struct {
 
 typedef struct a64 a64;
 
-a64 *a64_start(const char *base_url, const char *client_id);
+a64 *a64_start(const char *base_url);
 void a64_stop(a64 *a);
 void a64_search(a64 *a, const char *text, const char *category_key, int offset);
 /*

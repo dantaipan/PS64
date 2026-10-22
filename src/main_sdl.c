@@ -92,7 +92,6 @@ typedef struct {
     const char *search_roots; /* folders the search index covers, comma-separated */
     int         build_index;  /* debug: build the search index, print stats, exit */
     const char *search_text;  /* debug: open the search screen with this query */
-    const char *a64_id;       /* Assembly64 client ID */
     const char *a64_url;      /* Assembly64 API base URL */
     const char *a64_search;   /* debug: search Assembly64 for this at launch */
     const char *a64_latest;   /* debug: show Assembly64's latest releases in this category */
@@ -135,7 +134,7 @@ static void usage(const char *argv0)
         "          [--sid-volume DB] [--sid-output ps64|ultimate]\n"
         "          [--joystick-port 1|2] [--button-NAME KEY] [--type TEXT] [--browse-dir DIR]\n"
         "          [--search-roots /SD,/USB0] [--build-index] [--search TEXT]\n"
-        "          [--assembly64-client-id ID] [--assembly64-url URL] [--a64-search TEXT]\n"
+        "          [--assembly64-url URL] [--a64-search TEXT]\n"
         "          [--a64-latest CATEGORY]\n"
         "          [--c64 emulator] [--games-dir DIR] [--dpad joystick|keys] [--emu-load FILE]\n"
         "\n"
@@ -183,7 +182,6 @@ static int parse_args(int argc, char **argv, options *o)
     o->search_roots = "/SD";
     o->build_index = 0;
     o->search_text = NULL;
-    o->a64_id = NULL;
     o->a64_url = A64_DEFAULT_URL;
     o->a64_search = NULL;
     o->a64_latest = NULL;
@@ -236,7 +234,8 @@ static int parse_args(int argc, char **argv, options *o)
         else if (!strcmp(a, "--search-roots") && next)  { o->search_roots = next; i++; }
         else if (!strcmp(a, "--build-index"))           { o->build_index = 1; }
         else if (!strcmp(a, "--search") && next)       { o->search_text = next; i++; }
-        else if (!strcmp(a, "--assembly64-client-id") && next) { o->a64_id = next; i++; }
+        /* (Old configs set the Assembly64 client ID: PS64's own is built in now.) */
+        else if (!strcmp(a, "--assembly64-client-id") && next) { i++; }
         else if (!strcmp(a, "--assembly64-url") && next)       { o->a64_url = next; i++; }
         else if (!strcmp(a, "--a64-search") && next)           { o->a64_search = next; i++; }
         else if (!strcmp(a, "--a64-latest") && next)           { o->a64_latest = next; i++; }
@@ -1333,7 +1332,6 @@ int main(int argc, char **argv)
     fav_load(&recents, recents_file);
     ui.favs = &favs;
     ui.recents = &recents;
-    ui.a64_ready = opt.a64_id && *opt.a64_id;
     ui.port = opt.joystick_port;
     controls ctl;
     controls_init(&ctl, NULL, &ui, opt.joystick_port);
@@ -1480,16 +1478,13 @@ int main(int argc, char **argv)
     ctl.remote = ses.rem;
     snprintf(ui.current_ip, sizeof(ui.current_ip), "%s", ses.host);
     int typed = 0;
-    /* Assembly64: only with a client ID. */
-    a64 *a64c = NULL;
-    if (opt.a64_id && *opt.a64_id) {
-        a64c = a64_start(opt.a64_url, opt.a64_id);
-        if (a64c) {
-            a64_load_categories(a64c);
-            ui.a64_ready = 1;
-        } else {
-            fprintf(stderr, "assembly64: bad URL %s\n", opt.a64_url);
-        }
+    /* Assembly64 (with PS64's own client ID). */
+    a64 *a64c = a64_start(opt.a64_url);
+    if (a64c) {
+        a64_load_categories(a64c);
+        ui.a64_ready = 1;
+    } else {
+        fprintf(stderr, "assembly64: bad URL %s\n", opt.a64_url);
     }
     if (opt.a64_search && a64c) {
         ui_open_a64(&ui);
@@ -1892,17 +1887,6 @@ int main(int argc, char **argv)
                 files_action(ses.files, "", a.kind == UA_RESET ? FA_RESET : FA_REBOOT);
                 controls_banner(&ctl, a.kind == UA_RESET ? "Resetting the C64..." : "Rebooting the C64...");
                 break;
-            case UA_A64_SET_ID:
-                a64_stop(a64c);
-                a64c = a64_start(opt.a64_url, a.text);
-                ui.a64_ready = a64c != NULL;
-                if (a64c)
-                    a64_load_categories(a64c);
-                if (config)
-                    config_set(config, "assembly64-client-id", a.text, NULL);
-                controls_banner(&ctl, a64c ? "Assembly64 client ID saved"
-                                           : "Bad Assembly64 URL in the config");
-                break;
             case UA_A64_SEARCH:
                 if (a64c)
                     a64_search(a64c, a.text, a.category_key, a.offset);
@@ -2017,7 +2001,7 @@ int main(int argc, char **argv)
 #ifdef PS64_EMU
                 if (ses.emu) {
                     if (!local && !a64c) {
-                        controls_banner(&ctl, "Assembly64 needs a client ID (Options > Search Assembly64)");
+                        controls_banner(&ctl, "Assembly64 isn't available (check assembly64-url)");
                         break;
                     }
                     int rc = EG_WAITING;
@@ -2045,7 +2029,7 @@ int main(int argc, char **argv)
                     break;
                 }
                 if (!local && !a64c) {
-                    controls_banner(&ctl, "Assembly64 needs a client ID (Options > Search Assembly64)");
+                    controls_banner(&ctl, "Assembly64 isn't available (check assembly64-url)");
                     break;
                 }
                 int action = e->action != FA_NONE ? e->action
@@ -2318,7 +2302,7 @@ int main(int argc, char **argv)
                     controls_banner(&ctl, msg);
                 } else if (r.kind == A64R_ERROR) {
                     ui_a64_error(&ui, r.message, r.auth_error);
-                    if (ui.screen != UI_A64 && ui.screen != UI_A64_FILES && ui.screen != UI_A64_ID)
+                    if (ui.screen != UI_A64 && ui.screen != UI_A64_FILES)
                         controls_banner(&ctl, r.message);
                 } else if (r.kind == A64R_ENTRIES && auto_item[0] &&
                            !strcmp(r.item_id, auto_item) && r.category == auto_category) {

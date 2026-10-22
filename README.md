@@ -216,10 +216,10 @@ the search index, prints counts and timing, and exits.
 
 **Options > Search Assembly64...** searches the online Assembly64 database
 (hackerswithstyle.se) and sends the chosen file straight to the C64, without
-saving it on the C64's storage. It needs a **client ID** from the Assembly64
-team: the first time, the app asks for it (type it with the on-screen
-keyboard, R2 to save) and stores it as `assembly64-client-id` in the config.
-If the server rejects it, the app asks again.
+saving it on the C64's storage. Assembly64 identifies apps, not users: PS64
+sends its own client ID (`PS64`, built in as `A64_CLIENT_ID` in `src/a64.h`), so
+there's nothing to set up. (An `assembly64-client-id` line left in an older
+config is ignored.)
 
 Type a name, pick a category with L2 (from the server's presets), and press
 R2 to search; "More results..." fetches the next 50. Cross opens an entry's
@@ -228,8 +228,7 @@ images: reboot, mount on drive A, `LOAD"*",8,1`, `RUN`; PRG run; CRT start;
 SID/MOD play), Square shows the other actions.
 
 The API is used over plain HTTP (`assembly64-url`, default
-`http://hackerswithstyle.se/leet`), like other Assembly64 clients, so the
-client ID travels unencrypted on the way to the server.
+`http://hackerswithstyle.se/leet`), like other Assembly64 clients.
 
 ## Favourites and recents
 
