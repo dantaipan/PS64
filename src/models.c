@@ -62,8 +62,8 @@ void model_1702(mesh *m)
     m->layer = 0;
     mesh_textured_quad(m, (vec3){open[0], open[3], 0.05f}, (vec3){open[1], open[3], 0.05f},
                        (vec3){open[1], open[2], 0.05f}, (vec3){open[0], open[2], 0.05f}, FRONT, 8, 6);
-    /* Control strip below the screen: the commodore badge with its rainbow in the middle,
-     * the brown power button on the right with its light above it. */
+    /* Control strip below the screen: the commodore badge in the middle with its rainbow
+     * and power light, the brown power button on the right. */
     static const uint32_t rainbow[5] = { 0xE03A2F, 0xF08A24, 0xF5D02E, 0x3FA34D, 0x3B7DD8 };
     m->layer = 1;
     stud(m, -0.46f, 0.46f, -0.40f, -0.27f, 0, 0.02f, PANEL);
@@ -72,8 +72,8 @@ void model_1702(mesh *m)
     stud(m, 0.33f, 0.38f, -0.375f, -0.325f, -0.02f, 0.02f, 0x8A6A48);
     m->layer = 3;
     for (int i = 0; i < 5; i++)
-        stud(m, 0.05f, 0.11f, -0.320f - i * 0.0076f, -0.3145f - i * 0.0076f, -0.025f, 0.002f, rainbow[i]);
-    stud(m, 0.345f, 0.365f, -0.315f, -0.305f, -0.02f, 0.006f, 0xD03A2E);
+        stud(m, 0.01f, 0.07f, -0.320f - i * 0.0076f, -0.3145f - i * 0.0076f, -0.025f, 0.002f, rainbow[i]);
+    stud(m, 0.09f, 0.11f, -0.340f, -0.330f, -0.025f, 0.004f, 0xD03A2E);
     m->layer = 0;
     translate(m, 0, 0, -0.43f);
 }
