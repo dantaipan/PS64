@@ -49,10 +49,11 @@ void model_1702(mesh *m)
 {
     const uint32_t CASE = 0xB4A68C, PANEL = 0xA89A7F, BEZEL = 0x2A2A2C, WALL = 0x1E1E21;
     /* Case without its front; the front is a frame round the bezel. */
-    mesh_box(m, (vec3){-0.5f, -0.43f, 0}, (vec3){0.5f, 0.43f, 0.9f}, CASE, BOX_FRONT);
-    const float body[4] = { -0.5f, 0.5f, -0.43f, 0.43f };
-    const float bezel[4] = { -0.44f, 0.44f, -0.22f, 0.40f };
-    const float open[4] = { -0.37f, 0.37f, -0.16f, 0.34f };
+    mesh_box(m, (vec3){-0.45f, -0.43f, 0}, (vec3){0.45f, 0.43f, 0.9f}, CASE, BOX_FRONT);
+    /* Nearly square, with a 4:3 screen (0.667 x 0.5), like the real one. */
+    const float body[4] = { -0.45f, 0.45f, -0.43f, 0.43f };
+    const float bezel[4] = { -0.40f, 0.40f, -0.22f, 0.40f };
+    const float open[4] = { -0.3333f, 0.3333f, -0.16f, 0.34f };
     frame(m, body, bezel, 0, CASE);
     recess(m, open, -0.03f, open, 0.05f, WALL);
     /* Black bezel standing out of the case, with the screen set back inside it. */
@@ -66,10 +67,10 @@ void model_1702(mesh *m)
      * and power light, the brown power button on the right. */
     static const uint32_t rainbow[5] = { 0xE03A2F, 0xF08A24, 0xF5D02E, 0x3FA34D, 0x3B7DD8 };
     m->layer = 1;
-    stud(m, -0.46f, 0.46f, -0.40f, -0.27f, 0, 0.02f, PANEL);
+    stud(m, -0.41f, 0.41f, -0.40f, -0.27f, 0, 0.02f, PANEL);
     m->layer = 2;
     stud(m, -0.13f, 0.13f, -0.357f, -0.313f, -0.02f, 0.005f, 0x55585E);
-    stud(m, 0.33f, 0.38f, -0.375f, -0.325f, -0.02f, 0.02f, 0x8A6A48);
+    stud(m, 0.30f, 0.35f, -0.375f, -0.325f, -0.02f, 0.02f, 0x8A6A48);
     m->layer = 3;
     for (int i = 0; i < 5; i++)
         stud(m, 0.01f, 0.07f, -0.320f - i * 0.0076f, -0.3145f - i * 0.0076f, -0.025f, 0.002f, rainbow[i]);
@@ -82,10 +83,10 @@ void model_1084(mesh *m)
 {
     const uint32_t CASE = 0xE6E2D7, BACK = 0xD3CEC0, WALL = 0xB9B4A8;
     /* Front section, its front edges chamfered so it looks rounded. */
-    const float outer[4] = { -0.5f, 0.5f, -0.44f, 0.42f };
-    const float face[4] = { -0.47f, 0.47f, -0.41f, 0.39f };
-    const float open[4] = { -0.39f, 0.39f, -0.22f, 0.33f };
-    const float screen[4] = { -0.35f, 0.35f, -0.19f, 0.30f };
+    const float outer[4] = { -0.46f, 0.46f, -0.44f, 0.42f };
+    const float face[4] = { -0.43f, 0.43f, -0.41f, 0.39f };
+    const float open[4] = { -0.36f, 0.36f, -0.22f, 0.33f };
+    const float screen[4] = { -0.327f, 0.327f, -0.19f, 0.30f };     /* 4:3 */
     mesh_box(m, (vec3){outer[0], outer[2], 0.02f}, (vec3){outer[1], outer[3], 0.32f}, CASE,
              BOX_FRONT | BOX_BACK);
     mesh_frustum(m, -0.02f, face, 0.02f, outer, CASE, BOX_FRONT | BOX_BACK);
@@ -96,13 +97,13 @@ void model_1084(mesh *m)
                        (vec3){screen[1], screen[2], 0.06f}, (vec3){screen[0], screen[2], 0.06f},
                        FRONT, 8, 6);
     /* Deep tapered back. */
-    const float back[4] = { -0.30f, 0.30f, -0.36f, 0.18f };
+    const float back[4] = { -0.28f, 0.28f, -0.36f, 0.18f };
     mesh_frustum(m, 0.32f, outer, 0.85f, back, BACK, BOX_FRONT);
     /* Badge, the seam of the control door, power light. */
     m->layer = 1;
     stud(m, -0.36f, -0.12f, -0.335f, -0.300f, -0.02f, 0.005f, 0x55585E);
-    stud(m, -0.44f, 0.44f, -0.272f, -0.264f, -0.02f, 0.003f, 0xC4BFB2);
-    stud(m, 0.30f, 0.34f, -0.345f, -0.325f, -0.02f, 0.006f, 0xD03A2E);
+    stud(m, -0.40f, 0.40f, -0.272f, -0.264f, -0.02f, 0.003f, 0xC4BFB2);
+    stud(m, 0.28f, 0.32f, -0.345f, -0.325f, -0.02f, 0.006f, 0xD03A2E);
     m->layer = 0;
     translate(m, 0, 0, -0.40f);
 }
