@@ -108,6 +108,7 @@ typedef struct {
 
     /* Home screen. */
     int  home_sel;                /* HOME_VICE, HOME_STREAM, HOME_SID */
+    int  home_last;               /* the object chosen last (-1 none): another clears the search */
     int  home_focus;              /* HOME_ON_ITEMS, or one of the icons at the top */
     char home_snack[64];          /* snackbar text; home_snack_serial rises for each new one */
     unsigned home_snack_serial;
@@ -125,6 +126,8 @@ typedef struct {
     int        sid_a64_count;
     int        sid_sel[2], sid_top[2];
     int        a64_for_sid;       /* the Assembly64 search was opened by the SID player */
+    int        a64_results_sid;   /* the search's query and results are the SID player's */
+    int        a64_pending_sid;   /* the search on its way was sent by the SID player */
     /* Now playing (set by main). */
     int        sid_active, sid_paused, sid_mode, sid_on_ultimate, sid_can_ultimate;
     int        sid_prefer_ultimate;   /* "Play on: C64 Ultimate" chosen (the next tune plays there) */

@@ -1298,6 +1298,45 @@ static void test_sid_player(void)
     CHECK(u.screen == UI_A64 && u.a64_for_sid);
     ui_input(&u, IN_BACK);                                          /* (typing) back to the player */
     CHECK(u.screen == UI_SID && !u.a64_for_sid);
+
+    /* The games search and the SID player's search don't share results. */
+    ui_open_a64(&u);                                                /* a games search... */
+    snprintf(u.a64_query, sizeof(u.a64_query), "boulder");
+    CHECK(ui_input(&u, IN_R2).kind == UA_A64_SEARCH);
+    static a64_result r;
+    memset(&r, 0, sizeof(r));
+    r.kind = A64R_SEARCH;
+    r.count = 1;
+    r.items = calloc(1, sizeof(a64_item));
+    snprintf(r.items[0].name, sizeof(r.items[0].name), "Boulder Dash");
+    ui_a64_results(&u, &r);
+    CHECK(u.a64_count == 1);
+    u.a64_for_sid = 1;                                              /* ...then the SID player's */
+    ui_open_a64(&u);
+    CHECK(u.a64_count == 0 && !u.a64_query[0] && u.a64_focus == 0);
+    CHECK(ui_input(&u, IN_R1).kind == UA_A64_LATEST);               /* its latest, sent... */
+    u.a64_for_sid = 0;                                              /* ...but back to games */
+    ui_open_a64(&u);
+    memset(&r, 0, sizeof(r));
+    r.kind = A64R_SEARCH;
+    r.count = 1;
+    r.items = calloc(1, sizeof(a64_item));
+    ui_a64_results(&u, &r);                                         /* the late SID reply: dropped */
+    CHECK(u.a64_count == 0 && r.items == NULL);
+
+    /* Home: choosing another machine than last time starts a fresh search. */
+    snprintf(u.a64_query, sizeof(u.a64_query), "elite");
+    ui_open_home(&u);
+    u.home_sel = HOME_VICE;
+    ui_input(&u, IN_OK);
+    CHECK(!strcmp(u.a64_query, "elite"));                           /* (first choice: kept) */
+    ui_open_home(&u);
+    ui_input(&u, IN_OK);                                            /* Vice again: kept */
+    CHECK(!strcmp(u.a64_query, "elite"));
+    ui_open_home(&u);
+    u.home_sel = HOME_STREAM;
+    ui_input(&u, IN_OK);                                            /* Stream: cleared */
+    CHECK(!u.a64_query[0]);
     ui_free(&u);
 
     /* Play order: in order stops at the end (or wraps), shuffle visits each tune once

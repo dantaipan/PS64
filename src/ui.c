@@ -34,6 +34,7 @@ void ui_setup(ui_state *u)
     snprintf(u->path, sizeof(u->path), "/");
     snprintf(u->sid_path, sizeof(u->sid_path), "/");
     u->sid_play_index = -1;
+    u->home_last = -1;
 }
 
 void ui_free(ui_state *u)
@@ -535,8 +536,22 @@ static void kbd_open(ui_state *u)
     u->kbd.open = 1;
 }
 
+/* Forget the Assembly64 search (query and results): another kind of search follows. */
+static void a64_clear(ui_state *u)
+{
+    free(u->a64_items);
+    u->a64_items = NULL;
+    u->a64_count = u->a64_more = u->a64_sel = u->a64_top = u->a64_latest = u->a64_loading = 0;
+    u->a64_query[0] = u->a64_status[0] = u->a64_search_cat[0] = 0;
+}
+
 void ui_open_a64(ui_state *u)
 {
+    /* The SID player's search and the games search don't share results. */
+    if (u->a64_for_sid != u->a64_results_sid) {
+        a64_clear(u);
+        u->a64_results_sid = u->a64_for_sid;
+    }
     if (!u->a64_ready)
         snprintf(u->a64_status, sizeof(u->a64_status), "Assembly64 isn't available");
     u->screen = UI_A64;
@@ -555,6 +570,7 @@ static const char *a64_cat_key(const ui_state *u)
 
 static ui_action a64_search_action(ui_state *u, int offset)
 {
+    u->a64_pending_sid = u->a64_for_sid;
     ui_action a = act(UA_A64_SEARCH);
     snprintf(a.text, sizeof(a.text), "%s", u->a64_query);
     snprintf(a.category_key, sizeof(a.category_key), "%s", a64_cat_key(u));
@@ -570,6 +586,7 @@ static ui_action a64_search_action(ui_state *u, int offset)
 /* The latest releases in the chosen category, or games when none is chosen. */
 static ui_action a64_latest_action(ui_state *u)
 {
+    u->a64_pending_sid = u->a64_for_sid;
     int chosen = u->a64_cat >= 0 && u->a64_cat < u->a64_cats.count;
     ui_action a = act(UA_A64_LATEST);
     snprintf(a.category_key, sizeof(a.category_key), "%s",
@@ -597,6 +614,11 @@ static ui_action a64_file_action(ui_state *u, int file_action)
 void ui_a64_results(ui_state *u, a64_result *r)
 {
     u->a64_loading = 0;
+    if (r->kind == A64R_SEARCH && u->a64_pending_sid != u->a64_results_sid) {
+        free(r->items);                 /* sent from the other kind of search: not for this one */
+        r->items = NULL;
+        return;
+    }
     if (r->kind == A64R_SEARCH) {
         /* A filtered search tells us what its results' category numbers mean. */
         for (int i = 0; u->a64_search_cat[0] && i < r->count; i++) {
@@ -1365,6 +1387,11 @@ static ui_action input_home(ui_state *u, int in)
     case IN_RIGHT: if (u->home_sel < HOME_ITEMS - 1) u->home_sel++; break;
     case IN_UP:    u->home_focus = HOME_ON_GEAR; break;
     case IN_OK:
+        if (u->home_sel != u->home_last) {      /* another kind of machine: a fresh search */
+            if (u->home_last >= 0)
+                a64_clear(u);
+            u->home_last = u->home_sel;
+        }
         switch (u->home_sel) {
         case HOME_VICE:
             return act(UA_HOME_VICE);
