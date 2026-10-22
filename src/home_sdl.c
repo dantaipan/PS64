@@ -2,6 +2,7 @@
 
 #include "font_sdl.h"
 #include "home.h"
+#include "home_icons.h"
 #include "home_logo.h"
 #include "image.h"
 #include "mesh3d.h"
@@ -19,6 +20,8 @@
 #define NOISE_W 128
 #define NOISE_H 90
 #define MAX_TRIS 1200
+#define ICON 72            /* icon size on the 1920x1080 canvas */
+#define DISC 104           /* the focus highlight behind an icon */
 
 /* Where the objects stand (all three in view, as in the mockup): the chosen one comes
  * forward in its place. */
@@ -31,8 +34,9 @@ static const SDL_Color YELLOW = { 240, 210, 90, 255 };
 
 static struct {
     SDL_Renderer *ren;
-    SDL_Texture  *background, *basic[2], *noise, *label;
+    SDL_Texture  *background, *basic[2], *noise, *label, *icons[2], *disc;
     mesh          models[HOME_ITEMS];
+    mesh          pins[2];              /* the SID chip's two rows */
     uint32_t      noise_seed, noise_at;
     float         pos;                  /* carousel position, eased towards home_sel */
     Uint32        last;
@@ -108,14 +112,26 @@ static void setup(SDL_Renderer *ren)
     home_chip_label(label);
     H.label = texture(ren, label, HOME_LABEL_W, HOME_LABEL_H, SDL_TEXTUREACCESS_STATIC);
     H.noise = texture(ren, NULL, NOISE_W, NOISE_H, SDL_TEXTUREACCESS_STREAMING);
+    /* Power and settings icons from SVG, and the soft disc that marks the focused one. */
+    static uint32_t icon[ICON * ICON], disc[DISC * DISC];
+    const char *svgs[2] = { home_icon_power, home_icon_settings };
+    for (int i = 0; i < 2; i++)
+        if (home_icon(icon, ICON, svgs[i]) == 0) {
+            H.icons[i] = texture(ren, icon, ICON, ICON, SDL_TEXTUREACCESS_STATIC);
+            SDL_SetTextureBlendMode(H.icons[i], SDL_BLENDMODE_BLEND);
+        }
+    home_disc(disc, DISC);
+    H.disc = texture(ren, disc, DISC, DISC, SDL_TEXTUREACCESS_STATIC);
+    SDL_SetTextureBlendMode(H.disc, SDL_BLENDMODE_BLEND);
     model_1702(&H.models[HOME_VICE]);
     model_1084(&H.models[HOME_STREAM]);
-    model_sid(&H.models[HOME_SID]);
+    model_sid(&H.models[HOME_SID], &H.pins[0], &H.pins[1]);
 }
 
 void home_cleanup(void)
 {
-    SDL_Texture **all[] = { &H.background, &H.basic[0], &H.basic[1], &H.noise, &H.label };
+    SDL_Texture **all[] = { &H.background, &H.basic[0], &H.basic[1], &H.noise, &H.label,
+                            &H.icons[0], &H.icons[1], &H.disc };
     for (size_t i = 0; i < sizeof(all) / sizeof(all[0]); i++)
         if (*all[i]) {
             SDL_DestroyTexture(*all[i]);
@@ -123,6 +139,8 @@ void home_cleanup(void)
         }
     for (int i = 0; i < HOME_ITEMS; i++)
         mesh_free(&H.models[i]);
+    mesh_free(&H.pins[0]);
+    mesh_free(&H.pins[1]);
     H.ren = NULL;
 }
 
@@ -151,45 +169,22 @@ static void draw_mesh(SDL_Renderer *ren, const mesh *m, const pose3 *p, SDL_Text
     }
 }
 
-/* A thick line, as a row of squares. */
-static void line(SDL_Renderer *ren, float x0, float y0, float x1, float y1, int w, SDL_Color c)
-{
-    float dx = x1 - x0, dy = y1 - y0, len = sqrtf(dx * dx + dy * dy);
-    int steps = (int)len + 1;
-    for (int i = 0; i <= steps; i++) {
-        float t = (float)i / steps;
-        fill_rect(ren, (int)(x0 + dx * t) - w / 2, (int)(y0 + dy * t) - w / 2, w, w, c.r, c.g, c.b, 255);
-    }
-}
-
-static void arc(SDL_Renderer *ren, float cx, float cy, float r, float a0, float a1, int w, SDL_Color c)
-{
-    int steps = (int)(r * fabsf(a1 - a0)) + 1;
-    for (int i = 0; i <= steps; i++) {
-        float a = a0 + (a1 - a0) * i / steps;
-        fill_rect(ren, (int)(cx + r * cosf(a)) - w / 2, (int)(cy + r * sinf(a)) - w / 2, w, w,
-                  c.r, c.g, c.b, 255);
-    }
-}
-
 static void draw_icons(SDL_Renderer *ren, const ui_state *u)
 {
-    const float PI = 3.14159265f;
-    const int px = 1696, gx = 1802, y = 96;
+    const int xs[2] = { 1696, 1802 }, y = 96;
     for (int i = 0; i < 2; i++) {
         int focused = u->home_focus == (i ? HOME_ON_GEAR : HOME_ON_POWER);
-        if (focused)
-            fill_rect(ren, (i ? gx : px) - 46, y - 46, 92, 92, 255, 255, 255, 60);
-    }
-    SDL_Color pc = u->home_focus == HOME_ON_POWER ? WHITE : DIM;
-    arc(ren, px, y, 26, -PI / 2 + 0.75f, 3 * PI / 2 - 0.75f, 6, pc);
-    line(ren, px, y - 34, px, y - 6, 6, pc);
-    SDL_Color gc = u->home_focus == HOME_ON_GEAR ? WHITE : DIM;
-    arc(ren, gx, y, 20, 0, 2 * PI, 6, gc);
-    arc(ren, gx, y, 7, 0, 2 * PI, 5, gc);
-    for (int k = 0; k < 8; k++) {
-        float a = k * PI / 4;
-        line(ren, gx + 22 * cosf(a), y + 22 * sinf(a), gx + 30 * cosf(a), y + 30 * sinf(a), 9, gc);
+        if (focused && H.disc) {
+            SDL_SetTextureAlphaMod(H.disc, 56);
+            SDL_Rect d = { xs[i] - DISC / 2, y - DISC / 2, DISC, DISC };
+            SDL_RenderCopy(ren, H.disc, NULL, &d);
+        }
+        if (H.icons[i]) {
+            SDL_Color c = focused ? WHITE : DIM;
+            SDL_SetTextureColorMod(H.icons[i], c.r, c.g, c.b);
+            SDL_Rect r = { xs[i] - ICON / 2, y - ICON / 2, ICON, ICON };
+            SDL_RenderCopy(ren, H.icons[i], NULL, &r);
+        }
     }
 }
 
@@ -204,11 +199,9 @@ static const char *stream_status(const ui_state *u, Uint32 now, SDL_Color *c, ch
     switch (u->home_stream) {
     case HOME_STREAM_LIVE:
         *c = GREEN;
-        snprintf(buf, cap, "C64 Ultimate %s", u->home_ip);
-        return buf;
+        return "C64 Ultimate";
     case HOME_STREAM_CONNECTING:
-        snprintf(buf, cap, "Connecting to %s", u->home_ip);
-        return buf;
+        return "Connecting";
     case HOME_STREAM_LOCKED:
         *c = YELLOW;
         return "Password needed: see settings";
@@ -296,7 +289,17 @@ void home_draw(SDL_Renderer *ren, const ui_state *u, SDL_Texture *live, Uint32 n
             p.pitch = -0.80f + 0.04f * sinf(t * 0.7f);
             p.scale *= 0.8f;
         }
-        draw_mesh(ren, &H.models[i], &p, screens[i]);
+        if (i == HOME_SID) {
+            float x, y, near_d, far_d;
+            mesh_project(&p, (vec3){0, 0, -0.25f}, &x, &y, &near_d);
+            mesh_project(&p, (vec3){0, 0, 0.25f}, &x, &y, &far_d);
+            int back = near_d > far_d ? 0 : 1;
+            draw_mesh(ren, &H.pins[back], &p, NULL);
+            draw_mesh(ren, &H.models[i], &p, screens[i]);
+            draw_mesh(ren, &H.pins[!back], &p, NULL);
+        } else {
+            draw_mesh(ren, &H.models[i], &p, screens[i]);
+        }
     }
 
     static const char *const names[HOME_ITEMS] = { "Vice", "Stream", "SID" };
@@ -307,7 +310,7 @@ void home_draw(SDL_Renderer *ren, const ui_state *u, SDL_Texture *live, Uint32 n
         char buf[64];
         SDL_Color c = DIM;
         const char *status = i == HOME_STREAM ? stream_status(u, now, &c, buf, sizeof(buf))
-                           : i == HOME_SID ? "Coming soon" : "Built-in emulator";
+                           : i == HOME_SID ? "Coming soon" : "Emulator";
         int sw = font_width(status, 3) + 32;
         fill_rect(ren, cx - sw / 2, STATUS_Y - 12, sw, 48, 11, 9, 38, 200);     /* readable over the stripes */
         centred(ren, status, cx, STATUS_Y, 3, c);

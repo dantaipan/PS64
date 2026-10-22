@@ -11,6 +11,8 @@
 
 void model_1702(mesh *m);
 void model_1084(mesh *m);
-void model_sid(mesh *m);
+/* The chip's body and its two rows of 14 pins (the row on the -z side, then +z): drawn
+ * as the farther row, the body, then the nearer row, so they always overlap right. */
+void model_sid(mesh *body, mesh *row_near, mesh *row_far);
 
 #endif

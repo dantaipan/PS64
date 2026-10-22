@@ -342,4 +342,8 @@ dlmalloc by Doug Lea (public domain / MIT-0 style licence).
 Search Assembly64 shows screenshots of CSDb releases from [CSDb](https://csdb.dk) (for
 CSDb-sourced items the Assembly64 id is the CSDb release id), decoded with
 [stb_image](https://github.com/nothings/stb) (`src/stb_image.h`, public domain / MIT).
+The home screen's power and settings icons are [Material Icons](https://github.com/google/material-design-icons)
+by Google (Apache 2.0, `src/home_icons.h`), rasterised with
+[nanosvg](https://github.com/memononen/nanosvg) (`src/nanosvg.h`, `src/nanosvgrast.h`, zlib licence,
+commit 239e102e).
 

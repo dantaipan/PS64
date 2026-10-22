@@ -2,6 +2,28 @@
 
 #include "font8x8.h"
 
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define NANOSVG_IMPLEMENTATION
+#define NANOSVGRAST_IMPLEMENTATION
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wall"
+#pragma clang diagnostic ignored "-Wextra"
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wsign-compare"
+#pragma clang diagnostic ignored "-Wunused-parameter"
+#pragma clang diagnostic ignored "-Wmissing-field-initializers"
+#endif
+#include "nanosvg.h"
+#include "nanosvgrast.h"
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
+
 #define C64_BORDER 0xFF706DEBu
 #define C64_SCREEN 0xFF2E2C9Bu
 #define C64_TEXT   0xFF706DEBu
@@ -80,4 +102,42 @@ void home_chip_label(uint32_t *px)
     home_text(px, w, h, 44, 10, "MOS", 2, ink);
     home_text(px, w, h, 44, 32, "6581R4", 2, ink);
     home_text(px, w, h, 44, 56, "1285 25", 1, ink);
+}
+
+int home_icon(uint32_t *px, int size, const char *svg)
+{
+    char *copy = strdup(svg);                       /* nsvgParse writes into its input */
+    if (!copy)
+        return -1;
+    NSVGimage *img = nsvgParse(copy, "px", 96);
+    free(copy);
+    if (!img || img->width <= 0) {
+        nsvgDelete(img);
+        return -1;
+    }
+    NSVGrasterizer *r = nsvgCreateRasterizer();
+    unsigned char *rgba = malloc((size_t)size * size * 4);
+    int rc = -1;
+    if (r && rgba) {
+        nsvgRasterize(r, img, 0, 0, size / img->width, rgba, size, size, size * 4);
+        for (int i = 0; i < size * size; i++)
+            px[i] = (uint32_t)rgba[i * 4 + 3] << 24 | 0xFFFFFF;
+        rc = 0;
+    }
+    free(rgba);
+    nsvgDeleteRasterizer(r);
+    nsvgDelete(img);
+    return rc;
+}
+
+void home_disc(uint32_t *px, int size)
+{
+    float c = (size - 1) / 2.0f, r = size / 2.0f - 1;
+    for (int y = 0; y < size; y++)
+        for (int x = 0; x < size; x++) {
+            float d = sqrtf((x - c) * (x - c) + (y - c) * (y - c));
+            float a = r - d + 0.5f;                     /* one pixel of soft edge */
+            a = a < 0 ? 0 : a > 1 ? 1 : a;
+            px[y * size + x] = (uint32_t)(a * 255) << 24 | 0xFFFFFF;
+        }
 }

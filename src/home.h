@@ -29,4 +29,11 @@ void home_noise(uint32_t *px, int n, uint32_t *seed);
 /* The SID chip's top (HOME_LABEL_W x HOME_LABEL_H): maker, part number, date code. */
 void home_chip_label(uint32_t *px);
 
+/* An SVG drawn into a size x size buffer (anti-aliased), as white with the shape's
+ * coverage as alpha. Returns 0, or -1 if the SVG couldn't be read. */
+int home_icon(uint32_t *px, int size, const char *svg);
+
+/* A soft-edged white disc filling a size x size buffer (alpha only, for highlights). */
+void home_disc(uint32_t *px, int size);
+
 #endif

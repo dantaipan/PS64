@@ -1138,6 +1138,7 @@ static const char *const about_text[] = {
     "  Assembly64 - the Assembly64 team at hackerswithstyle.se, for the",
     "  database of C64 software and its API.",
     "  CSDb (csdb.dk), the C64 Scene Database, for the release screenshots.",
+    "  Icons: Material Icons by Google (Apache 2.0), drawn with nanosvg.",
     "",
     "PS64 is free software under the GNU GPL v3.",
     "Source: github.com/dantaipan/PS64",

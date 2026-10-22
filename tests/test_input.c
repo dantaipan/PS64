@@ -9,6 +9,7 @@
 #include "../src/favs.h"
 #include "../src/ftp.h"
 #include "../src/home.h"
+#include "../src/home_icons.h"
 #include "../src/image.h"
 #include "../src/mesh3d.h"
 #include "../src/models.h"
@@ -1163,17 +1164,19 @@ static void test_home(void)
     for (int i = 1; i < n; i++)
         CHECK(tris[i - 1].depth >= tris[i].depth);                 /* far first */
     mesh_free(&cube);
-    mesh models[3] = {{0}};
+    mesh models[5] = {{0}};
     model_1702(&models[0]);
     model_1084(&models[1]);
-    model_sid(&models[2]);
+    model_sid(&models[2], &models[3], &models[4]);
+    CHECK(models[3].count == models[4].count && models[3].count > 0);   /* two pin rows */
     for (int i = 0; i < 3; i++) {
-        int textured = 0;
+        int textured = 0, total = models[i].count + (i == 2 ? models[3].count + models[4].count : 0);
         for (int k = 0; k < models[i].count; k++)
             textured += models[i].tris[k].textured;
-        CHECK(models[i].count > 50 && models[i].count <= 700 && textured > 0);
-        mesh_free(&models[i]);
+        CHECK(total > 50 && total <= 700 && textured > 0);
     }
+    for (int i = 0; i < 5; i++)
+        mesh_free(&models[i]);
 
     /* Pictures: the start-up screen, its cursor, and repeatable static. */
     static uint32_t px[HOME_C64_W * HOME_C64_H];
@@ -1191,6 +1194,17 @@ static void test_home(void)
     home_noise(a, 16, &s1);
     home_noise(b, 16, &s2);
     CHECK(!memcmp(a, b, sizeof(a)) && s1 == s2 && a[0] != a[1]);
+
+    /* Icons from SVG: the power symbol's ring has ink, the corners and the ring's middle don't. */
+    static uint32_t icon[72 * 72];
+    CHECK(home_icon(icon, 72, home_icon_power) == 0 && home_icon(icon, 72, home_icon_settings) == 0);
+    home_icon(icon, 72, home_icon_power);
+    int opaque = 0;
+    for (int i = 0; i < 72 * 72; i++)
+        opaque += (icon[i] >> 24) > 200;
+    CHECK(opaque > 300 && (icon[0] >> 24) == 0 && (icon[36 * 72 + 20] >> 24) == 0 &&
+          (icon[36 * 72 + 12] >> 24) > 200);
+    CHECK(home_icon(icon, 72, "not svg") == -1);
 }
 
 int main(void)
