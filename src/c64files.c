@@ -194,7 +194,7 @@ struct c64files {
     pthread_mutex_t lock;
     pthread_cond_t  wake;
     int             quit;
-    int             req, req_action, busy;
+    int             req, req_action, req_song, busy;
     char            req_path[512];
     unsigned char  *req_data;           /* REQ_DATA: owned until the worker takes it */
     size_t          req_len;
@@ -289,7 +289,7 @@ static int post_data(c64files *f, const char *route, const unsigned char *data, 
 
 /* Actions on a file sent along with the request (e.g. an Assembly64 download). */
 static int do_data_action(c64files *f, const char *name, const unsigned char *data, size_t len,
-                          int action, char *msg, size_t cap)
+                          int action, int song, char *msg, size_t cap)
 {
     const char *dot = strrchr(name, '.');
     char type[8] = "d64", route[64];
@@ -302,8 +302,13 @@ static int do_data_action(c64files *f, const char *name, const unsigned char *da
     case FA_LOAD:    status = post_data(f, "/v1/runners:load_prg", data, len); break;
     case FA_RUN_CRT: status = post_data(f, "/v1/runners:run_crt", data, len); break;
     case FA_PLAY:
-        status = post_data(f, files_type(name, 0) == FT_MOD ? "/v1/runners:modplay"
-                                                            : "/v1/runners:sidplay", data, len);
+        if (files_type(name, 0) == FT_MOD) {
+            status = post_data(f, "/v1/runners:modplay", data, len);
+        } else {
+            snprintf(route, sizeof(route), song > 0 ? "/v1/runners:sidplay?songnr=%d" : "/v1/runners:sidplay",
+                     song);
+            status = post_data(f, route, data, len);
+        }
         break;
     case FA_MOUNT_A:
     case FA_MOUNT_B:
@@ -461,7 +466,7 @@ static void *worker(void *arg)
             pthread_mutex_unlock(&f->lock);
             return NULL;
         }
-        int req = f->req, action = f->req_action;
+        int req = f->req, action = f->req_action, song = f->req_song;
         char path[512];
         snprintf(path, sizeof(path), "%s", f->req_path);
         unsigned char *data = f->req_data;
@@ -488,7 +493,7 @@ static void *worker(void *arg)
                 res.count = n;
             }
         } else if (req == REQ_DATA) {
-            res.kind = do_data_action(f, path, data, data_len, action, res.message,
+            res.kind = do_data_action(f, path, data, data_len, action, song, res.message,
                                       sizeof(res.message)) == 0 ? FR_DONE : FR_ERROR;
             free(data);
         } else {
@@ -565,7 +570,8 @@ void files_action(c64files *f, const char *path, int action)
     request(f, REQ_ACTION, path, action);
 }
 
-void files_action_data(c64files *f, const char *name, unsigned char *data, size_t len, int action)
+static void data_request(c64files *f, const char *name, unsigned char *data, size_t len, int action,
+                         int song)
 {
     pthread_mutex_lock(&f->lock);
     free(f->req_data);                  /* a pending upload superseded by this one */
@@ -574,8 +580,19 @@ void files_action_data(c64files *f, const char *name, unsigned char *data, size_
     snprintf(f->req_path, sizeof(f->req_path), "%s", name);
     f->req_data = data;
     f->req_len = len;
+    f->req_song = song;
     pthread_cond_signal(&f->wake);
     pthread_mutex_unlock(&f->lock);
+}
+
+void files_action_data(c64files *f, const char *name, unsigned char *data, size_t len, int action)
+{
+    data_request(f, name, data, len, action, 0);
+}
+
+void files_play_sid(c64files *f, const char *name, unsigned char *data, size_t len, int song)
+{
+    data_request(f, name, data, len, FA_PLAY, song);
 }
 
 int files_busy(c64files *f)

@@ -32,6 +32,8 @@ void ui_setup(ui_state *u)
     u->port = 2;
     u->a64_cat = -1;                    /* all categories */
     snprintf(u->path, sizeof(u->path), "/");
+    snprintf(u->sid_path, sizeof(u->sid_path), "/");
+    u->sid_play_index = -1;
 }
 
 void ui_free(ui_state *u)
@@ -44,6 +46,11 @@ void ui_free(ui_state *u)
     u->a64_items = NULL;
     u->a64_files = NULL;
     u->a64_count = u->a64_nfiles = 0;
+    free(u->sid_entries);
+    free(u->sid_a64);
+    u->sid_entries = NULL;
+    u->sid_a64 = NULL;
+    u->sid_count = u->sid_a64_count = 0;
 }
 
 static void go(ui_state *u, int screen)
@@ -546,8 +553,12 @@ void ui_open_a64(ui_state *u)
     kbd_open(u);
 }
 
+#define SID_FILTER "type:sid"   /* the SID player searches .sid files (mostly HVSC) */
+
 static const char *a64_cat_key(const ui_state *u)
 {
+    if (u->a64_for_sid)
+        return SID_FILTER;
     return u->a64_cat >= 0 && u->a64_cat < u->a64_cats.count ? u->a64_cats.keys[u->a64_cat] : "";
 }
 
@@ -557,7 +568,8 @@ static ui_action a64_search_action(ui_state *u, int offset)
     snprintf(a.text, sizeof(a.text), "%s", u->a64_query);
     snprintf(a.category_key, sizeof(a.category_key), "%s", a64_cat_key(u));
     snprintf(u->a64_search_cat, sizeof(u->a64_search_cat), "%s",
-             u->a64_cat >= 0 && u->a64_cat < u->a64_cats.count ? u->a64_cats.names[u->a64_cat] : "");
+             u->a64_for_sid ? "" : u->a64_cat >= 0 && u->a64_cat < u->a64_cats.count
+                                   ? u->a64_cats.names[u->a64_cat] : "");
     a.offset = offset;
     u->a64_loading = 1;
     snprintf(u->a64_status, sizeof(u->a64_status), "Searching Assembly64...");
@@ -570,9 +582,9 @@ static ui_action a64_latest_action(ui_state *u)
     int chosen = u->a64_cat >= 0 && u->a64_cat < u->a64_cats.count;
     ui_action a = act(UA_A64_LATEST);
     snprintf(a.category_key, sizeof(a.category_key), "%s",
-             chosen ? u->a64_cats.keys[u->a64_cat] : "games");
+             u->a64_for_sid ? SID_FILTER : chosen ? u->a64_cats.keys[u->a64_cat] : "games");
     snprintf(u->a64_search_cat, sizeof(u->a64_search_cat), "%s",
-             chosen ? u->a64_cats.names[u->a64_cat] : "Games");
+             u->a64_for_sid ? "" : chosen ? u->a64_cats.names[u->a64_cat] : "Games");
     u->a64_loading = 1;
     snprintf(u->a64_status, sizeof(u->a64_status), "Finding the latest releases...");
     return a;
@@ -696,11 +708,17 @@ static ui_action input_a64(ui_state *u, int in)
     if (u->a64_focus == 0) {
         int changed;
         if (in == IN_BACK) {
-            ui_close(u);
+            if (u->a64_for_sid) {               /* back to the SID player */
+                u->a64_for_sid = 0;
+                u->screen = UI_SID;
+            } else {
+                ui_close(u);
+            }
             return none();
         }
         if (in == IN_L2) {
-            u->a64_cat = u->a64_cat + 1 >= u->a64_cats.count ? -1 : u->a64_cat + 1;
+            if (!u->a64_for_sid)                /* (the SID player always searches .sid files) */
+                u->a64_cat = u->a64_cat + 1 >= u->a64_cats.count ? -1 : u->a64_cat + 1;
             return none();
         }
         if (in == IN_R1)
@@ -728,6 +746,24 @@ static ui_action input_a64(ui_state *u, int in)
             break;
         if (u->a64_sel == u->a64_count && u->a64_more)
             return a64_search_action(u, u->a64_count);       /* More results... */
+        if (u->a64_sel < u->a64_count && u->a64_for_sid) {
+            /* The SID player plays these results, from the one chosen. */
+            free(u->sid_a64);
+            u->sid_a64 = malloc(sizeof(*u->sid_a64) * (size_t)u->a64_count);
+            u->sid_a64_count = u->sid_a64 ? u->a64_count : 0;
+            if (u->sid_a64)
+                memcpy(u->sid_a64, u->a64_items, sizeof(*u->sid_a64) * (size_t)u->a64_count);
+            u->a64_for_sid = 0;
+            u->screen = UI_SID;
+            u->sid_tab = SID_TAB_A64;
+            int extra = 1 + (u->sid_can_ultimate ? 1 : 0);
+            u->sid_sel[SID_TAB_A64] = extra + u->a64_sel;
+            u->sid_top[SID_TAB_A64] = 0;
+            ui_action a = act(UA_SID_PLAY);
+            a.category = SID_TAB_A64;
+            a.offset = u->a64_sel;
+            return a;
+        }
         if (u->a64_sel < u->a64_count) {
             u->a64_cur = u->a64_items[u->a64_sel];
             ui_action a = act(UA_A64_ENTRIES);
@@ -1139,6 +1175,8 @@ static const char *const about_text[] = {
     "  database of C64 software and its API.",
     "  CSDb (csdb.dk), the C64 Scene Database, for the release screenshots.",
     "  Icons: Material Icons by Google (Apache 2.0), drawn with nanosvg.",
+    "  SID player: libsidplayfp and reSIDfp (GPL-2.0+), song lengths from",
+    "  the High Voltage SID Collection (hvsc.c64.org).",
     "",
     "PS64 is free software under the GNU GPL v3.",
     "Source: github.com/dantaipan/PS64",
@@ -1170,6 +1208,133 @@ static ui_action input_about(ui_state *u, int in)
     case IN_OK:   u->screen = UI_MENU; break;          /* back to the menu, About still selected */
     }
     u->about_top = u->about_top < 0 ? 0 : u->about_top > last ? last : u->about_top;
+    return none();
+}
+
+/* ---- SID player ------------------------------------------------------- */
+
+#define SID_ROWS 20     /* list rows shown */
+
+/* Rows above the tunes: "Play on" (with a C64 Ultimate), then ".." (in a subfolder) or
+ * the Assembly64 search. */
+static int sid_extra(const ui_state *u, int tab)
+{
+    int n = u->sid_can_ultimate ? 1 : 0;
+    if (tab == SID_TAB_A64 || strcmp(u->sid_path, "/"))
+        n++;
+    return n;
+}
+
+static int sid_rows(const ui_state *u, int tab)
+{
+    return sid_extra(u, tab) + (tab == SID_TAB_LOCAL ? u->sid_count : u->sid_a64_count);
+}
+
+static ui_action sid_list_action(ui_state *u)
+{
+    u->sid_loading = 1;
+    u->sid_error[0] = 0;
+    ui_action a = act(UA_SID_LIST);
+    snprintf(a.path, sizeof(a.path), "%s", u->sid_path);
+    return a;
+}
+
+ui_action ui_open_sid(ui_state *u)
+{
+    u->screen = UI_SID;
+    return sid_list_action(u);
+}
+
+void ui_sid_set_listing(ui_state *u, const char *path, ftp_entry *entries, int n)
+{
+    int kept = 0;
+    for (int i = 0; i < n; i++)
+        if (entries[i].is_dir || files_type(entries[i].name, 0) == FT_SID)
+            entries[kept++] = entries[i];
+    free(u->sid_entries);
+    u->sid_entries = entries;
+    u->sid_count = kept;
+    u->sid_loading = 0;
+    u->sid_error[0] = 0;
+    if (strcmp(u->sid_path, path)) {
+        snprintf(u->sid_path, sizeof(u->sid_path), "%s", path);
+        u->sid_sel[SID_TAB_LOCAL] = u->sid_top[SID_TAB_LOCAL] = 0;
+    }
+    int rows = sid_rows(u, SID_TAB_LOCAL);
+    if (u->sid_sel[SID_TAB_LOCAL] >= rows)
+        u->sid_sel[SID_TAB_LOCAL] = rows ? rows - 1 : 0;
+}
+
+void ui_sid_list_error(ui_state *u, const char *path, const char *message)
+{
+    (void)path;
+    u->sid_loading = 0;
+    snprintf(u->sid_error, sizeof(u->sid_error), "%s", message);
+}
+
+/* The parent of a SID-folder path ("/a/b" -> "/a"). */
+static void sid_up(ui_state *u)
+{
+    char *slash = strrchr(u->sid_path, '/');
+    if (slash && slash != u->sid_path)
+        *slash = 0;
+    else
+        snprintf(u->sid_path, sizeof(u->sid_path), "/");
+}
+
+static ui_action input_sid(ui_state *u, int in)
+{
+    int tab = u->sid_tab, rows = sid_rows(u, tab), extra = sid_extra(u, tab);
+    int *sel = &u->sid_sel[tab], *top = &u->sid_top[tab];
+    ui_action a;
+    switch (in) {
+    case IN_UP:    move_in(sel, top, rows, SID_ROWS, -1, 1); break;
+    case IN_DOWN:  move_in(sel, top, rows, SID_ROWS, 1, 1); break;
+    case IN_LEFT:
+    case IN_RIGHT: u->sid_tab = !u->sid_tab; break;
+    case IN_L1: case IN_R1:
+        a = act(UA_SID_SONG);
+        a.offset = in == IN_L1 ? -1 : 1;
+        return a;
+    case IN_L2: case IN_R2:
+        a = act(UA_SID_SKIP);
+        a.offset = in == IN_L2 ? -1 : 1;
+        return a;
+    case IN_ALT:      return act(UA_SID_PAUSE);
+    case IN_TRIANGLE: return act(UA_SID_MODE);
+    case IN_BACK:
+        ui_open_home(u);
+        return act(UA_SID_STOP);
+    case IN_OK: {
+        int row = *sel;
+        if (u->sid_can_ultimate && row == 0)
+            return act(UA_SID_OUTPUT);
+        if (row < extra) {                          /* ".." or the Assembly64 search */
+            if (tab == SID_TAB_LOCAL) {
+                sid_up(u);
+                return sid_list_action(u);
+            }
+            u->a64_for_sid = 1;
+            ui_open_a64(u);
+            break;
+        }
+        int i = row - extra;
+        if (tab == SID_TAB_LOCAL && i < u->sid_count && u->sid_entries[i].is_dir) {
+            size_t len = strlen(u->sid_path);
+            snprintf(u->sid_path + len, sizeof(u->sid_path) - len, "%s%s",
+                     u->sid_path[len - 1] == '/' ? "" : "/", u->sid_entries[i].name);
+            u->sid_sel[tab] = u->sid_top[tab] = 0;
+            return sid_list_action(u);
+        }
+        if (i < (tab == SID_TAB_LOCAL ? u->sid_count : u->sid_a64_count)) {
+            a = act(UA_SID_PLAY);
+            a.category = tab;
+            a.offset = i;
+            return a;
+        }
+        break;
+    }
+    }
     return none();
 }
 
@@ -1213,8 +1378,7 @@ static ui_action input_home(ui_state *u, int in)
                           : "No stream found. Check settings.");
             break;
         case HOME_SID:
-            home_snack(u, "SID player: coming soon.");
-            break;
+            return ui_open_sid(u);
         }
         break;
     }
@@ -1238,6 +1402,7 @@ ui_action ui_input(ui_state *u, int in)
     case UI_FAV_LIST: return input_fav_list(u, in);
     case UI_ABOUT:    return input_about(u, in);
     case UI_HOME:     return input_home(u, in);
+    case UI_SID:      return input_sid(u, in);
     }
     return none();
 }

@@ -42,7 +42,7 @@ lrc.a: $(LRC_SRC)
 
 CORE_SRC := src/vicstream.c src/audiostream.c src/c64api.c src/c64keys.c src/c64remote.c src/osk.c \
             src/settings.c src/discover.c src/ftp.c src/c64files.c src/ui.c src/c64index.c src/a64.c src/favs.c src/localfs.c \
-            src/image.c src/shots.c src/mesh3d.c src/models.c src/home.c
+            src/image.c src/shots.c src/mesh3d.c src/models.c src/home.c src/playlist.c
 UI_SRC   := src/main_sdl.c src/controls.c src/osk_sdl.c src/font_sdl.c src/ui_sdl.c src/home_sdl.c
 HDRS     := $(wildcard src/*.h)
 

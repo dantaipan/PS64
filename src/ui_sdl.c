@@ -3,7 +3,9 @@
 #include "font_sdl.h"
 #include "osk_sdl.h"
 
+#include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define PX     56                       /* panel */
@@ -425,12 +427,12 @@ static void draw_shot(SDL_Renderer *ren, const ui_state *u, int y, Uint32 now)
 
 static void draw_a64(SDL_Renderer *ren, const ui_state *u, Uint32 now)
 {
-    panel(ren, "Search Assembly64");
+    panel(ren, u->a64_for_sid ? "Search Assembly64: SID music" : "Search Assembly64");
     text_field(ren, PY + 38, u->a64_query, u->a64_focus == 0, now);
 
     char status[200], cat[64];
-    snprintf(cat, sizeof(cat), "%s", u->a64_cat >= 0 && u->a64_cat < u->a64_cats.count
-             ? u->a64_cats.names[u->a64_cat] : "All");
+    snprintf(cat, sizeof(cat), "%s", u->a64_for_sid ? "SID files"
+             : u->a64_cat >= 0 && u->a64_cat < u->a64_cats.count ? u->a64_cats.names[u->a64_cat] : "All");
     snprintf(status, sizeof(status), "Category: < %s >   %s", cat, u->a64_status);
     if (u->a64_loading)
         snprintf(status, sizeof(status), "Category: < %s >   %c %s", cat,
@@ -583,6 +585,160 @@ static void draw_fav_list(SDL_Renderer *ren, const ui_state *u)
                                : "X launch   [] more   /\\ remove   O back");
 }
 
+/* ---- SID player ---------------------------------------------------------- */
+
+#define SID_LIST_W 312                  /* the list on the left; now playing on the right */
+#define SID_INFO_X (PX + 16 + SID_LIST_W + 16)
+#define SID_INFO_W (PX + PW - 16 - SID_INFO_X)
+
+/* A C64 note name for a SID frequency register value ("C-4"), or "" for silence. */
+static void note_name(unsigned freq, int ntsc, char *out, size_t cap)
+{
+    static const char *const names[12] = { "C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-",
+                                           "G#", "A-", "A#", "B-" };
+    double hz = freq * (ntsc ? 1022727.0 : 985248.0) / 16777216.0;
+    if (hz < 16) {
+        snprintf(out, cap, "   ");
+        return;
+    }
+    int midi = (int)lround(69 + 12 * log2(hz / 440.0));
+    if (midi < 0)
+        midi = 0;
+    snprintf(out, cap, "%s%d", names[midi % 12], midi / 12 - 1);
+}
+
+static void mmss(unsigned ms, char *out, size_t cap)
+{
+    snprintf(out, cap, "%u:%02u", ms / 60000, ms / 1000 % 60);
+}
+
+static void draw_sid(SDL_Renderer *ren, const ui_state *u, Uint32 now)
+{
+    panel(ren, "SID player");
+    /* Tabs. */
+    int tx = PX + 16;
+    static const char *const tabs[2] = { "Local", "Assembly64" };
+    for (int t = 0; t < 2; t++) {
+        font_draw(ren, tabs[t], tx, PY + 35, 1, t == u->sid_tab ? WHITE : DIM);
+        if (t == u->sid_tab)
+            fill_rect(ren, tx, PY + 44, font_width(tabs[t], 1), 2, 0x70, 0x6D, 0xEB, 255);
+        tx += font_width(tabs[t], 1) + 24;
+    }
+    font_draw(ren, "< >", tx, PY + 35, 1, DIM);
+
+    /* The list. */
+    int tab = u->sid_tab, extra = (u->sid_can_ultimate ? 1 : 0) +
+                                  (tab == SID_TAB_A64 || strcmp(u->sid_path, "/") ? 1 : 0);
+    int n = tab == SID_TAB_LOCAL ? u->sid_count : u->sid_a64_count, rows = extra + n;
+    int chars = SID_LIST_W / 8 - 2;
+    for (int i = u->sid_top[tab]; i < rows && i < u->sid_top[tab] + 20; i++) {
+        char text[200], line[64];
+        SDL_Color c = WHITE;
+        int playing = 0;
+        if (u->sid_can_ultimate && i == 0) {
+            snprintf(text, sizeof(text), "Play on: %s", u->sid_on_ultimate ? "C64 Ultimate" : "PS64");
+            c = CYAN;
+        } else if (i < extra) {
+            snprintf(text, sizeof(text), "%s", tab == SID_TAB_LOCAL ? ".. (up)" : "Search Assembly64 music...");
+            c = CYAN;
+        } else if (tab == SID_TAB_LOCAL) {
+            const ftp_entry *e = &u->sid_entries[i - extra];
+            snprintf(text, sizeof(text), e->is_dir ? "%s/" : "%s", e->name);
+            c = e->is_dir ? CYAN : WHITE;
+            playing = u->sid_play_tab == tab && u->sid_play_index == i - extra;
+        } else {
+            const a64_item *it = &u->sid_a64[i - extra];
+            snprintf(text, sizeof(text), "%s (%s)", it->name, it->group);
+            playing = u->sid_play_tab == tab && u->sid_play_index == i - extra;
+        }
+        snprintf(line, sizeof(line), "%c", playing ? '>' : ' ');
+        fit(text, chars, line + 1, sizeof(line) - 1);
+        int y = LIST_Y + (i - u->sid_top[tab]) * ROW_H, sel = i == u->sid_sel[tab];
+        if (sel)
+            fill_rect(ren, PX + 8, y - 5, SID_LIST_W + 8, ROW_H, 0x70, 0x6D, 0xEB, 255);
+        font_draw(ren, line, PX + 12, y, 1, sel ? WHITE : playing ? YELLOW : c);
+    }
+    if (tab == SID_TAB_LOCAL && !n && !u->sid_loading)
+        font_draw(ren, u->sid_error[0] ? u->sid_error : "No .sid files here (copy them to the SID folder)",
+                  PX + 16, LIST_Y + extra * ROW_H, 1, u->sid_error[0] ? YELLOW : DIM);
+    if (tab == SID_TAB_A64 && !n)
+        font_draw(ren, "Search, then pick a tune", PX + 16, LIST_Y + extra * ROW_H, 1, DIM);
+
+    /* Now playing. */
+    int x = SID_INFO_X, y = LIST_Y, w = SID_INFO_W, ic = w / 8;
+    fill_rect(ren, x - 8, y - 8, w + 16, 352, 0x18, 0x18, 0x30, 255);
+    char buf[128], line[64];
+    if (!u->sid_active) {
+        font_draw(ren, u->sid_status[0] ? u->sid_status : "Nothing playing", x, y, 1,
+                  u->sid_status[0] ? YELLOW : DIM);
+        footer(ren, "X play   < > Local / Assembly64   O home");
+        return;
+    }
+    fit(u->sid_title, ic, line, sizeof(line));
+    font_draw(ren, line, x, y, 1, WHITE);
+    fit(u->sid_author, ic, line, sizeof(line));
+    font_draw(ren, line, x, y + 14, 1, CYAN);
+    fit(u->sid_released, ic, line, sizeof(line));
+    font_draw(ren, line, x, y + 28, 1, DIM);
+    snprintf(buf, sizeof(buf), "Song %d of %d   %s   %s", u->sid_song, u->sid_songs,
+             u->sid_model == 2 ? "8580" : "6581", u->sid_ntsc ? "NTSC" : "PAL");
+    font_draw(ren, buf, x, y + 48, 1, WHITE);
+
+    /* Progress. */
+    unsigned len = u->sid_length_ms > 0 ? (unsigned)u->sid_length_ms : SID_DEFAULT_MS;
+    unsigned t = u->sid_time_ms < len ? u->sid_time_ms : len;
+    fill_rect(ren, x, y + 68, w, 6, 0x30, 0x30, 0x50, 255);
+    fill_rect(ren, x, y + 68, (int)((long long)w * t / len), 6, 0x70, 0x6D, 0xEB, 255);
+    char a[16], b[16];
+    mmss(t, a, sizeof(a));
+    mmss(len, b, sizeof(b));
+    snprintf(buf, sizeof(buf), "%s / %s%s", a, b, u->sid_length_ms > 0 ? "" : " ?");
+    font_draw(ren, buf, x, y + 80, 1, DIM);
+    static const char *const modes[3] = { "In order", "Shuffle", "Repeat tune" };
+    snprintf(buf, sizeof(buf), "%s%s%s", modes[u->sid_mode % 3], u->sid_paused ? "   PAUSED" : "",
+             u->sid_on_ultimate ? "   on C64 Ultimate" : "");
+    font_draw(ren, buf, x, y + 96, 1, u->sid_paused ? YELLOW : DIM);
+
+    /* Voices: note, waveform and a level that jumps on a new note and fades. */
+    static float level[3];
+    static Uint32 last;
+    float fade = last ? expf(-(float)(now - last) / 350.0f) : 1;
+    last = now;
+    for (int v = 0; v < 3 && !u->sid_on_ultimate; v++) {
+        const unsigned char *r = u->sid_regs + v * 7;
+        unsigned freq = r[0] | r[1] << 8, ctrl = r[4];
+        int gate = ctrl & 1;
+        float target = gate ? 1.0f : 0.0f;
+        level[v] = gate ? (level[v] < target ? target : level[v]) : level[v] * fade;
+        char note[8];
+        note_name(freq, u->sid_ntsc, note, sizeof(note));
+        const char *wave = ctrl & 0x80 ? "NOISE" : ctrl & 0x40 ? "PULSE" : ctrl & 0x20 ? "SAW" :
+                           ctrl & 0x10 ? "TRI" : "-";
+        int vy = y + 124 + v * 22;
+        snprintf(buf, sizeof(buf), "%d %s %-5s", v + 1, (ctrl & 0xF0) ? note : "   ", wave);
+        font_draw(ren, buf, x, vy, 1, gate ? WHITE : DIM);
+        int bx = x + 104, bw = w - 104;
+        fill_rect(ren, bx, vy - 2, bw, 10, 0x30, 0x30, 0x50, 255);
+        fill_rect(ren, bx, vy - 2, (int)(bw * level[v]), 10, v == 0 ? 0xE0 : v == 1 ? 0x3F : 0x3B,
+                  v == 0 ? 0x3A : v == 1 ? 0xA3 : 0x7D, v == 0 ? 0x2F : v == 1 ? 0x4D : 0xD8, 255);
+    }
+
+    /* Oscilloscope of the latest sound. */
+    int sy = y + 200, sh = 120;
+    fill_rect(ren, x, sy, w, sh, 0x08, 0x08, 0x18, 255);
+    SDL_SetRenderDrawColor(ren, 0x75, 0xCE, 0xC8, 255);
+    SDL_Point pts[SID_SCOPE];
+    int peak = 4096;                    /* gain up quiet tunes (up to 8x) to fill the window */
+    for (int i = 0; i < SID_SCOPE; i++)
+        peak = abs(u->sid_scope[i]) > peak ? abs(u->sid_scope[i]) : peak;
+    for (int i = 0; i < SID_SCOPE; i++)
+        pts[i] = (SDL_Point){ x + i * (w - 1) / (SID_SCOPE - 1), sy + sh / 2 - u->sid_scope[i] * (sh / 2 - 4) / peak };
+    SDL_RenderDrawLines(ren, pts, SID_SCOPE);
+    if (u->sid_status[0])
+        font_draw(ren, u->sid_status, x, sy + sh + 10, 1, YELLOW);
+    footer(ren, "X play  < > list  L1/R1 song  L2/R2 tune  [] pause  /\\ mode  O home");
+}
+
 void ui_draw(SDL_Renderer *ren, const ui_state *u, Uint32 now)
 {
     if (u->screen == UI_CLOSED || u->screen == UI_HOME)    /* home: home_draw, called by main */
@@ -603,6 +759,7 @@ void ui_draw(SDL_Renderer *ren, const ui_state *u, Uint32 now)
     case UI_FAVS:     draw_favs(ren, u); break;
     case UI_FAV_LIST: draw_fav_list(ren, u); break;
     case UI_ABOUT:    draw_about(ren, u); break;
+    case UI_SID:      draw_sid(ren, u, now); break;
     }
     canvas_end(ren, saved_w, saved_h);
 }

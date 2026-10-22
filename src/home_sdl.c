@@ -310,7 +310,7 @@ void home_draw(SDL_Renderer *ren, const ui_state *u, SDL_Texture *live, Uint32 n
         char buf[64];
         SDL_Color c = DIM;
         const char *status = i == HOME_STREAM ? stream_status(u, now, &c, buf, sizeof(buf))
-                           : i == HOME_SID ? "Coming soon" : "Emulator";
+                           : i == HOME_SID ? "Music player" : "Emulator";
         int sw = font_width(status, 3) + 32;
         fill_rect(ren, cx - sw / 2, STATUS_Y - 12, sw, 48, 11, 9, 38, 200);     /* readable over the stripes */
         centred(ren, status, cx, STATUS_Y, 3, c);

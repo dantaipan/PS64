@@ -78,6 +78,8 @@ void files_action(c64files *f, const char *path, int action);
 /* Run an action on file bytes uploaded with the request (takes ownership of
  * data); name gives the type, e.g. "Boulder Dash.d64". */
 void files_action_data(c64files *f, const char *name, unsigned char *data, size_t len, int action);
+/* Play a .sid's bytes on the Ultimate (takes data), song 1..n (0: its start song). */
+void files_play_sid(c64files *f, const char *name, unsigned char *data, size_t len, int song);
 int  files_busy(c64files *f);
 /* Returns 1 and fills res when a request has finished (free res->entries). */
 int  files_poll(c64files *f, files_result *res);

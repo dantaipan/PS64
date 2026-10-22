@@ -17,7 +17,8 @@
 
 enum { UI_CLOSED, UI_MENU, UI_PICKER, UI_ADDRESS, UI_PASSWORD, UI_BROWSER, UI_ACTIONS,
        UI_SEARCH, UI_A64, UI_A64_FILES, UI_A64_ID, UI_FAVS, UI_FAV_LIST, UI_ABOUT,
-       UI_HOME };   /* home screen: emulator, C64 Ultimate stream, SID player (drawn by home_sdl.c) */
+       UI_HOME,     /* home screen: emulator, C64 Ultimate stream, SID player (drawn by home_sdl.c) */
+       UI_SID };    /* the SID player */
 
 /* Abstract inputs (controls.c maps buttons and keys to these). */
 enum { IN_UP, IN_DOWN, IN_LEFT, IN_RIGHT, IN_OK, IN_BACK, IN_ALT, IN_TRIANGLE,
@@ -36,6 +37,15 @@ enum { UA_NONE, UA_MUTE, UA_PORT, UA_QUIT, UA_CONNECT, UA_RESCAN,
        UA_HOME,          /* menu: back to the home screen */
        UA_HOME_VICE,     /* home: the built-in emulator (resumes it if it ran) */
        UA_HOME_STREAM,   /* home: the C64 Ultimate's stream (it's live) */
+       UA_HOME_SID,      /* home: the SID player (path: its folder to list) */
+       UA_SID_LIST,      /* SID player: list a folder of the SID folder (path) */
+       UA_SID_PLAY,      /* SID player: play entry offset of tab category (SID_TAB_*) */
+       UA_SID_SONG,      /* SID player: subtune -1 / +1 (offset) */
+       UA_SID_SKIP,      /* SID player: previous (-1) or next (1) tune */
+       UA_SID_PAUSE,     /* SID player: pause / carry on */
+       UA_SID_MODE,      /* SID player: in order -> shuffle -> repeat one */
+       UA_SID_OUTPUT,    /* SID player: play on PS64 <-> on the C64 Ultimate */
+       UA_SID_STOP,      /* SID player: stop (leaving it) */
        UA_DISK,          /* emulator: insert the next (offset 1) or previous (-1) disk */
        UA_CONTROLLER,    /* emulator: D-pad as joystick <-> cursor keys */
        UA_A64_LATEST,    /* Assembly64: the latest releases (category_key) */
@@ -71,6 +81,10 @@ enum { SHOT_NONE, SHOT_LOADING, SHOT_READY };
  * louder from Off comes back at the lowest level. Updates *db and *muted. */
 void ui_volume_step(int *db, int *muted, int dir);
 
+/* SID player: the two lists, and the size of the oscilloscope's sample window. */
+enum { SID_TAB_LOCAL, SID_TAB_A64 };
+#define SID_SCOPE 384
+
 /* Home screen items, focus and the C64 Ultimate stream's state. */
 enum { HOME_VICE, HOME_STREAM, HOME_SID, HOME_ITEMS };
 enum { HOME_ON_ITEMS, HOME_ON_POWER, HOME_ON_GEAR };
@@ -100,6 +114,26 @@ typedef struct {
     int  home_stream;             /* HOME_STREAM_* (set by main) */
     char home_ip[16];             /* the C64 Ultimate found (set by main) */
     int  picker_from_home;        /* the picker is the home screen's settings */
+
+    /* SID player. Lists: */
+    int        sid_tab;           /* SID_TAB_LOCAL or SID_TAB_A64 */
+    char       sid_path[512];     /* folder of the SID folder shown ("/" = its top) */
+    ftp_entry *sid_entries;       /* owned: folders and .sid files of sid_path */
+    int        sid_count, sid_loading;
+    char       sid_error[128];
+    a64_item  *sid_a64;           /* owned: the Assembly64 music results played from */
+    int        sid_a64_count;
+    int        sid_sel[2], sid_top[2];
+    int        a64_for_sid;       /* the Assembly64 search was opened by the SID player */
+    /* Now playing (set by main). */
+    int        sid_active, sid_paused, sid_mode, sid_on_ultimate, sid_can_ultimate;
+    int        sid_play_tab, sid_play_index;   /* the list entry playing, -1 none */
+    char       sid_title[64], sid_author[64], sid_released[64], sid_status[96];
+    int        sid_song, sid_songs, sid_model, sid_ntsc;
+    unsigned   sid_time_ms;
+    int        sid_length_ms;     /* -1: unknown (plays SID_DEFAULT_MS) */
+    unsigned char sid_regs[32];   /* the SID's registers (voice bars) */
+    short      sid_scope[SID_SCOPE];  /* the latest sound, mono (oscilloscope) */
 
     /* Picker. */
     c64_device devices[DISCOVER_MAX];
@@ -178,6 +212,13 @@ void ui_open_menu(ui_state *u);
 void ui_open_picker(ui_state *u, const char *message);
 /* The home screen (keeps the item chosen last). */
 void ui_open_home(ui_state *u);
+
+/* The SID player (returns the UA_SID_LIST for its folder), its folder listing (takes
+ * entries; keeps folders and .sid files) and a failed listing. */
+ui_action ui_open_sid(ui_state *u);
+void ui_sid_set_listing(ui_state *u, const char *path, ftp_entry *entries, int n);
+void ui_sid_list_error(ui_state *u, const char *path, const char *message);
+#define SID_DEFAULT_MS 180000     /* tunes without a known length play this long */
 /* Opens the browser at path; returns a UA_LIST action to fetch it. */
 ui_action ui_open_browser(ui_state *u, const char *path);
 void ui_close(ui_state *u);

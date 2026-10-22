@@ -27,6 +27,7 @@
 #include "font_sdl.h"
 #include "home_sdl.h"
 #include "localfs.h"
+#include "playlist.h"
 #include "osk_sdl.h"
 #include "settings.h"
 #include "shots.h"
@@ -103,7 +104,12 @@ typedef struct {
     int         no_home;      /* start straight away (debug flags imply it) instead of on the home screen */
     int         home_sel;     /* debug: the home screen's chosen object (-1: default) */
     const char *sid_file;     /* debug: play this .sid with the built-in SID player */
+    const char *keys;         /* debug: buttons for the UI, one every 1.5 s from 2 s ("down,ok") */
     int         sid_song;     /* debug: its song (0: the start song) */
+    const char *sids_dir;     /* the SID player's folder (default: "sids" next to the config) */
+    const char *songlengths;  /* HVSC Songlengths.md5 */
+    int         sid_volume;   /* dB, the SID player */
+    int         sid_ultimate; /* the SID player plays on the C64 Ultimate (when there is one) */
 } options;
 
 /* A saved level onto the menu's steps: UI_VOLUME_MIN..0 dB in UI_VOLUME_STEP dB. */
@@ -125,6 +131,8 @@ static void usage(const char *argv0)
         "          [--no-audio] [--audio-port N] [--audio-multicast GROUP]\n"
         "          [--audio-rate HZ] [--audio-latency MS] [--config FILE]\n"
         "          [--stream-volume DB] [--emulator-volume DB] [--no-home] [--home-sel N]\n"
+        "          [--sid FILE] [--sid-song N] [--sids-dir DIR] [--songlengths FILE]\n"
+        "          [--sid-volume DB] [--sid-output ps64|ultimate]\n"
         "          [--joystick-port 1|2] [--button-NAME KEY] [--type TEXT] [--browse-dir DIR]\n"
         "          [--search-roots /SD,/USB0] [--build-index] [--search TEXT]\n"
         "          [--assembly64-client-id ID] [--assembly64-url URL] [--a64-search TEXT]\n"
@@ -187,7 +195,16 @@ static int parse_args(int argc, char **argv, options *o)
     o->no_home = 0;
     o->home_sel = -1;
     o->sid_file = NULL;
+    o->keys = NULL;
     o->sid_song = 0;
+    o->sids_dir = NULL;
+#ifdef PS64_NATIVE
+    o->songlengths = "/app0/assets/Songlengths.md5";
+#else
+    o->songlengths = "third_party/hvsc/Songlengths.md5";
+#endif
+    o->sid_volume = -12;
+    o->sid_ultimate = 0;
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
         const char *next = i + 1 < argc ? argv[i + 1] : NULL;
@@ -205,7 +222,12 @@ static int parse_args(int argc, char **argv, options *o)
         else if (!strcmp(a, "--no-home"))           { o->no_home = 1; }
         else if (!strcmp(a, "--home-sel") && next)  { o->home_sel = atoi(next); i++; }
         else if (!strcmp(a, "--sid") && next)       { o->sid_file = next; i++; }
+        else if (!strcmp(a, "--keys") && next)      { o->keys = next; i++; }
         else if (!strcmp(a, "--sid-song") && next)  { o->sid_song = atoi(next); i++; }
+        else if (!strcmp(a, "--sids-dir") && next)  { o->sids_dir = next; i++; }
+        else if (!strcmp(a, "--songlengths") && next) { o->songlengths = next; i++; }
+        else if (!strcmp(a, "--sid-volume") && next) { o->sid_volume = atoi(next); i++; }
+        else if (!strcmp(a, "--sid-output") && next) { o->sid_ultimate = !strcasecmp(next, "ultimate"); i++; }
         else if (!strcmp(a, "--browse-dir") && next) { o->browse_dir = next; i++; }
         else if (!strcmp(a, "--browse") && next)    { o->browse_path = next; i++; }
         else if (!strcmp(a, "--ui") && next)        { o->ui_screen = next; i++; }
@@ -258,6 +280,7 @@ static int parse_args(int argc, char **argv, options *o)
         o->audio = 0;
     o->stream_volume = clamp_volume(o->stream_volume);
     o->emulator_volume = clamp_volume(o->emulator_volume);
+    o->sid_volume = clamp_volume(o->sid_volume);
     if (!o->remote_host)
         o->remote_host = o->start_host;
     /* Debug flags that go straight to a machine skip the home screen. */
@@ -704,11 +727,36 @@ static double now_ms(void)
  * frames run (0: no new picture).
  */
 #ifdef PS64_SID
-/*
- * The SID player: keep the audio queue topped up with freshly rendered sound.
- * (It renders ahead by the queue's length, so sound and the picture stay in step.)
- */
+/* ---- SID player -------------------------------------------------------- */
+
+#define SID_FA 1000                   /* a64_download's action for the SID player's tunes */
+#define SID_MAX_BYTES (128 * 1024)    /* .sid files are at most ~64 KB */
+static char sids_dir[600] = "sids", sid_cache_dir[600] = "sid-cache";
+
+/* The tune playing and the list it plays from (copied from the UI's list). */
+typedef struct {
+    sidplay       *engine;            /* also when it plays on the C64 Ultimate (header info) */
+    playlist       list;
+    int            tab, n;            /* SID_TAB_* of the list, its tunes */
+    int           *row;               /* tune -> entry in the UI's list (to mark it playing) */
+    char         (*paths)[512];       /* SID_TAB_LOCAL: SID-folder paths */
+    a64_item      *items;             /* SID_TAB_A64 */
+    unsigned char *data;              /* the tune's bytes (sent again for another subtune) */
+    size_t         len;
+    char           name[160];
+    int            paused;
+    int            prefer_ultimate;   /* "Play on: C64 Ultimate" chosen (sid-output) */
+    int            on_ultimate;       /* this tune plays there (one is connected) */
+    char           want_id[64];       /* the Assembly64 tune being fetched */
+    int            want_cat;
+    Uint32         ult_started;       /* on the C64 Ultimate: when its song started */
+    int16_t        scope[SID_SCOPE];
+} sid_player;
+static sid_player sp;
 static Uint32 sid_render_ms;          /* time spent rendering, for the log */
+
+/* Keep the audio queue topped up with freshly rendered sound (it renders ahead by the
+ * queue's length, so sound and the picture stay in step); the end of it is the scope. */
 static void sid_step(audio_out *a, sidplay *p)
 {
     Uint32 queued = SDL_GetQueuedAudioSize(a->dev) / 4;
@@ -723,8 +771,217 @@ static void sid_step(audio_out *a, sidplay *p)
             break;
         audio_push(a, buf, (size_t)got);
         queued += (Uint32)got;
+        int from = got > SID_SCOPE ? got - SID_SCOPE : 0;
+        memmove(sp.scope, sp.scope + (got - from), sizeof(int16_t) * (size_t)(SID_SCOPE - (got - from)));
+        for (int k = from; k < got; k++)
+            sp.scope[SID_SCOPE - (got - k)] = (int16_t)((buf[k * 2] + buf[k * 2 + 1]) / 2);
         if (a->draining)
             break;
+    }
+}
+
+/* Without sound (muted, or --no-audio): still play the tune in time, discarding it. */
+static void sid_step_silent(sidplay *p, Uint32 now)
+{
+    static Uint32 last;
+    static int16_t buf[4096 * 2];
+    int frames = last && now - last < 500 ? (int)((now - last) * (SIDPLAY_RATE / 1000)) : 0;
+    last = now;
+    while (frames > 0) {
+        int n = frames > 4096 ? 4096 : frames;
+        int got = sidplay_render(p, buf, n);
+        if (got <= 0)
+            break;
+        frames -= got;
+        if (got >= SID_SCOPE)
+            for (int k = 0; k < SID_SCOPE; k++)
+                sp.scope[k] = (int16_t)((buf[(got - SID_SCOPE + k) * 2] + buf[(got - SID_SCOPE + k) * 2 + 1]) / 2);
+    }
+}
+
+/* The tune's file in the Assembly64 cache. */
+static void sid_cache_path(const a64_item *it, char *out, size_t cap)
+{
+    char id[64];
+    snprintf(id, sizeof(id), "%s", it->id);
+    for (char *c = id; *c; c++)
+        if (!isalnum((unsigned char)*c))
+            *c = '_';
+    snprintf(out, cap, "%s/%s-%d.sid", sid_cache_dir, id, it->category);
+}
+
+static unsigned char *read_file(const char *path, size_t max, size_t *len)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f)
+        return NULL;
+    unsigned char *data = malloc(max);
+    *len = data ? fread(data, 1, max, f) : 0;
+    fclose(f);
+    if (!*len) {
+        free(data);
+        return NULL;
+    }
+    return data;
+}
+
+/* Copy the playing tune's details into the UI. */
+static void sid_show(ui_state *ui)
+{
+    ui->sid_active = sp.engine != NULL;
+    ui->sid_paused = sp.paused;
+    ui->sid_on_ultimate = sp.on_ultimate;
+    int cur = playlist_current(&sp.list);
+    ui->sid_play_tab = sp.n ? sp.tab : -1;
+    ui->sid_play_index = sp.n && cur >= 0 ? sp.row[cur] : -1;
+    if (!sp.engine)
+        return;
+    sidplay_info si;
+    sidplay_get_info(sp.engine, &si);
+    snprintf(ui->sid_title, sizeof(ui->sid_title), "%s", si.title[0] ? si.title : sp.name);
+    snprintf(ui->sid_author, sizeof(ui->sid_author), "%s", si.author);
+    snprintf(ui->sid_released, sizeof(ui->sid_released), "%s", si.released);
+    ui->sid_song = si.song;
+    ui->sid_songs = si.songs;
+    ui->sid_model = si.model;
+    ui->sid_ntsc = si.ntsc;
+    ui->sid_length_ms = si.length_ms;
+}
+
+/* Stop: the engine, and the C64 Ultimate if it was playing there. */
+static void sid_stop(ui_state *ui, c64files *files)
+{
+    if (sp.on_ultimate && sp.engine && files)
+        files_action(files, "", FA_RESET);
+    sidplay_close(sp.engine);
+    sp.engine = NULL;
+    free(sp.data);
+    sp.data = NULL;
+    sp.want_id[0] = 0;
+    sp.paused = 0;
+    ui->sid_active = 0;
+    ui->sid_status[0] = 0;
+    memset(sp.scope, 0, sizeof(sp.scope));
+}
+
+/* Play a tune's bytes (takes data): on PS64, or sent to the C64 Ultimate. */
+static int sid_play_bytes(ui_state *ui, c64files *files, const char *name, unsigned char *data,
+                          size_t len)
+{
+    sidplay_close(sp.engine);
+    free(sp.data);
+    sp.data = NULL;
+    char err[128];
+    sp.engine = sidplay_open(data, len, err, sizeof(err));
+    if (!sp.engine) {
+        snprintf(ui->sid_status, sizeof(ui->sid_status), "Can't play %s: %s", name, err);
+        free(data);
+        return -1;
+    }
+    sp.data = data;
+    sp.len = len;
+    snprintf(sp.name, sizeof(sp.name), "%s", name);
+    ui->sid_status[0] = 0;
+    sp.paused = 0;
+    sp.on_ultimate = sp.prefer_ultimate && ui->sid_can_ultimate && files;
+    if (sp.on_ultimate) {
+        unsigned char *copy = malloc(len);
+        if (copy) {
+            memcpy(copy, data, len);
+            files_play_sid(files, name, copy, len, 0);
+        }
+        sp.ult_started = SDL_GetTicks();
+    }
+    sid_show(ui);
+    return 0;
+}
+
+/* Start the playlist's current tune: a file, the Assembly64 cache, or a download. */
+static void sid_load_current(ui_state *ui, a64 *a64c, c64files *files)
+{
+    int cur = playlist_current(&sp.list);
+    if (cur < 0)
+        return;
+    sp.want_id[0] = 0;
+    if (sp.tab == SID_TAB_LOCAL) {
+        char path[1200];
+        size_t len;
+        localfs_real_path(sids_dir, sp.paths[cur], path, sizeof(path));
+        unsigned char *data = read_file(path, SID_MAX_BYTES, &len);
+        const char *name = strrchr(sp.paths[cur], '/');
+        if (data)
+            sid_play_bytes(ui, files, name ? name + 1 : sp.paths[cur], data, len);
+        else
+            snprintf(ui->sid_status, sizeof(ui->sid_status), "Can't read %s", sp.paths[cur]);
+    } else {
+        const a64_item *it = &sp.items[cur];
+        char path[700];
+        size_t len;
+        sid_cache_path(it, path, sizeof(path));
+        unsigned char *data = read_file(path, SID_MAX_BYTES, &len);
+        if (data) {
+            sid_play_bytes(ui, files, it->name, data, len);
+        } else if (a64c) {
+            sidplay_close(sp.engine);                /* silence while it downloads */
+            sp.engine = NULL;
+            snprintf(sp.want_id, sizeof(sp.want_id), "%s", it->id);
+            sp.want_cat = it->category;
+            a64_entries(a64c, it->id, it->category);
+            snprintf(ui->sid_status, sizeof(ui->sid_status), "Fetching %s...", it->name);
+        }
+    }
+    sid_show(ui);
+}
+
+/* Play from the UI's list: entry index of tab (folders are skipped). */
+static void sid_play_list(ui_state *ui, int tab, int index, a64 *a64c, c64files *files, Uint32 now)
+{
+    free(sp.row);
+    free(sp.paths);
+    free(sp.items);
+    sp.row = NULL;
+    sp.paths = NULL;
+    sp.items = NULL;
+    sp.n = 0;
+    sp.tab = tab;
+    int count = tab == SID_TAB_LOCAL ? ui->sid_count : ui->sid_a64_count, start = 0;
+    sp.row = malloc(sizeof(int) * (size_t)(count ? count : 1));
+    if (tab == SID_TAB_LOCAL) {
+        sp.paths = malloc(sizeof(*sp.paths) * (size_t)(count ? count : 1));
+        for (int i = 0; sp.row && sp.paths && i < count; i++) {
+            if (ui->sid_entries[i].is_dir)
+                continue;
+            if (i == index)
+                start = sp.n;
+            snprintf(sp.paths[sp.n], sizeof(sp.paths[sp.n]), "%s%s%s", ui->sid_path,
+                     strcmp(ui->sid_path, "/") ? "/" : "", ui->sid_entries[i].name);
+            sp.row[sp.n++] = i;
+        }
+    } else {
+        sp.items = malloc(sizeof(*sp.items) * (size_t)(count ? count : 1));
+        for (int i = 0; sp.row && sp.items && i < count; i++) {
+            sp.items[sp.n] = ui->sid_a64[i];
+            sp.row[sp.n++] = i;
+        }
+        start = index;
+    }
+    playlist_start(&sp.list, sp.n, start, ui->sid_mode, now);
+    sid_load_current(ui, a64c, files);
+}
+
+/* List a folder of the SID folder into the player. */
+static void sid_list(ui_state *ui, const char *path)
+{
+    enum { MAX = 4096 };
+    ftp_entry *e = malloc(sizeof(*e) * MAX);
+    char err[160] = "Out of memory";
+    localfs_mkdirs(sids_dir);
+    int n = e ? localfs_list(sids_dir, path, e, MAX, err, sizeof(err)) : -1;
+    if (n < 0) {
+        free(e);
+        ui_sid_list_error(ui, path, err);
+    } else {
+        ui_sid_set_listing(ui, path, e, n);
     }
 }
 #endif
@@ -1045,28 +1302,28 @@ int main(int argc, char **argv)
     char browse_dir[512];
     snprintf(browse_dir, sizeof(browse_dir), "%s", opt.browse_dir ? opt.browse_dir : "/");
 
-    int sid_playing = 0;              /* the SID player has the sound */
+    int sid_playing = 0;              /* the SID player has the sound (on PS64) */
 #ifdef PS64_SID
-    /* Debug: play a .sid straight away (the SID player's engine). */
-    sidplay *sidp = NULL;
+    next_to_config(config, "sids", sids_dir, sizeof(sids_dir));
+    next_to_config(config, "sid-cache", sid_cache_dir, sizeof(sid_cache_dir));
+    if (opt.sids_dir)
+        snprintf(sids_dir, sizeof(sids_dir), "%s", opt.sids_dir);
+    sp.prefer_ultimate = opt.sid_ultimate;
+    /* Debug: play a .sid straight away. */
     if (opt.sid_file) {
-        static unsigned char tune[65536 + 1024];
-        FILE *f = fopen(opt.sid_file, "rb");
-        size_t len = f ? fread(tune, 1, sizeof(tune), f) : 0;
-        if (f)
-            fclose(f);
-        char err[128] = "can't read the file";
-        sidp = len ? sidplay_open(tune, len, err, sizeof(err)) : NULL;
-        if (sidp && opt.sid_song)
-            sidplay_select(sidp, opt.sid_song);
-        sid_playing = sidp != NULL;
-        if (sidp) {
-            sidplay_info si;
-            sidplay_get_info(sidp, &si);
-            printf("sid: %s / %s / %s  song %d of %d  %s\n", si.title, si.author, si.released,
-                   si.song, si.songs, si.model == SIDPLAY_MODEL_8580 ? "8580" : "6581");
-        } else {
-            printf("sid: %s: %s\n", opt.sid_file, err);
+        size_t len;
+        unsigned char *data = read_file(opt.sid_file, SID_MAX_BYTES, &len);
+        if (sidplay_songlengths(opt.songlengths) != 0)
+            printf("sid: no song lengths (%s)\n", opt.songlengths);
+        if (!data || sid_play_bytes(&ui, NULL, opt.sid_file, data, len) != 0)
+            printf("sid: %s: %s\n", opt.sid_file, data ? ui.sid_status : "can't read it");
+        if (sp.engine && opt.sid_song)
+            sidplay_select(sp.engine, opt.sid_song);
+        if (sp.engine) {
+            sid_show(&ui);
+            printf("sid: %s / %s / %s  song %d of %d  %s  %d ms\n", ui.sid_title, ui.sid_author,
+                   ui.sid_released, ui.sid_song, ui.sid_songs, ui.sid_model == SIDPLAY_MODEL_8580 ? "8580" : "6581",
+                   ui.sid_length_ms);
         }
     }
 #endif
@@ -1149,6 +1406,15 @@ int main(int argc, char **argv)
     }
     if (opt.ui_screen && !strcmp(opt.ui_screen, "recents"))
         ui_open_recents(&ui);
+#ifdef PS64_SID
+    if (opt.ui_screen && !strcmp(opt.ui_screen, "sid")) {
+        ui_action sa = ui_open_sid(&ui);
+        sidplay_songlengths(opt.songlengths);
+        sid_list(&ui, sa.path);
+        if (sp.engine)
+            sid_show(&ui);
+    }
+#endif
     if (opt.browse_path && ses.files) {
         ui_action a = ui_open_browser(&ui, opt.browse_path);
         files_list(ses.files, a.path);
@@ -1341,6 +1607,24 @@ int main(int argc, char **argv)
         }
 
         Uint32 tick = SDL_GetTicks();
+        /* Debug: the --keys buttons, one at a time. */
+        if (opt.keys && *opt.keys && tick - started > 2000) {
+            static Uint32 key_at;
+            if (!key_at || tick - key_at >= 1500) {
+                static const char *const names[] = { "up", "down", "left", "right", "ok", "back", "square",
+                                                     "triangle", "l1", "r1", "l2", "r2" };
+                static const int ins[] = { IN_UP, IN_DOWN, IN_LEFT, IN_RIGHT, IN_OK, IN_BACK, IN_ALT,
+                                           IN_TRIANGLE, IN_L1, IN_R1, IN_L2, IN_R2 };
+                size_t len = strcspn(opt.keys, ",");
+                for (size_t k = 0; k < sizeof(ins) / sizeof(ins[0]); k++)
+                    if (strlen(names[k]) == len && !strncmp(opt.keys, names[k], len) && ctl.nactions < ACTIONQ) {
+                        printf("keys: %s\n", names[k]);
+                        ctl.actions[ctl.nactions++] = ui_input(&ui, ins[k]);
+                    }
+                opt.keys += len + (opt.keys[len] == ',');
+                key_at = tick;
+            }
+        }
         controls_update(&ctl, tick);
 
         /* Act on menu, picker and browser choices. */
@@ -1359,6 +1643,11 @@ int main(int argc, char **argv)
             case UA_VOLUME:
                 if (opt.audio) {
                     int muted = aout.muted, *db = ses.emu ? &opt.emulator_volume : &opt.stream_volume;
+                    const char *key = ses.emu ? "emulator-volume" : "stream-volume";
+                    if (sid_playing) {
+                        db = &opt.sid_volume;
+                        key = "sid-volume";
+                    }
                     ui_volume_step(db, &muted, a.offset);
                     if (muted != aout.muted)
                         audio_set_muted(&aout, muted);
@@ -1366,7 +1655,7 @@ int main(int argc, char **argv)
                     if (config) {
                         char v[16];
                         snprintf(v, sizeof(v), "%d", *db);
-                        config_set(config, ses.emu ? "emulator-volume" : "stream-volume", v, NULL);
+                        config_set(config, key, v, NULL);
                     }
                 }
                 break;
@@ -1411,6 +1700,9 @@ int main(int argc, char **argv)
                 break;
             }
             case UA_HOME:
+#ifdef PS64_SID
+                sid_stop(&ui, ses.files);
+#endif
                 /* Back to the home screen: the emulator pauses where it is (Vice resumes it);
                  * a stream keeps running so the 1084 shows it. */
                 if (ses.emu) {
@@ -1440,6 +1732,77 @@ int main(int argc, char **argv)
             case UA_HOME_STREAM:
                 ui_close(&ui);
                 break;
+#ifdef PS64_SID
+            case UA_HOME_SID:
+            case UA_SID_LIST:
+                if (a.kind == UA_HOME_SID) {
+                    static int lengths_tried;
+                    if (!lengths_tried) {           /* the song-length database, once */
+                        lengths_tried = 1;
+                        Uint32 t0 = SDL_GetTicks();
+                        int rc = sidplay_songlengths(opt.songlengths);
+                        printf("sid: song lengths %s (%u ms)\n", rc == 0 ? "loaded" : "not found",
+                               SDL_GetTicks() - t0);
+                    }
+                }
+                sid_list(&ui, a.path);
+                break;
+            case UA_SID_PLAY:
+                sid_play_list(&ui, a.category, a.offset, a64c, ses.files, tick);
+                break;
+            case UA_SID_SONG:
+                if (sp.engine) {
+                    int song = ui.sid_song + a.offset;
+                    if (song < 1 || song > ui.sid_songs)
+                        break;
+                    sidplay_select(sp.engine, song);
+                    if (sp.on_ultimate && ses.files && sp.data) {
+                        unsigned char *copy = malloc(sp.len);
+                        if (copy) {
+                            memcpy(copy, sp.data, sp.len);
+                            files_play_sid(ses.files, sp.name, copy, sp.len, song);
+                        }
+                        sp.ult_started = tick;
+                    }
+                    sid_show(&ui);
+                }
+                break;
+            case UA_SID_SKIP:
+                if (sp.n && (a.offset < 0 ? playlist_prev(&sp.list) : playlist_next(&sp.list, 1, 1)) >= 0)
+                    sid_load_current(&ui, a64c, ses.files);
+                break;
+            case UA_SID_PAUSE:
+                if (sp.on_ultimate)
+                    snprintf(ui.sid_status, sizeof(ui.sid_status), "The C64 Ultimate can't pause a tune");
+                else if (sp.engine)
+                    sp.paused = !sp.paused;
+                sid_show(&ui);
+                break;
+            case UA_SID_MODE:
+                ui.sid_mode = (ui.sid_mode + 1) % PLAY_MODES;
+                if (sp.n)
+                    playlist_set_mode(&sp.list, ui.sid_mode);
+                break;
+            case UA_SID_OUTPUT:
+                sp.prefer_ultimate = !sp.prefer_ultimate;
+                opt.sid_ultimate = sp.prefer_ultimate;
+                if (config)
+                    config_set(config, "sid-output", sp.prefer_ultimate ? "ultimate" : "ps64", NULL);
+                if (sp.engine && sp.data) {          /* the tune carries on at the other end */
+                    if (sp.on_ultimate && ses.files)
+                        files_action(ses.files, "", FA_RESET);
+                    unsigned char *data = sp.data;
+                    char name[160];
+                    snprintf(name, sizeof(name), "%s", sp.name);
+                    sp.data = NULL;
+                    sid_play_bytes(&ui, ses.files, name, data, sp.len);
+                }
+                sid_show(&ui);
+                break;
+            case UA_SID_STOP:
+                sid_stop(&ui, ses.files);
+                break;
+#endif
 #ifdef PS64_EMU
             case UA_DISK: {
                 int n = emulator_disk_count();
@@ -1703,7 +2066,8 @@ int main(int argc, char **argv)
         int want_rate = opt.audio_rate;
 #endif
 #ifdef PS64_SID
-        if (sidp)
+        sid_playing = sp.engine && !sp.on_ultimate;
+        if (sid_playing)
             want_rate = SIDPLAY_RATE;
 #endif
         if (opt.audio && want_rate != aout_rate) {
@@ -1730,10 +2094,17 @@ int main(int argc, char **argv)
         /* Each source keeps its own level (both start at -12 dB). */
         ui.volume_db = ses.emu ? opt.emulator_volume : opt.stream_volume;
 #ifdef PS64_SID
-        if (sidp) {
-            ui.volume_db = opt.emulator_volume;
-            if (opt.audio && !aout.muted)
-                sid_step(&aout, sidp);
+        /* The SID player: sound, time, the visualiser, and on to the next tune at the end. */
+        ui.sid_can_ultimate = ses.streaming && ses.files;
+        if (sp.engine && !sp.on_ultimate) {
+            ui.volume_db = opt.sid_volume;
+            if (opt.audio && !aout.muted && !sp.paused)
+                sid_step(&aout, sp.engine);
+            else if (!sp.paused)
+                sid_step_silent(sp.engine, tick);
+            ui.sid_time_ms = sidplay_time_ms(sp.engine);
+            sidplay_regs(sp.engine, 0, ui.sid_regs);
+            memcpy(ui.sid_scope, sp.paused ? (int16_t[SID_SCOPE]){0} : sp.scope, sizeof(ui.sid_scope));
             static Uint32 sid_log_at;
             if (!sid_log_at)
                 sid_log_at = tick;
@@ -1742,6 +2113,14 @@ int main(int argc, char **argv)
                 sid_render_ms = 0;
                 sid_log_at = tick;
             }
+        } else if (sp.engine) {
+            ui.sid_time_ms = tick - sp.ult_started;
+            memset(ui.sid_scope, 0, sizeof(ui.sid_scope));
+        }
+        if (sp.engine && sp.n && !sp.paused) {
+            unsigned len = ui.sid_length_ms > 0 ? (unsigned)ui.sid_length_ms : SID_DEFAULT_MS;
+            if (ui.sid_time_ms >= len && playlist_next(&sp.list, 0, 1) >= 0)
+                sid_load_current(&ui, a64c, ses.files);
         }
 #endif
         if (opt.audio)
@@ -1825,6 +2204,42 @@ int main(int argc, char **argv)
         if (a64c) {
             a64_result r;
             while (a64_poll(a64c, &r)) {
+#ifdef PS64_SID
+                /* The SID player's tune: its file list, then the .sid itself (kept in the cache). */
+                if (r.kind == A64R_ENTRIES && sp.want_id[0] && !strcmp(r.item_id, sp.want_id) &&
+                    r.category == sp.want_cat) {
+                    int pick = -1;
+                    for (int i = 0; i < r.nfiles && pick < 0; i++)
+                        if (files_type(r.files[i].path, 0) == FT_SID)
+                            pick = i;
+                    if (pick >= 0) {
+                        a64_download(a64c, r.item_id, r.category, r.files[pick].id, r.files[pick].path, SID_FA);
+                    } else {
+                        snprintf(ui.sid_status, sizeof(ui.sid_status), "No .sid file in that release");
+                        sp.want_id[0] = 0;
+                    }
+                    a64_result_free(&r);
+                    continue;
+                }
+                if (r.kind == A64R_FILE && r.action == SID_FA) {
+                    int cur = playlist_current(&sp.list);
+                    if (sp.want_id[0] && sp.tab == SID_TAB_A64 && cur >= 0 &&
+                        !strcmp(sp.items[cur].id, sp.want_id)) {
+                        char path[700];
+                        sid_cache_path(&sp.items[cur], path, sizeof(path));
+                        localfs_write(path, r.data, r.len);
+                        sp.want_id[0] = 0;
+                        sid_play_bytes(&ui, ses.files, sp.items[cur].name, r.data, r.len);
+                        r.data = NULL;                  /* the player has it */
+                    }
+                    a64_result_free(&r);
+                    continue;
+                }
+                if (r.kind == A64R_ERROR && sp.want_id[0]) {
+                    snprintf(ui.sid_status, sizeof(ui.sid_status), "%s", r.message);
+                    sp.want_id[0] = 0;
+                }
+#endif
                 if (r.kind == A64R_FILE) {
                     ui.a64_loading = 0;
 #ifdef PS64_EMU
@@ -2061,7 +2476,7 @@ int main(int argc, char **argv)
     emulator_stop();
 #endif
 #ifdef PS64_SID
-    sidplay_close(sidp);
+    sid_stop(&ui, ses.files);
 #endif
     ui_free(&ui);
     if (opt.audio)

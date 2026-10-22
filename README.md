@@ -293,6 +293,27 @@ what the C++ runtime and VICE expect, and stand-ins for SDL's USB-keyboard and t
 calls (their system modules aren't available to apps). `ps5/native/missing-symbols.sh`
 lists what the linked libraries need that the console doesn't provide.
 
+## SID player
+
+**SID** on the home screen plays C64 music (.sid files), with no C64 needed: the
+reSIDfp emulation of the 6581 and 8580 chips (libsidplayfp). Two lists, switched with
+left/right:
+
+- **Local**: the SID folder, `/data/ps64/sids` on the PS5 (`sids` next to `ps64.cfg`;
+  `sids-dir` sets another). Copy .sid files (and folders of them) there.
+- **Assembly64**: search Assembly64 for .sid files (R1 there shows the latest); the tune
+  picked plays, and the results become the playlist. Downloaded tunes are kept in
+  `sid-cache`.
+
+X plays, L1/R1 change the subtune, L2/R2 the tune, Square pauses, Triangle switches
+between in order, shuffle and repeat-one, Circle goes home. Tunes end on time with HVSC's
+song lengths (unknown ones play 3 minutes) and the list plays on. The screen shows the
+title, author and year, the song, the chip, the time, each voice's note and waveform,
+and an oscilloscope. Options > Audio sets its level (`sid-volume`, -12 dB to start).
+
+With a C64 Ultimate connected, the list's first row, **Play on**, sends the tunes to the
+Ultimate's SID chips instead (its sound comes back through the stream; `sid-output`).
+
 ## Built-in emulator (no C64 Ultimate needed)
 
 PS64 can run its own C64 instead of showing a C64 Ultimate: the VICE
@@ -346,4 +367,9 @@ The home screen's power and settings icons are [Material Icons](https://github.c
 by Google (Apache 2.0, `src/home_icons.h`), rasterised with
 [nanosvg](https://github.com/memononen/nanosvg) (`src/nanosvg.h`, `src/nanosvgrast.h`, zlib licence,
 commit 239e102e).
+The SID player plays tunes with [libsidplayfp](https://github.com/libsidplayfp/libsidplayfp) 3.1.1
+and [libresidfp](https://github.com/libsidplayfp/libresidfp) 1.2.3 (reSIDfp; both GPL-2.0-or-later,
+fetched and built by `tools/get_sidplayfp.sh`). Song lengths come from the
+[High Voltage SID Collection](https://hvsc.c64.org)'s `Songlengths.md5` (fetched by
+`tools/get_songlengths.sh`, carried in the native app's assets); no tunes are included.
 

@@ -16,6 +16,7 @@
 #include "../src/shots.h"
 #include "../src/localfs.h"
 #include "../src/osk.h"
+#include "../src/playlist.h"
 #include "../src/settings.h"
 #include "../src/ui.h"
 
@@ -522,6 +523,10 @@ static void test_a64(void)
     char q[256];
     a64_build_query("boulder dash", "games", q, sizeof(q));
     CHECK(!strcmp(q, "(name:\"boulder dash\") & (category:games)"));
+    a64_build_query("commando", "type:sid", q, sizeof(q));                /* a whole filter */
+    CHECK(!strcmp(q, "(name:\"commando\") & (type:sid)"));
+    a64_build_latest_query("1month", "type:sid", q, sizeof(q));
+    CHECK(!strcmp(q, "(latest:1month) & (type:sid) & (sort:year) & (order:desc)"));
     a64_build_query("say \"hi\"", NULL, q, sizeof(q));
     CHECK(!strcmp(q, "(name:\"say \\\"hi\\\"\")"));
 
@@ -1117,9 +1122,10 @@ static void test_home(void)
     ui_input(&u, IN_RIGHT);
     ui_input(&u, IN_RIGHT);
     CHECK(u.home_sel == HOME_SID);
-    unsigned serial = u.home_snack_serial;
-    CHECK(ui_input(&u, IN_OK).kind == UA_NONE && u.home_snack_serial == serial + 1 &&
-          strstr(u.home_snack, "coming soon"));
+    /* SID: opens the player, which lists its folder; Circle stops it and comes home. */
+    ui_action sa = ui_input(&u, IN_OK);
+    CHECK(sa.kind == UA_SID_LIST && u.screen == UI_SID && !strcmp(sa.path, "/"));
+    CHECK(ui_input(&u, IN_BACK).kind == UA_SID_STOP && u.screen == UI_HOME && u.home_sel == HOME_SID);
     ui_input(&u, IN_LEFT);
     u.home_stream = HOME_STREAM_NONE;
     CHECK(ui_input(&u, IN_OK).kind == UA_NONE &&
@@ -1207,9 +1213,76 @@ static void test_home(void)
     CHECK(home_icon(icon, 72, "not svg") == -1);
 }
 
+/* The SID player: its list, subfolders, playing and its buttons; the play order. */
+static void test_sid_player(void)
+{
+    static ui_state u;
+    ui_setup(&u);
+    CHECK(ui_open_sid(&u).kind == UA_SID_LIST && u.sid_loading);
+    ftp_entry *e = calloc(4, sizeof(*e));
+    strcpy(e[0].name, "Hubbard_Rob");
+    e[0].is_dir = 1;
+    strcpy(e[1].name, "Commando.sid");
+    strcpy(e[2].name, "readme.txt");                                /* not a tune: hidden */
+    strcpy(e[3].name, "Delta.sid");
+    ui_sid_set_listing(&u, "/", e, 4);
+    CHECK(u.sid_count == 3 && !u.sid_loading && !strcmp(u.sid_entries[2].name, "Delta.sid"));
+    ui_action a = ui_input(&u, IN_OK);                              /* into the folder */
+    CHECK(a.kind == UA_SID_LIST && !strcmp(a.path, "/Hubbard_Rob"));
+    ui_sid_set_listing(&u, "/Hubbard_Rob", calloc(1, sizeof(ftp_entry)), 0);
+    a = ui_input(&u, IN_OK);                                        /* ".." goes back up */
+    CHECK(a.kind == UA_SID_LIST && !strcmp(a.path, "/"));
+    e = calloc(2, sizeof(*e));
+    strcpy(e[0].name, "Commando.sid");
+    strcpy(e[1].name, "Delta.sid");
+    ui_sid_set_listing(&u, "/", e, 2);
+    ui_input(&u, IN_DOWN);
+    a = ui_input(&u, IN_OK);
+    CHECK(a.kind == UA_SID_PLAY && a.category == SID_TAB_LOCAL && a.offset == 1);
+    a = ui_input(&u, IN_R1);
+    CHECK(a.kind == UA_SID_SONG && a.offset == 1);
+    a = ui_input(&u, IN_L2);
+    CHECK(a.kind == UA_SID_SKIP && a.offset == -1);
+    CHECK(ui_input(&u, IN_ALT).kind == UA_SID_PAUSE && ui_input(&u, IN_TRIANGLE).kind == UA_SID_MODE);
+    /* With a C64 Ultimate, the first row chooses where it plays. */
+    u.sid_can_ultimate = 1;
+    u.sid_sel[SID_TAB_LOCAL] = 0;
+    CHECK(ui_input(&u, IN_OK).kind == UA_SID_OUTPUT);
+    /* The Assembly64 tab starts with its search, which opens Search Assembly64 for music. */
+    ui_input(&u, IN_RIGHT);
+    CHECK(u.sid_tab == SID_TAB_A64);
+    u.a64_ready = 1;
+    u.sid_sel[SID_TAB_A64] = 1;
+    ui_input(&u, IN_OK);
+    CHECK(u.screen == UI_A64 && u.a64_for_sid);
+    ui_input(&u, IN_BACK);                                          /* (typing) back to the player */
+    CHECK(u.screen == UI_SID && !u.a64_for_sid);
+    ui_free(&u);
+
+    /* Play order: in order stops at the end (or wraps), shuffle visits each tune once
+     * starting with the chosen one, repeat-one replays unless skipped by hand. */
+    static playlist p;
+    playlist_start(&p, 4, 1, PLAY_IN_ORDER, 7);
+    CHECK(playlist_current(&p) == 1 && playlist_next(&p, 0, 0) == 2 && playlist_next(&p, 0, 0) == 3);
+    CHECK(playlist_next(&p, 0, 0) == -1 && playlist_next(&p, 0, 1) == 0 && playlist_prev(&p) == 3);
+    playlist_start(&p, 10, 4, PLAY_SHUFFLE, 99);
+    int seen[10] = {0}, first = playlist_current(&p);
+    seen[first]++;
+    for (int i = 0; i < 9; i++)
+        seen[playlist_next(&p, 0, 0)]++;
+    int once = 1;
+    for (int i = 0; i < 10; i++)
+        once &= seen[i] == 1;
+    CHECK(first == 4 && once && playlist_next(&p, 0, 0) == -1);
+    playlist_set_mode(&p, PLAY_REPEAT_ONE);
+    int cur = playlist_current(&p);
+    CHECK(playlist_next(&p, 0, 0) == cur && playlist_next(&p, 1, 1) != -1);
+}
+
 int main(void)
 {
     test_home();
+    test_sid_player();
     test_emulator_mode();
     test_drive_a();
     test_a64_latest();

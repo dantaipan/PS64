@@ -263,7 +263,9 @@ void a64_build_query(const char *text, const char *category_key, char *out, size
         esc[n++] = *t;
     }
     esc[n] = 0;
-    if (category_key && *category_key)
+    if (category_key && strchr(category_key, ':'))         /* a whole filter: "type:sid" */
+        snprintf(out, cap, "(name:\"%s\") & (%s)", esc, category_key);
+    else if (category_key && *category_key)
         snprintf(out, cap, "(name:\"%s\") & (category:%s)", esc, category_key);
     else
         snprintf(out, cap, "(name:\"%s\")", esc);
@@ -271,7 +273,9 @@ void a64_build_query(const char *text, const char *category_key, char *out, size
 
 void a64_build_latest_query(const char *window, const char *category_key, char *out, size_t cap)
 {
-    if (category_key && *category_key)
+    if (category_key && strchr(category_key, ':'))
+        snprintf(out, cap, "(latest:%s) & (%s) & (sort:year) & (order:desc)", window, category_key);
+    else if (category_key && *category_key)
         snprintf(out, cap, "(latest:%s) & (category:%s) & (sort:year) & (order:desc)", window,
                  category_key);
     else

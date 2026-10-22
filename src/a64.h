@@ -96,7 +96,8 @@ void a64_result_free(a64_result *res);
 
 /* ---- pure helpers, exposed for tests ------------------------------------- */
 
-/* AQL for a name search: (name:"text") [& (category:key)], quotes escaped. */
+/* AQL for a name search: (name:"text") [& (category:key)], quotes escaped. A key with a
+ * colon is a whole filter: "type:sid" gives (name:"text") & (type:sid). */
 void a64_build_query(const char *text, const char *category_key, char *out, size_t cap);
 /* AQL for recent additions, newest years first: (latest:window) [& (category:key)] & sort. */
 void a64_build_latest_query(const char *window, const char *category_key, char *out, size_t cap);
