@@ -2165,7 +2165,8 @@ int main(int argc, char **argv)
                 sid_log_at = tick;
             }
         } else if (sp.engine) {
-            ui.sid_time_ms = tick - sp.ult_started;
+            /* (A tune started after this frame's tick: not a negative, i.e. huge, time.) */
+            ui.sid_time_ms = SDL_TICKS_PASSED(tick, sp.ult_started) ? tick - sp.ult_started : 0;
             memcpy(ui.sid_scope, sp.scope, sizeof(ui.sid_scope));     /* from the stream's sound */
         }
         if (sp.engine && sp.n && !sp.paused) {
