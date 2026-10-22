@@ -23,6 +23,11 @@ static void *ps64_morecore(intptr_t increment);
 #define MORECORE_CONTIGUOUS 1
 #define MORECORE_CANNOT_TRIM 1
 #define USE_LOCKS 1
+/* The PS5's C++ ABI has __STDCPP_DEFAULT_NEW_ALIGNMENT__ 32 (AVX2): the compiler
+ * stores into new'd objects with 32-byte aligned AVX moves (vmovaps ymm), so every
+ * block must be 32-aligned. dlmalloc's default 16 crashed at random (general
+ * protection fault in libsidplayfp's c64::addExtraSid). */
+#define MALLOC_ALIGNMENT ((size_t)32U)
 #define NO_MALLOC_STATS 1
 #define malloc_getpagesize ((size_t)16384U)
 #define DLMALLOC_EXPORT static
