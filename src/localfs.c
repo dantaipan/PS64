@@ -4,6 +4,8 @@
 
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,6 +34,47 @@ void localfs_real_path(const char *root, const char *path, char *out, size_t cap
     }
 }
 
+/* Add one folder entry (skipping dot-files and names too long to keep). */
+static void add_entry(const char *dir, const char *name, ftp_entry *out, int *n)
+{
+    if (name[0] == '.' || strlen(name) >= sizeof(out[0].name))
+        return;
+    char full[1200];
+    struct stat st;
+    snprintf(full, sizeof(full), "%s/%s", dir, name);
+    if (stat(full, &st) != 0)
+        return;
+    ftp_entry *e = &out[(*n)++];
+    snprintf(e->name, sizeof(e->name), "%s", name);
+    e->is_dir = S_ISDIR(st.st_mode);
+    e->size = e->is_dir ? 0 : (unsigned long long)st.st_size;
+}
+
+#ifdef PS64_NATIVE
+/* The native app's libc can't opendir() in its sandbox: read the folder's entries
+ * with getdents() instead. Returns the count, or -1 with errno set. */
+static int list_getdents(const char *dir, ftp_entry *out, int max)
+{
+    int fd = open(dir, O_RDONLY | O_DIRECTORY);
+    if (fd < 0)
+        return -1;
+    static char buf[16384];
+    int n = 0, got;
+    while (n < max && (got = getdents(fd, buf, sizeof(buf))) > 0)
+        for (int at = 0; at < got && n < max;) {
+            struct dirent *de = (struct dirent *)(buf + at);
+            if (!de->d_reclen)
+                break;
+            add_entry(dir, de->d_name, out, &n);
+            at += de->d_reclen;
+        }
+    int saved = errno;
+    close(fd);
+    errno = saved;
+    return got < 0 && !n ? -1 : n;
+}
+#endif
+
 int localfs_list(const char *root, const char *path, ftp_entry *out, int max,
                  char *err, size_t errcap)
 {
@@ -39,24 +82,23 @@ int localfs_list(const char *root, const char *path, ftp_entry *out, int max,
     localfs_real_path(root, path, dir, sizeof(dir));
     DIR *d = opendir(dir);
     if (!d) {
-        snprintf(err, errcap, errno == ENOENT ? "Folder not found: %s" : "Can't open %s", dir);
+        int why = errno;
+#ifdef PS64_NATIVE
+        int n = list_getdents(dir, out, max);
+        if (n >= 0) {
+            ftp_sort(out, n);
+            return n;
+        }
+        printf("localfs: %s: opendir: %s; getdents: %s\n", dir, strerror(why), strerror(errno));
+#endif
+        snprintf(err, errcap, why == ENOENT ? "Folder not found: %s" : "Can't open %s (%s)", dir,
+                 strerror(why));
         return -1;
     }
     int n = 0;
     struct dirent *de;
-    while (n < max && (de = readdir(d)) != NULL) {
-        if (de->d_name[0] == '.' || strlen(de->d_name) >= sizeof(out[0].name))
-            continue;
-        char full[1200];
-        struct stat st;
-        snprintf(full, sizeof(full), "%s/%s", dir, de->d_name);
-        if (stat(full, &st) != 0)
-            continue;
-        ftp_entry *e = &out[n++];
-        snprintf(e->name, sizeof(e->name), "%s", de->d_name);
-        e->is_dir = S_ISDIR(st.st_mode);
-        e->size = e->is_dir ? 0 : (unsigned long long)st.st_size;
-    }
+    while (n < max && (de = readdir(d)) != NULL)
+        add_entry(dir, de->d_name, out, &n);
     closedir(d);
     ftp_sort(out, n);
     return n;
