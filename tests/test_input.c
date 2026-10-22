@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 static int failures;
@@ -1000,6 +1001,7 @@ static void test_emulator_mode(void)
     CHECK(localfs_disk_set(names, 5, 3, order, 8) == 0);                    /* not a disk */
 
     /* A real folder: listing, writing, an .m3u. */
+    static char mapped[800];
     char dir[] = "/tmp/ps64-localfs-XXXXXX";
     CHECK(mkdtemp(dir) != NULL);
     char file[600];
@@ -1015,6 +1017,34 @@ static void test_emulator_mode(void)
     CHECK(n == 2 && e[0].is_dir && !strcmp(e[0].name, "Sub") && !strcmp(e[1].name, "b.d64") &&
           e[1].size == 3);
     CHECK(localfs_list(dir, "/Nope", e, 8, err, sizeof(err)) == -1 && strstr(err, "not found"));
+    /* Folders it makes are open to everyone (filled over FTP by another user). */
+    struct stat st;
+    snprintf(file, sizeof(file), "%s/Games/Sub", dir);
+    CHECK(stat(file, &st) == 0 && (st.st_mode & 0777) == 0777);
+
+    /* USB drives: folders USB0... at the top, mapped to prefix + n. */
+    char usb[700], games[700];
+    snprintf(usb, sizeof(usb), "%s/usb", dir);
+    snprintf(games, sizeof(games), "%s/Games", dir);
+    snprintf(file, sizeof(file), "%s/usb1/C64/elite.d64", dir);
+    CHECK(localfs_write(file, "d64", 3) == 0);
+    localfs_real_path(games, "/USB1/C64/elite.d64", mapped, sizeof(mapped));
+    CHECK(strstr(mapped, "/Games/USB1/C64"));             /* USB off: inside the root */
+    localfs_set_usb(usb);
+    localfs_real_path(games, "/USB1/C64/elite.d64", mapped, sizeof(mapped));
+    CHECK(!strcmp(mapped, file));
+    localfs_real_path(games, "/USB1x/a", mapped, sizeof(mapped));
+    CHECK(strstr(mapped, "/Games/USB1x/a"));              /* not a drive name */
+    n = localfs_list(games, "/", e, 8, err, sizeof(err));
+    CHECK(n == 3 && !strcmp(e[0].name, "USB1") && e[0].is_dir && !strcmp(e[1].name, "Sub"));
+    n = localfs_list(games, "/Sub", e, 8, err, sizeof(err));        /* (only at the top) */
+    CHECK(n == 1 && !strcmp(e[0].name, "game.prg"));
+    n = localfs_list(games, "/USB1/C64", e, 8, err, sizeof(err));
+    CHECK(n == 1 && !strcmp(e[0].name, "elite.d64"));
+    char drive[300];
+    CHECK(localfs_usb_drive(1, drive, sizeof(drive)) && !localfs_usb_drive(0, drive, sizeof(drive)));
+    localfs_set_usb("none");
+    CHECK(localfs_list(games, "/", e, 8, err, sizeof(err)) == 2);
     const char *paths[] = { "/a/Disk1.d64", "/a/Disk2.d64" };
     snprintf(file, sizeof(file), "%s/disks.m3u", dir);
     CHECK(localfs_write_m3u(file, paths, 2) == 0);
@@ -1229,7 +1259,11 @@ static void test_sid_player(void)
     CHECK(u.sid_count == 3 && !u.sid_loading && !strcmp(u.sid_entries[2].name, "Delta.sid"));
     ui_action a = ui_input(&u, IN_OK);                              /* into the folder */
     CHECK(a.kind == UA_SID_LIST && !strcmp(a.path, "/Hubbard_Rob"));
-    ui_sid_set_listing(&u, "/Hubbard_Rob", calloc(1, sizeof(ftp_entry)), 0);
+    e = calloc(1, sizeof(*e));
+    strcpy(e[0].name, "Commando.sid");
+    ui_sid_set_listing(&u, "/Hubbard_Rob", e, 1);
+    CHECK(u.sid_sel[SID_TAB_LOCAL] == 1);                           /* on its first tune */
+    u.sid_sel[SID_TAB_LOCAL] = 0;
     a = ui_input(&u, IN_OK);                                        /* ".." goes back up */
     CHECK(a.kind == UA_SID_LIST && !strcmp(a.path, "/"));
     e = calloc(2, sizeof(*e));

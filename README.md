@@ -92,7 +92,7 @@ within each byte is the other way round: press `N` (or pass `--swap-nibbles`).
 | `src/favs.[ch]` | Favourites and recents lists |
 | `src/emulator.[ch]` | Built-in emulator: libretro frontend for the VICE core |
 | `src/emugames.[ch]` | Starting games in the emulator (games folder, Assembly64, disk lists) |
-| `src/localfs.[ch]` | The emulator's games folder and download cache |
+| `src/localfs.[ch]` | The emulator's games folder (and USB drives), the SID folder, the download cache |
 | `tools/get_vice.sh` | Fetches and builds the VICE core |
 | `tools/gen_icon.py`, `tools/gen_backgrounds.py` | Launcher icon and native home-screen backgrounds |
 | `src/version.h` | PS64's version (shown in About; matches the native app's contentVersion) |
@@ -299,7 +299,8 @@ reSIDfp emulation of the 6581 and 8580 chips (libsidplayfp). Two lists, switched
 left/right:
 
 - **Local**: the SID folder, `/data/ps64/sids` on the PS5 (`sids` next to `ps64.cfg`;
-  `sids-dir` sets another). Copy .sid files (and folders of them) there.
+  `sids-dir` sets another). Copy .sid files (and folders of them) there, or play them
+  from a USB drive: it's the **USB0** folder at the top.
 - **Assembly64**: search Assembly64 for .sid files (R1 there shows the latest); the tune
   picked plays, and the results become the playlist. Downloaded tunes are kept in
   `sid-cache`.
@@ -322,12 +323,17 @@ it was; Options > Reset C64 starts over). Keyboard and joystick
 go straight into the emulated C64, so unlike the Ultimate's typing buffer
 they work in games.
 
-- **Games folder**: `games/` next to the config (`/data/homebrew/PS64/games`
-  on the PS5; change with `games-dir`). Copy D64/G64/D71/D81, PRG, T64/TAP and
-  CRT files into it over FTP, in folders if you like. **Browse games
-  folder** and **Search games folder** (after **Update search index**) work
-  like the Ultimate's browser and search; Cross starts a file, Square on a
-  disk offers **Insert into drive 8** without starting it.
+- **Games folder**: `games/` next to the config (`/data/ps64/games` on the PS5;
+  change with `games-dir`). Copy D64/G64/D71/D81, PRG, T64/TAP and CRT files
+  into it over FTP, in folders if you like (PS64 keeps the folder writable,
+  0777). **Browse games folder** and **Search games folder** (after **Update
+  search index**) work like the Ultimate's browser and search; Cross starts a
+  file, Square on a disk offers **Insert into drive 8** without starting it.
+- **USB drives**: a USB drive plugged into the PS5 shows up at the top of the
+  games folder as **USB0** (USB1... for more), like the Ultimate's, so games run
+  straight from it, and Update search index covers it too. The PS5 app reads
+  drive n at `/mnt/usbn` (`usb-prefix`, `none` turns it off; a folder of your own
+  called USB0 in the games folder is hidden by the drive).
 - **Assembly64** downloads are saved under `emulator/downloads/` next to the
   config and started; started again later, they come from there.
 - **Multi-disk games**: starting a disk also loads the other disk images of

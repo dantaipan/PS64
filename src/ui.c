@@ -1247,7 +1247,7 @@ void ui_sid_set_listing(ui_state *u, const char *path, ftp_entry *entries, int n
     u->sid_count = kept;
     u->sid_loading = 0;
     u->sid_error[0] = 0;
-    if (strcmp(u->sid_path, path) || first) {
+    if (strcmp(u->sid_path, path) || first || u->sid_sel[SID_TAB_LOCAL] < 0) {
         snprintf(u->sid_path, sizeof(u->sid_path), "%s", path);
         sid_first_tune(u, SID_TAB_LOCAL);
     }
@@ -1259,6 +1259,8 @@ void ui_sid_set_listing(ui_state *u, const char *path, ftp_entry *entries, int n
 void ui_sid_list_error(ui_state *u, const char *path, const char *message)
 {
     (void)path;
+    if (u->sid_sel[SID_TAB_LOCAL] < 0)
+        u->sid_sel[SID_TAB_LOCAL] = 0;
     u->sid_loading = 0;
     snprintf(u->sid_error, sizeof(u->sid_error), "%s", message);
 }
@@ -1307,6 +1309,7 @@ static ui_action input_sid(ui_state *u, int in)
         if (row < extra) {                          /* ".." or the Assembly64 search */
             if (tab == SID_TAB_LOCAL) {
                 sid_up(u);
+                u->sid_sel[tab] = -1;               /* (a new folder: its first tune when listed) */
                 return sid_list_action(u);
             }
             u->a64_for_sid = 1;
@@ -1318,6 +1321,7 @@ static ui_action input_sid(ui_state *u, int in)
             size_t len = strlen(u->sid_path);
             snprintf(u->sid_path + len, sizeof(u->sid_path) - len, "%s%s",
                      u->sid_path[len - 1] == '/' ? "" : "/", u->sid_entries[i].name);
+            u->sid_sel[tab] = -1;                   /* (a new folder: its first tune when listed) */
             return sid_list_action(u);
         }
         if (i < (tab == SID_TAB_LOCAL ? u->sid_count : u->sid_a64_count)) {

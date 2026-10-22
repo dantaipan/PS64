@@ -4,7 +4,9 @@
  *
  * Paths inside the games folder are written like the C64 Ultimate's,
  * "/Folder/Game.d64", with "/" being the games folder itself, so the file
- * browser, search index and favourites work on them unchanged.
+ * browser, search index and favourites work on them unchanged. USB drives
+ * plugged into the PS5 appear at the top as folders USB0..USB7, like the
+ * Ultimate's ("/USB0/Games/Elite.d64").
  */
 #ifndef LOCALFS_H
 #define LOCALFS_H
@@ -13,17 +15,24 @@
 
 #include <stddef.h>
 
-/* Real path of path ("/..." inside root). ".." parts are dropped. */
+#define LOCALFS_USB_DRIVES 8
+
+/* USB drives: drive n is at prefix + n (the PS5: "/mnt/usb"); NULL, "" or "none" for none. */
+void localfs_set_usb(const char *prefix);
+/* Real folder of USB drive n if it's there (plugged in and mounted), else NULL. */
+const char *localfs_usb_drive(int n, char *out, size_t cap);
+
+/* Real path of path ("/..." inside root, or "/USBn/..." on a USB drive). ".." parts are dropped. */
 void localfs_real_path(const char *root, const char *path, char *out, size_t cap);
 
 /*
- * List path inside root: folders first, then by name, hidden files left out.
- * Returns the count, or -1 with a message in err.
+ * List path inside root: folders first, then by name, hidden files left out; at "/" the
+ * USB drives plugged in come first (USB0...). Returns the count, or -1 with a message in err.
  */
 int  localfs_list(const char *root, const char *path, ftp_entry *out, int max,
                   char *err, size_t errcap);
 
-/* mkdir -p. 0 or -1. */
+/* mkdir -p, the folders open to everyone (0777: filled over FTP as another user). 0 or -1. */
 int  localfs_mkdirs(const char *dir);
 /* Write a file, creating its folder. 0 or -1. */
 int  localfs_write(const char *file, const void *data, size_t len);

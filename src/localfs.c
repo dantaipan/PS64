@@ -12,8 +12,46 @@
 #include <strings.h>
 #include <sys/stat.h>
 
+static char usb_prefix[256];            /* "" = no USB drives */
+
+void localfs_set_usb(const char *prefix)
+{
+    snprintf(usb_prefix, sizeof(usb_prefix), "%s", prefix && strcmp(prefix, "none") ? prefix : "");
+}
+
+const char *localfs_usb_drive(int n, char *out, size_t cap)
+{
+    struct stat st;
+    if (!usb_prefix[0] || n < 0 || n >= LOCALFS_USB_DRIVES)
+        return NULL;
+    snprintf(out, cap, "%s%d", usb_prefix, n);
+    return stat(out, &st) == 0 && S_ISDIR(st.st_mode) ? out : NULL;
+}
+
+/* A "/USBn" or "/USBn/..." path: the drive's number, with the rest of the path in *rest. */
+static int usb_path(const char *path, const char **rest)
+{
+    if (!usb_prefix[0] || !path)
+        return -1;
+    while (*path == '/')
+        path++;
+    if (strncasecmp(path, "USB", 3) || path[3] < '0' || path[3] >= '0' + LOCALFS_USB_DRIVES ||
+        (path[4] && path[4] != '/'))
+        return -1;
+    *rest = path + 4;
+    return path[3] - '0';
+}
+
 void localfs_real_path(const char *root, const char *path, char *out, size_t cap)
 {
+    char drive[300];
+    const char *rest;
+    int usb = usb_path(path, &rest);
+    if (usb >= 0) {
+        snprintf(drive, sizeof(drive), "%s%d", usb_prefix, usb);
+        root = drive;
+        path = rest;
+    }
     size_t n = (size_t)snprintf(out, cap, "%s", root);
     while (n > 1 && out[n - 1] == '/')
         out[--n] = 0;
@@ -117,6 +155,28 @@ static int list_raw(const char *dir, ftp_entry *out, int max)
 }
 #endif
 
+/* At the top ("/"): the USB drives plugged in, as folders USB0... before everything else. */
+static int add_usb_drives(const char *path, ftp_entry *out, int n, int max)
+{
+    while (path && *path == '/')
+        path++;
+    if (!usb_prefix[0] || (path && *path))
+        return n;
+    for (int d = LOCALFS_USB_DRIVES - 1; d >= 0; d--) {
+        char real[300];
+        if (!localfs_usb_drive(d, real, sizeof(real)) || max <= 0)
+            continue;
+        if (n == max)
+            n--;                                    /* (full: the last entry makes way) */
+        memmove(out + 1, out, sizeof(*out) * (size_t)n);
+        memset(&out[0], 0, sizeof(out[0]));
+        snprintf(out[0].name, sizeof(out[0].name), "USB%d", d);
+        out[0].is_dir = 1;
+        n++;
+    }
+    return n;
+}
+
 int localfs_list(const char *root, const char *path, ftp_entry *out, int max,
                  char *err, size_t errcap)
 {
@@ -129,7 +189,7 @@ int localfs_list(const char *root, const char *path, ftp_entry *out, int max,
         int n = list_raw(dir, out, max);
         if (n >= 0) {
             ftp_sort(out, n);
-            return n;
+            return add_usb_drives(path, out, n, max);
         }
         printf("localfs: %s: opendir: %s\n", dir, strerror(why));
 #endif
@@ -143,7 +203,16 @@ int localfs_list(const char *root, const char *path, ftp_entry *out, int max,
         add_entry(dir, de->d_name, out, &n);
     closedir(d);
     ftp_sort(out, n);
-    return n;
+    return add_usb_drives(path, out, n, max);
+}
+
+/* Make one folder open to everyone: mkdir's mode is narrowed by the umask, chmod's isn't. */
+static int make_dir(const char *p)
+{
+    if (mkdir(p, 0777) != 0)
+        return -1;
+    chmod(p, 0777);
+    return 0;
 }
 
 int localfs_mkdirs(const char *dir)
@@ -153,11 +222,11 @@ int localfs_mkdirs(const char *dir)
     for (char *s = p + 1; *s; s++)
         if (*s == '/') {
             *s = 0;
-            mkdir(p, 0755);
+            make_dir(p);
             *s = '/';
         }
     struct stat st;
-    return mkdir(p, 0755) == 0 || (stat(p, &st) == 0 && S_ISDIR(st.st_mode)) ? 0 : -1;
+    return make_dir(p) == 0 || (stat(p, &st) == 0 && S_ISDIR(st.st_mode)) ? 0 : -1;
 }
 
 int localfs_write(const char *file, const void *data, size_t len)

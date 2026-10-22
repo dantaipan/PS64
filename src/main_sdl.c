@@ -98,6 +98,7 @@ typedef struct {
     int         launch_fav;   /* debug: launch this favourite (1-based) at startup */
     int         use_emulator; /* c64 = emulator: the built-in emulator is the machine */
     const char *games_dir;    /* the emulator's games folder (default: "games" next to the config) */
+    const char *usb_prefix;   /* USB drive n is at this + n (the PS5: /mnt/usb), or "none" */
     const char *emu_load;     /* debug: start this file in the emulator at launch */
     int         dpad_keys;    /* emulator: D-pad/stick/Cross as cursor keys and RETURN */
     int         no_home;      /* start straight away (debug flags imply it) instead of on the home screen */
@@ -136,7 +137,8 @@ static void usage(const char *argv0)
         "          [--search-roots /SD,/USB0] [--build-index] [--search TEXT]\n"
         "          [--assembly64-url URL] [--a64-search TEXT]\n"
         "          [--a64-latest CATEGORY]\n"
-        "          [--c64 emulator] [--games-dir DIR] [--dpad joystick|keys] [--emu-load FILE]\n"
+        "          [--c64 emulator] [--games-dir DIR] [--usb-prefix PATH|none] [--dpad joystick|keys]\n"
+        "          [--emu-load FILE]\n"
         "\n"
         "--c64 (alias --start) streams from and controls that C64; --remote only controls it;\n"
         "      --c64 emulator runs the built-in emulator instead (if this build has it).\n"
@@ -188,6 +190,11 @@ static int parse_args(int argc, char **argv, options *o)
     o->launch_fav = 0;
     o->use_emulator = 0;
     o->games_dir = NULL;
+#ifdef PS64_NATIVE
+    o->usb_prefix = "/mnt/usb";
+#else
+    o->usb_prefix = NULL;
+#endif
     o->emu_load = NULL;
     o->dpad_keys = 0;
     o->no_home = 0;
@@ -214,6 +221,7 @@ static int parse_args(int argc, char **argv, options *o)
             i++;
         }
         else if (!strcmp(a, "--games-dir") && next) { o->games_dir = next; i++; }
+        else if (!strcmp(a, "--usb-prefix") && next) { o->usb_prefix = next; i++; }
         else if (!strcmp(a, "--emu-load") && next)  { o->emu_load = next; i++; }
         else if (!strcmp(a, "--dpad") && next)      { o->dpad_keys = !strcasecmp(next, "keys"); i++; }
         else if (!strcmp(a, "--pick"))              { o->pick = 1; }
@@ -1236,12 +1244,21 @@ int main(int argc, char **argv)
         return 2;
     }
     set_index_file(config);
+    /* USB drives plugged into the PS5: folders USB0... in the games folder and the SID player. */
+    localfs_set_usb(opt.usb_prefix);
+    for (int d = 0; d < LOCALFS_USB_DRIVES; d++) {
+        char real[300];
+        if (localfs_usb_drive(d, real, sizeof(real)))
+            printf("usb: USB%d is %s\n", d, real);
+    }
 #ifdef PS64_EMU
     next_to_config(config, "games", games_dir, sizeof(games_dir));
     next_to_config(config, "emulator", emu_dir, sizeof(emu_dir));
     next_to_config(config, "ps64-emu-index.txt", emu_index_file, sizeof(emu_index_file));
     if (opt.games_dir)
         snprintf(games_dir, sizeof(games_dir), "%s", opt.games_dir);
+    /* The folders people fill over FTP: open to everyone (older PS64s made them 0755). */
+    chmod(games_dir, 0777);
     static emugames eg;
     eg_init(&eg, games_dir, emu_dir);
 #endif
@@ -1352,6 +1369,7 @@ int main(int argc, char **argv)
     next_to_config(config, "sid-cache", sid_cache_dir, sizeof(sid_cache_dir));
     if (opt.sids_dir)
         snprintf(sids_dir, sizeof(sids_dir), "%s", opt.sids_dir);
+    chmod(sids_dir, 0777);
     sp.prefer_ultimate = opt.sid_ultimate;
     /* Debug: play a .sid straight away. */
     if (opt.sid_file) {
