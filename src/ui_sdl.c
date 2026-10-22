@@ -618,7 +618,7 @@ static void draw_sid(SDL_Renderer *ren, const ui_state *u, Uint32 now)
         SDL_Color c = WHITE;
         int playing = 0;
         if (u->sid_can_ultimate && i == 0) {
-            snprintf(text, sizeof(text), "Play on: %s", u->sid_on_ultimate ? "C64 Ultimate" : "PS64");
+            snprintf(text, sizeof(text), "Play on: %s", u->sid_prefer_ultimate ? "C64 Ultimate" : "PS64");
             c = CYAN;
         } else if (i < extra) {
             snprintf(text, sizeof(text), "%s", tab == SID_TAB_LOCAL ? ".. (up)" : "Search Assembly64 music...");

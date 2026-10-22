@@ -127,6 +127,7 @@ typedef struct {
     int        a64_for_sid;       /* the Assembly64 search was opened by the SID player */
     /* Now playing (set by main). */
     int        sid_active, sid_paused, sid_mode, sid_on_ultimate, sid_can_ultimate;
+    int        sid_prefer_ultimate;   /* "Play on: C64 Ultimate" chosen (the next tune plays there) */
     int        sid_play_tab, sid_play_index;   /* the list entry playing, -1 none */
     char       sid_title[64], sid_author[64], sid_released[64], sid_status[96];
     int        sid_song, sid_songs, sid_model, sid_ntsc;

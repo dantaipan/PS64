@@ -840,6 +840,7 @@ static unsigned char *read_file(const char *path, size_t max, size_t *len)
 /* Copy the playing tune's details into the UI. */
 static void sid_show(ui_state *ui)
 {
+    ui->sid_prefer_ultimate = sp.prefer_ultimate;
     ui->sid_active = sp.engine != NULL;
     ui->sid_paused = sp.paused;
     ui->sid_on_ultimate = sp.on_ultimate;
@@ -1371,6 +1372,7 @@ int main(int argc, char **argv)
         snprintf(sids_dir, sizeof(sids_dir), "%s", opt.sids_dir);
     chmod(sids_dir, 0777);
     sp.prefer_ultimate = opt.sid_ultimate;
+    ui.sid_prefer_ultimate = sp.prefer_ultimate;
     /* Debug: play a .sid straight away. */
     if (opt.sid_file) {
         size_t len;
