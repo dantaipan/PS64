@@ -218,6 +218,9 @@ void ui_open_home(ui_state *u);
 ui_action ui_open_sid(ui_state *u);
 void ui_sid_set_listing(ui_state *u, const char *path, ftp_entry *entries, int n);
 void ui_sid_list_error(ui_state *u, const char *path, const char *message);
+/* Whether a C64 Ultimate is connected (the "Play on" row): keeps the selection on the
+ * same entry when that row comes or goes. */
+void ui_sid_set_ultimate(ui_state *u, int connected);
 #define SID_DEFAULT_MS 180000     /* tunes without a known length play this long */
 /* Opens the browser at path; returns a UA_LIST action to fetch it. */
 ui_action ui_open_browser(ui_state *u, const char *path);

@@ -1239,15 +1239,38 @@ static ui_action sid_list_action(ui_state *u)
     return a;
 }
 
+/* Start the selection on the first tune, not on "Play on" or "..". */
+static void sid_first_tune(ui_state *u, int tab)
+{
+    int extra = sid_extra(u, tab), n = tab == SID_TAB_LOCAL ? u->sid_count : u->sid_a64_count;
+    u->sid_sel[tab] = n ? extra : extra - 1 < 0 ? 0 : extra - 1;
+    u->sid_top[tab] = 0;
+}
+
 ui_action ui_open_sid(ui_state *u)
 {
     u->screen = UI_SID;
     return sid_list_action(u);
 }
 
+void ui_sid_set_ultimate(ui_state *u, int connected)
+{
+    connected = !!connected;
+    if (connected == u->sid_can_ultimate)
+        return;
+    u->sid_can_ultimate = connected;
+    for (int t = 0; t < 2; t++) {
+        u->sid_sel[t] += connected ? 1 : -1;
+        if (u->sid_sel[t] < 0)
+            u->sid_sel[t] = 0;
+        if (u->sid_top[t] > u->sid_sel[t])
+            u->sid_top[t] = u->sid_sel[t];
+    }
+}
+
 void ui_sid_set_listing(ui_state *u, const char *path, ftp_entry *entries, int n)
 {
-    int kept = 0;
+    int first = !u->sid_entries, kept = 0;
     for (int i = 0; i < n; i++)
         if (entries[i].is_dir || files_type(entries[i].name, 0) == FT_SID)
             entries[kept++] = entries[i];
@@ -1256,9 +1279,9 @@ void ui_sid_set_listing(ui_state *u, const char *path, ftp_entry *entries, int n
     u->sid_count = kept;
     u->sid_loading = 0;
     u->sid_error[0] = 0;
-    if (strcmp(u->sid_path, path)) {
+    if (strcmp(u->sid_path, path) || first) {
         snprintf(u->sid_path, sizeof(u->sid_path), "%s", path);
-        u->sid_sel[SID_TAB_LOCAL] = u->sid_top[SID_TAB_LOCAL] = 0;
+        sid_first_tune(u, SID_TAB_LOCAL);
     }
     int rows = sid_rows(u, SID_TAB_LOCAL);
     if (u->sid_sel[SID_TAB_LOCAL] >= rows)
@@ -1291,7 +1314,11 @@ static ui_action input_sid(ui_state *u, int in)
     case IN_UP:    move_in(sel, top, rows, SID_ROWS, -1, 1); break;
     case IN_DOWN:  move_in(sel, top, rows, SID_ROWS, 1, 1); break;
     case IN_LEFT:
-    case IN_RIGHT: u->sid_tab = !u->sid_tab; break;
+    case IN_RIGHT:
+        u->sid_tab = !u->sid_tab;
+        if (u->sid_tab == SID_TAB_A64 && !u->sid_a64_count)
+            sid_first_tune(u, SID_TAB_A64);         /* on the search */
+        break;
     case IN_L1: case IN_R1:
         a = act(UA_SID_SONG);
         a.offset = in == IN_L1 ? -1 : 1;
@@ -1323,7 +1350,6 @@ static ui_action input_sid(ui_state *u, int in)
             size_t len = strlen(u->sid_path);
             snprintf(u->sid_path + len, sizeof(u->sid_path) - len, "%s%s",
                      u->sid_path[len - 1] == '/' ? "" : "/", u->sid_entries[i].name);
-            u->sid_sel[tab] = u->sid_top[tab] = 0;
             return sid_list_action(u);
         }
         if (i < (tab == SID_TAB_LOCAL ? u->sid_count : u->sid_a64_count)) {

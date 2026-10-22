@@ -723,6 +723,9 @@ static void draw_sid(SDL_Renderer *ren, const ui_state *u, Uint32 now)
                   v == 0 ? 0x3A : v == 1 ? 0xA3 : 0x7D, v == 0 ? 0x2F : v == 1 ? 0x4D : 0xD8, 255);
     }
 
+    if (u->sid_on_ultimate)
+        font_draw(ren, "Voices: shown when playing on PS64", x, y + 146, 1, DIM);
+
     /* Oscilloscope of the latest sound. */
     int sy = y + 200, sh = 120;
     fill_rect(ren, x, sy, w, sh, 0x08, 0x08, 0x18, 255);

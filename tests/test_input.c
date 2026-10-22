@@ -1244,8 +1244,13 @@ static void test_sid_player(void)
     a = ui_input(&u, IN_L2);
     CHECK(a.kind == UA_SID_SKIP && a.offset == -1);
     CHECK(ui_input(&u, IN_ALT).kind == UA_SID_PAUSE && ui_input(&u, IN_TRIANGLE).kind == UA_SID_MODE);
-    /* With a C64 Ultimate, the first row chooses where it plays. */
-    u.sid_can_ultimate = 1;
+    /* With a C64 Ultimate, the first row chooses where it plays; the selection stays on
+     * the tune it was on when that row appears. */
+    int was = u.sid_sel[SID_TAB_LOCAL];
+    ui_sid_set_ultimate(&u, 1);
+    CHECK(u.sid_can_ultimate && u.sid_sel[SID_TAB_LOCAL] == was + 1);
+    a = ui_input(&u, IN_OK);
+    CHECK(a.kind == UA_SID_PLAY && a.offset == 1);
     u.sid_sel[SID_TAB_LOCAL] = 0;
     CHECK(ui_input(&u, IN_OK).kind == UA_SID_OUTPUT);
     /* The Assembly64 tab starts with its search, which opens Search Assembly64 for music. */

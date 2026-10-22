@@ -755,6 +755,15 @@ typedef struct {
 static sid_player sp;
 static Uint32 sid_render_ms;          /* time spent rendering, for the log */
 
+/* Append stereo sound to the scope's window (mono, the latest SID_SCOPE samples). */
+static void sid_scope_add(const int16_t *stereo, int frames)
+{
+    int from = frames > SID_SCOPE ? frames - SID_SCOPE : 0, add = frames - from;
+    memmove(sp.scope, sp.scope + add, sizeof(sp.scope[0]) * (size_t)(SID_SCOPE - add));
+    for (int k = from; k < frames; k++)
+        sp.scope[SID_SCOPE - (frames - k)] = (int16_t)((stereo[k * 2] + stereo[k * 2 + 1]) / 2);
+}
+
 /* Keep the audio queue topped up with freshly rendered sound (it renders ahead by the
  * queue's length, so sound and the picture stay in step); the end of it is the scope. */
 static void sid_step(audio_out *a, sidplay *p)
@@ -771,10 +780,7 @@ static void sid_step(audio_out *a, sidplay *p)
             break;
         audio_push(a, buf, (size_t)got);
         queued += (Uint32)got;
-        int from = got > SID_SCOPE ? got - SID_SCOPE : 0;
-        memmove(sp.scope, sp.scope + (got - from), sizeof(int16_t) * (size_t)(SID_SCOPE - (got - from)));
-        for (int k = from; k < got; k++)
-            sp.scope[SID_SCOPE - (got - k)] = (int16_t)((buf[k * 2] + buf[k * 2 + 1]) / 2);
+        sid_scope_add(buf, got);
         if (a->draining)
             break;
     }
@@ -793,9 +799,7 @@ static void sid_step_silent(sidplay *p, Uint32 now)
         if (got <= 0)
             break;
         frames -= got;
-        if (got >= SID_SCOPE)
-            for (int k = 0; k < SID_SCOPE; k++)
-                sp.scope[k] = (int16_t)((buf[(got - SID_SCOPE + k) * 2] + buf[(got - SID_SCOPE + k) * 2 + 1]) / 2);
+        sid_scope_add(buf, got);
     }
 }
 
@@ -1562,6 +1566,10 @@ int main(int argc, char **argv)
             size_t frames = audio_feed(&adec, buf, (size_t)n, samples, AUDIO_MAX_FRAMES);
             if (frames)
                 audio_push(&aout, samples, frames);
+#ifdef PS64_SID
+            if (frames && sp.on_ultimate)           /* the SID player's scope, from the Ultimate */
+                sid_scope_add(samples, (int)frames);
+#endif
         }
 
 #ifdef PS64_EMU
@@ -2095,7 +2103,7 @@ int main(int argc, char **argv)
         ui.volume_db = ses.emu ? opt.emulator_volume : opt.stream_volume;
 #ifdef PS64_SID
         /* The SID player: sound, time, the visualiser, and on to the next tune at the end. */
-        ui.sid_can_ultimate = ses.streaming && ses.files;
+        ui_sid_set_ultimate(&ui, ses.streaming && ses.files);
         if (sp.engine && !sp.on_ultimate) {
             ui.volume_db = opt.sid_volume;
             if (opt.audio && !aout.muted && !sp.paused)
@@ -2115,7 +2123,7 @@ int main(int argc, char **argv)
             }
         } else if (sp.engine) {
             ui.sid_time_ms = tick - sp.ult_started;
-            memset(ui.sid_scope, 0, sizeof(ui.sid_scope));
+            memcpy(ui.sid_scope, sp.scope, sizeof(ui.sid_scope));     /* from the stream's sound */
         }
         if (sp.engine && sp.n && !sp.paused) {
             unsigned len = ui.sid_length_ms > 0 ? (unsigned)ui.sid_length_ms : SID_DEFAULT_MS;
