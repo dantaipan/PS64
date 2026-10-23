@@ -118,6 +118,24 @@ typedef struct {
     const char *emu_cart;     /* emulator: the cartridge kept in (a file in carts_dir; "off" none) */
 } options;
 
+#if defined(__APPLE__) && !defined(PS64_NATIVE)
+/* Started as PS64.app (tools/make_dmg.sh): its Resources folder, with a trailing "/";
+ * NULL from the command line. */
+static const char *mac_app_resources(void)
+{
+    static char resources[1024];
+    static int checked;
+    if (!checked) {
+        checked = 1;
+        char *base = SDL_GetBasePath();
+        if (base && strstr(base, ".app/Contents/Resources"))
+            snprintf(resources, sizeof(resources), "%s", base);
+        SDL_free(base);
+    }
+    return resources[0] ? resources : NULL;
+}
+#endif
+
 /* A saved level onto the menu's steps: UI_VOLUME_MIN..0 dB in UI_VOLUME_STEP dB. */
 static int clamp_volume(int db)
 {
@@ -214,6 +232,13 @@ static int parse_args(int argc, char **argv, options *o)
     o->songlengths = "/app0/assets/Songlengths.md5";
 #else
     o->songlengths = "third_party/hvsc/Songlengths.md5";
+#endif
+#if defined(__APPLE__) && !defined(PS64_NATIVE)
+    static char bundled[1100];
+    if (mac_app_resources()) {                  /* PS64.app carries it */
+        snprintf(bundled, sizeof(bundled), "%sSonglengths.md5", mac_app_resources());
+        o->songlengths = bundled;
+    }
 #endif
     o->sid_volume = -12;
     o->sid_ultimate = 0;
@@ -1377,6 +1402,29 @@ int main(int argc, char **argv)
         }
         config = default_config;
     }
+#elif defined(__APPLE__)
+    /* PS64.app: its settings, and the folders filled by hand (games, sids, carts), in
+     * ~/Documents/PS64 (started from Finder, the current folder is "/"). */
+    char mac_config[1024];
+    if (!config && mac_app_resources() && getenv("HOME")) {
+        char dir[900];
+        snprintf(dir, sizeof(dir), "%s/Documents/PS64", getenv("HOME"));
+        static const char *const filled[] = { "games", "sids", "carts" };   /* there to fill */
+        for (int i = 0; i < 3; i++) {
+            char sub[1000];
+            snprintf(sub, sizeof(sub), "%s/%s", dir, filled[i]);
+            localfs_mkdirs(sub);
+        }
+        snprintf(mac_config, sizeof(mac_config), "%s/ps64.cfg", dir);
+        FILE *probe = fopen(mac_config, "r");
+        if (probe)
+            fclose(probe);
+        else if ((probe = fopen(mac_config, "w")) != NULL) {
+            fputs("# PS64 settings: one \"key = value\" per line (see the README).\n", probe);
+            fclose(probe);
+        }
+        config = mac_config;
+    }
 #endif
     int cargc = argc;
     char **cargv = argv;
@@ -1461,7 +1509,7 @@ int main(int argc, char **argv)
     SDL_Window *win = SDL_CreateWindow("PS64", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
         1920, 1080, SDL_WINDOW_FULLSCREEN);
 #else
-    SDL_Window *win = SDL_CreateWindow("C64 Ultimate VIC stream",
+    SDL_Window *win = SDL_CreateWindow("PS64",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         VIC_MAX_WIDTH * opt.scale, 272 * opt.scale,
         SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);

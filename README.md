@@ -34,6 +34,19 @@ VICE libretro core (pinned commit) into `third_party/vice` and builds it; the
 Makefile includes the emulator whenever that library is there, and
 `make test` then also runs `test_emulator` against the real core.
 
+### Mac app (DMG)
+
+`tools/make_dmg.sh` packages the Mac build as **PS64.app** in `dist/PS64-<version>.dmg`
+(open it and drag PS64 to Applications). It needs the libraries above plus
+`tools/get_sidplayfp.sh` and `tools/get_songlengths.sh`; the app carries SDL2 and the song
+lengths. Started as an app, PS64 keeps its settings (`ps64.cfg`) and the folders you fill
+(`games`, `sids`, `carts`, made on the first start) in **`~/Documents/PS64`**.
+
+- Apple Silicon only (VICE and libsidplayfp are built for arm64).
+- Signed ad hoc, not notarized: on another Mac, right-click PS64 > **Open** the first time
+  (or allow it in System Settings > Privacy & Security). macOS also asks once to let it use
+  the local network (to find the C64 Ultimate) and Documents.
+
 ## Run
 
 On the C64 Ultimate, either start the VIC stream (port 11000) and audio stream
