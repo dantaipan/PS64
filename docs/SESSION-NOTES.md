@@ -293,7 +293,7 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
 - Hints use **PlayStation button icons**: Kenney Input Prompts 1.5 (CC0), PlayStation set,
   embedded by `tools/gen_prompts.sh` into `src/prompts_svg.h`; hint strings use tokens
   (`"{cross} play  {l1}{r1} page"`, `src/prompts.[ch]`, `src/prompts_sdl.c`); D-pad icons
-  recoloured (directions white, others 60%). Only PS64's own hint strings use tokens.
+  recoloured (directions white, others 30%). Only PS64's own hint strings use tokens.
 - The keyboard's own hint line shows only when typing onto the C64 (not on PS64's screens).
 - **Cartridge option** (Options > Cartridge, both machines). Not yet tried on the PS5, nor
   on the real C64 Ultimate (no .crt in its `/flash/carts` yet; ask before the first switch).

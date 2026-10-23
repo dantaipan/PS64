@@ -40,9 +40,9 @@ out=src/prompts_svg.h
     echo "$SET" | while IFS=: read -r token file; do
         printf '    /* {%s} */\n    "' "$token"
         # D-pad: Kenney marks the directions in red; here they're white and the others
-        # fade to 60% (40% transparent).
+        # fade to 30% (70% transparent).
         case $token in
-        dpad|lr|ud) recolour='s/fill="#FFFFFF"/fill="#FFFFFF" fill-opacity="0.6"/g; s/#E73246/#FFFFFF/g' ;;
+        dpad|lr|ud) recolour='s/fill="#FFFFFF"/fill="#FFFFFF" fill-opacity="0.3"/g; s/#E73246/#FFFFFF/g' ;;
         *)          recolour='' ;;
         esac
         # one C string: newlines dropped, quotes escaped
