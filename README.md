@@ -316,6 +316,12 @@ Ultimate's SID chips instead (its sound comes back through the stream; `sid-outp
 third list, **C64 Ultimate**, browses its storage (SD, USB): a tune from it is fetched over
 FTP and plays wherever Play on says.
 
+**Home music**: while the home screen is up, PS64 plays a random tune from the SID folder
+(and its subfolders; if there are none, one of Assembly64's latest tunes). It always plays
+on PS64, never on the Ultimate. Square plays another, Triangle turns it off or on (also
+**Options > Home music**, saved as `home-music`). It stops when you open Vice or Stream,
+and carries on into the SID player.
+
 ## Built-in emulator (no C64 Ultimate needed)
 
 PS64 can run its own C64 instead of showing a C64 Ultimate: the VICE
@@ -346,7 +352,8 @@ they work in games.
   (port 2; **Joystick port** in the menu). **Options > D-pad** switches them to
   cursor keys and RETURN for BASIC and menus (saved as `dpad = keys`). The other
   buttons, the on-screen keyboard and the shortcuts work as with the Ultimate.
-- **Reset C64** resets; **Switch off and on** also removes disks and cartridges.
+- **Reset C64** resets; **Switch off and on** also removes disks and cartridge games
+  (the cartridge chosen under **Options > Cartridge** stays in; see Cartridges below).
 - SID and MOD files can't be played in the emulator yet (VICE plays SIDs with
   a separate program); they stay C64 Ultimate only.
 
@@ -354,6 +361,23 @@ The emulator keeps its settings and saves in `emulator/` next to the config.
 The C64 ROMs come built into the VICE core; no ROM files are needed (its log
 mentions missing CMD drive ROMs, which only matter for drives PS64 doesn't use).
 Debug options: `--c64 emulator`, `--games-dir DIR`, `--emu-load /path/in/games`.
+
+## Cartridges (fast loaders)
+
+**Options > Cartridge: < Off >** puts a cartridge in the C64's expansion port and leaves it
+there, e.g. a fast loader like Epyx FastLoad. Left/Right go through Off and the cartridges
+found, and the C64 restarts with the one chosen. PS64 doesn't come with any: cartridge ROMs
+are copyrighted, so bring your own .crt files.
+
+- **Built-in emulator**: copy .crt files into `carts/` next to the config
+  (`/data/ps64/carts` on the PS5; `carts-dir` sets another). The choice is saved
+  (`emu-cartridge`) and the cartridge stays in through loads and Switch off and on. Loading
+  a cartridge game (CRT) puts that in instead, for that game.
+- **C64 Ultimate**: the list is the .crt files in the Ultimate's `/flash/carts` folder
+  (copy them there over FTP or from its menu). PS64 sets the Ultimate's **C64 and
+  Cartridge Settings > Cartridge** to the one chosen and reboots it. The setting isn't
+  saved to the Ultimate's flash, so switching the C64 off takes the cartridge out again
+  (save it from the Ultimate's own menu to keep it).
 
 ## Licence
 

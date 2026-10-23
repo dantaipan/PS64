@@ -59,7 +59,16 @@ int  files_screen_ready(const unsigned char *screen, int len);
  */
 int  files_parse_drive_a(const char *json, int *bus_id, int *enabled);
 
-enum { FR_NONE, FR_LISTING, FR_DONE, FR_ERROR, FR_FILE };
+/*
+ * The "current" value of a setting in the Ultimate's GET /v1/configs/<category>/<item>
+ * answer ("" for an empty one). Returns 0, or -1 if there's none.
+ */
+int  files_parse_config_current(const char *json, char *out, size_t cap);
+
+/* Where the C64 Ultimate keeps the cartridges its "Cartridge" setting can name. */
+#define FILES_CARTS_DIR "/flash/carts"
+
+enum { FR_NONE, FR_LISTING, FR_DONE, FR_ERROR, FR_FILE, FR_CARTS };
 
 typedef struct {
     int        kind;
@@ -69,6 +78,7 @@ typedef struct {
     int        count;
     unsigned char *data;         /* FR_FILE: the file's bytes, owned by the caller after poll */
     size_t     len;
+    char       cart[128];        /* FR_CARTS (entries: the .crt files): the one set, "" none */
 } files_result;
 
 typedef struct c64files c64files;
@@ -84,6 +94,13 @@ void files_action(c64files *f, const char *path, int action);
 void files_action_data(c64files *f, const char *name, unsigned char *data, size_t len, int action);
 /* Play a .sid's bytes on the Ultimate (takes data), song 1..n (0: its start song). */
 void files_play_sid(c64files *f, const char *name, unsigned char *data, size_t len, int song);
+/*
+ * Cartridges: the .crt files in FILES_CARTS_DIR and the one the "Cartridge" setting
+ * names (FR_CARTS); set it (name "" for none) and reboot the C64 so it's put in
+ * (FR_DONE). The setting isn't saved to flash: switching the C64 off clears it.
+ */
+void files_carts(c64files *f);
+void files_set_cart(c64files *f, const char *name);
 int  files_busy(c64files *f);
 /* Returns 1 and fills res when a request has finished (free res->entries). */
 int  files_poll(c64files *f, files_result *res);

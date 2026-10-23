@@ -295,6 +295,29 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
   (`"{cross} play  {l1}{r1} page"`, `src/prompts.[ch]`, `src/prompts_sdl.c`); D-pad icons
   recoloured (directions white, others 60%). Only PS64's own hint strings use tokens.
 - The keyboard's own hint line shows only when typing onto the C64 (not on PS64's screens).
+- **Cartridge option** (Options > Cartridge, both machines). Not yet tried on the PS5, nor
+  on the real C64 Ultimate (no .crt in its `/flash/carts` yet; ask before the first switch).
+  - Emulator: `emulator_set_cartridge()` calls VICE's `cartridge_attach_image(0, crt)`.
+    The core detaches every cartridge on each load (`retro_unload_game`, and
+    `initcmdline_cleanup` in `reload_restart`), so PS64 re-attaches it after loads and power
+    cycles (not when the load is itself a CRT). VICE's `CartridgeReset` power-cycles on
+    attach, and autostart still works. Its own `vice_cartridge` core option isn't used: it
+    scans with `opendir` (EPERM on the PS5). Files: `carts/` (`carts-dir`), saved as
+    `emu-cartridge` (`off`). Tested on the Mac with a homemade 8K .crt that turns the border
+    red (BASIC shows 30719 bytes free).
+  - C64 Ultimate (firmware 1.1.0, checked read-only, and against the 1541ultimate source):
+    `C64 and Cartridge Settings / Cartridge` holds a file name in `/flash/carts` (`list_crts`
+    in `c64.cc`); it loads at reset. PS64 lists the folder over FTP, reads `current` with
+    GET, sets it with `POST /v1/configs` (JSON, so "" works for Off), then
+    `PUT /v1/machine:reboot`. It never calls `configs:save_to_flash`, so the change lasts
+    until the C64 is switched off. `POST /v1/configs` exists on 1.1.0 (a text/plain probe
+    gave 400 "Content type should be 'application/json'").
+- **Home music**: `src/sidrandom.[ch]` walks the SID folder on a thread (skips USBn,
+  at most 5000 folders, reservoir sampling). With no tunes it falls back to a random one of
+  Assembly64's latest `type:sid`. `sp.home` marks the tune: always on PS64; at its end or on
+  Square another; it stops for Vice and Stream and carries into the SID player. Saved as
+  `home-music` (on by default). localfs's PS5 getdents buffer is now behind a mutex (the
+  walk runs off the main thread).
 - Notes so far: `docs/release-notes/01.000.004.md`. Release only when the user says so.
 
 ## Diagnosing native crashes
@@ -323,7 +346,8 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
 
 - **Next:** install PS64 Dev when the PS5 is on (the SID player's C64 Ultimate list and the
   D-pad icon colours are built but not yet on the PS5), then the user tests the C64 Ultimate
-  list (browse /SD or /USB0, play on PS64 and on the Ultimate). Keep collecting 1.0.4 fixes.
+  list (browse /SD or /USB0, play on PS64 and on the Ultimate), the Cartridge option (with
+  their own Epyx .crt in `/data/ps64/carts`) and the home music. Keep collecting 1.0.4 fixes.
 - Possible: a README/About note that an unpowered real drive on the bus blocks loading.
 - Possible: faster disk loading (Ultimate drive/speed settings), save states.
 - The Prospero Store's own self-update was broken in its 1.000.070 (fixed upstream); the user's

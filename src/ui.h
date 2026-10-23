@@ -29,6 +29,8 @@ enum { MI_HOME, MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS, MI_RECENTS, MI
        MI_AUDIO, MI_PORT, MI_INDEX, MI_QUIT,
        MI_DISK, MI_CONTROLLER,          /* emulator only */
        MI_ABOUT,
+       MI_CART,                         /* the cartridge kept in the port (e.g. a fast loader) */
+       MI_HOME_MUSIC,                   /* a random SID on the home screen */
        MI_COUNT };
 
 enum { UA_NONE, UA_MUTE, UA_PORT, UA_QUIT, UA_CONNECT, UA_RESCAN,
@@ -49,7 +51,10 @@ enum { UA_NONE, UA_MUTE, UA_PORT, UA_QUIT, UA_CONNECT, UA_RESCAN,
        UA_DISK,          /* emulator: insert the next (offset 1) or previous (-1) disk */
        UA_CONTROLLER,    /* emulator: D-pad as joystick <-> cursor keys */
        UA_A64_LATEST,    /* Assembly64: the latest releases (category_key) */
-       UA_VOLUME };      /* audio: one step quieter (offset -1) or louder (1) */
+       UA_VOLUME,        /* audio: one step quieter (offset -1) or louder (1) */
+       UA_CART,          /* menu: put cartridge text in (a name from carts[]; "" takes it out) */
+       UA_HOME_MUSIC,    /* the home screen's music on <-> off */
+       UA_HOME_NEXT };   /* home: another random tune */
 
 typedef struct {
     int  kind;
@@ -80,6 +85,11 @@ enum { SHOT_NONE, SHOT_LOADING, SHOT_READY };
 /* One step of the Audio item (dir -1 quieter, 1 louder): below the lowest level is Off,
  * louder from Off comes back at the lowest level. Updates *db and *muted. */
 void ui_volume_step(int *db, int *muted, int dir);
+
+/* Cartridges offered in the menu (the emulator's carts folder, the C64 Ultimate's
+ * /flash/carts): a list of names, the one in, and whether the list is known yet. */
+#define UI_CARTS 16
+enum { CARTS_LOADING, CARTS_READY, CARTS_ERROR };
 
 /* SID player: its lists (the C64 Ultimate's while one is connected), and the size of the
  * oscilloscope's sample window. */
@@ -114,6 +124,11 @@ typedef struct {
     int disk, disks;              /* emulator: inserted disk (0-based) of a swappable set */
     int joy_keys;                 /* emulator: D-pad/stick/Cross are cursor keys and RETURN */
     char games_dir[256];          /* emulator: the real folder behind "/" (shown when empty) */
+    char carts[UI_CARTS][64];     /* cartridge files (set by main) */
+    int  ncarts, cart_sel;        /* cart_sel: index of the one in, -1 none */
+    int  carts_state;             /* CARTS_* */
+    int  home_music;              /* the home screen plays a random SID (set by main) */
+    char home_tune[128];          /* what it plays ("" nothing; set by main) */
 
     /* Home screen. */
     int  home_sel;                /* HOME_VICE, HOME_STREAM, HOME_SID */

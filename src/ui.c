@@ -36,6 +36,7 @@ void ui_setup(ui_state *u)
         snprintf(u->sid_dirs[t].path, sizeof(u->sid_dirs[t].path), "/");
     u->sid_play_index = -1;
     u->home_last = -1;
+    u->cart_sel = -1;
 }
 
 void ui_free(ui_state *u)
@@ -201,11 +202,12 @@ static int petscii_to_ascii(int p)
 int ui_menu_items(const ui_state *u, int *out)
 {
     static const int ultimate[] = { MI_HOME, MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS,
-                                    MI_RECENTS, MI_RESET, MI_REBOOT, MI_AUDIO, MI_PORT, MI_INDEX,
-                                    MI_ABOUT, MI_QUIT };
+                                    MI_RECENTS, MI_RESET, MI_REBOOT, MI_CART, MI_AUDIO, MI_HOME_MUSIC,
+                                    MI_PORT, MI_INDEX, MI_ABOUT, MI_QUIT };
     static const int emulator[] = { MI_HOME, MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS,
                                     MI_RECENTS, MI_DISK, MI_RESET, MI_REBOOT, MI_CONTROLLER,
-                                    MI_AUDIO, MI_PORT, MI_INDEX, MI_ABOUT, MI_QUIT };
+                                    MI_CART, MI_AUDIO, MI_HOME_MUSIC, MI_PORT, MI_INDEX, MI_ABOUT,
+                                    MI_QUIT };
     const int *src = u->emulator ? emulator : ultimate;
     int n = u->emulator ? (int)(sizeof(emulator) / sizeof(emulator[0]))
                         : (int)(sizeof(ultimate) / sizeof(ultimate[0]));
@@ -254,6 +256,21 @@ static ui_action input_menu(ui_state *u, int in)
             return a;
         case MI_PORT:  return act(UA_PORT);
         case MI_CONTROLLER: return act(UA_CONTROLLER);
+        case MI_HOME_MUSIC: return act(UA_HOME_MUSIC);
+        case MI_CART: {
+            if (u->carts_state != CARTS_READY || !u->ncarts)
+                return none();
+            /* Off, then each cartridge in turn (it goes in straight away). */
+            int sel = u->cart_sel + (in == IN_LEFT ? -1 : 1);
+            if (sel < -1)
+                sel = u->ncarts - 1;
+            if (sel >= u->ncarts)
+                sel = -1;
+            u->cart_sel = sel;
+            ui_action a = act(UA_CART);
+            snprintf(a.text, sizeof(a.text), "%s", sel >= 0 ? u->carts[sel] : "");
+            return a;
+        }
         case MI_DISK: {
             ui_action a = act(UA_DISK);
             a.offset = in == IN_LEFT ? -1 : 1;
@@ -1416,6 +1433,11 @@ static ui_action input_home(ui_state *u, int in)
     case IN_LEFT:  if (u->home_sel > 0) u->home_sel--; break;
     case IN_RIGHT: if (u->home_sel < HOME_ITEMS - 1) u->home_sel++; break;
     case IN_UP:    u->home_focus = HOME_ON_GEAR; break;
+    case IN_TRIANGLE: return act(UA_HOME_MUSIC);
+    case IN_ALT:
+        if (u->home_music)
+            return act(UA_HOME_NEXT);
+        break;
     case IN_OK:
         if (u->home_sel != u->home_last) {      /* another kind of machine: a fresh search */
             if (u->home_last >= 0)

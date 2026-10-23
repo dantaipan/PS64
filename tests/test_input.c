@@ -19,6 +19,7 @@
 #include "../src/playlist.h"
 #include "../src/prompts.h"
 #include "../src/settings.h"
+#include "../src/sidrandom.h"
 #include "../src/ui.h"
 
 #include <arpa/inet.h>
@@ -335,12 +336,37 @@ static void test_ui(void)
     int menu[MI_COUNT];
     CHECK(menu[ui_menu_items(&u, menu) - 1] == MI_QUIT && u.sel == ui_menu_items(&u, menu) - 1);
     CHECK(ui_input(&u, IN_OK).kind == UA_QUIT);
-    u.sel = MI_AUDIO;
+    int nmenu = ui_menu_items(&u, menu);
+    for (int i = 0; i < nmenu; i++)
+        if (menu[i] == MI_AUDIO)
+            u.sel = i;
+    CHECK(menu[u.sel] == MI_AUDIO && menu[u.sel - 1] == MI_CART && menu[u.sel + 1] == MI_HOME_MUSIC);
     CHECK(ui_input(&u, IN_OK).kind == UA_MUTE);
     ui_action va = ui_input(&u, IN_RIGHT);
     CHECK(va.kind == UA_VOLUME && va.offset == 1);
     va = ui_input(&u, IN_LEFT);
     CHECK(va.kind == UA_VOLUME && va.offset == -1);
+    /* Home music: any of Left, Right, Cross turns it on or off. */
+    u.sel++;
+    CHECK(ui_input(&u, IN_LEFT).kind == UA_HOME_MUSIC && ui_input(&u, IN_OK).kind == UA_HOME_MUSIC);
+    /* Cartridge: nothing while the list is on its way or empty; then Off -> each -> Off. */
+    u.sel -= 2;
+    CHECK(u.cart_sel == -1 && ui_input(&u, IN_RIGHT).kind == UA_NONE);
+    u.carts_state = CARTS_READY;
+    CHECK(ui_input(&u, IN_RIGHT).kind == UA_NONE);
+    snprintf(u.carts[0], sizeof(u.carts[0]), "Epyx FastLoad.crt");
+    snprintf(u.carts[1], sizeof(u.carts[1]), "Final Cartridge III.crt");
+    u.ncarts = 2;
+    ui_action ca = ui_input(&u, IN_RIGHT);
+    CHECK(ca.kind == UA_CART && !strcmp(ca.text, "Epyx FastLoad.crt") && u.cart_sel == 0);
+    ca = ui_input(&u, IN_OK);
+    CHECK(ca.kind == UA_CART && !strcmp(ca.text, "Final Cartridge III.crt") && u.cart_sel == 1);
+    ca = ui_input(&u, IN_RIGHT);
+    CHECK(ca.kind == UA_CART && !ca.text[0] && u.cart_sel == -1);
+    ca = ui_input(&u, IN_LEFT);
+    CHECK(ca.kind == UA_CART && !strcmp(ca.text, "Final Cartridge III.crt") && u.cart_sel == 1);
+    ui_setup(&u);
+    ui_open_menu(&u);
     /* Volume steps: 2 dB, no louder than 0 dB, Off below -30 dB, back at -30 dB. */
     int db = -12, off = 0;
     ui_volume_step(&db, &off, 1);
@@ -1099,7 +1125,7 @@ static void test_emulator_mode(void)
     ui_setup(&u);
     int items[MI_COUNT];
     int nu = ui_menu_items(&u, items);
-    CHECK(nu == 14 && items[nu - 1] == MI_QUIT && items[nu - 2] == MI_ABOUT);
+    CHECK(nu == 16 && items[nu - 1] == MI_QUIT && items[nu - 2] == MI_ABOUT);
     u.emulator = 1;
     int ne = ui_menu_items(&u, items);
     int has_disk = 0, has_ctl = 0;
@@ -1107,10 +1133,10 @@ static void test_emulator_mode(void)
         has_disk |= items[i] == MI_DISK;
         has_ctl |= items[i] == MI_CONTROLLER;
     }
-    CHECK(ne == 15 && !has_disk && has_ctl && items[ne - 2] == MI_ABOUT);
+    CHECK(ne == 17 && !has_disk && has_ctl && items[ne - 2] == MI_ABOUT);
     u.disks = 2;
     ne = ui_menu_items(&u, items);
-    CHECK(ne == 16 && items[0] == MI_HOME && items[7] == MI_DISK);
+    CHECK(ne == 18 && items[0] == MI_HOME && items[7] == MI_DISK && items[11] == MI_CART);
     ui_open_menu(&u);
     u.sel = 7;
     ui_action a = ui_input(&u, IN_LEFT);
@@ -1186,6 +1212,12 @@ static void test_home(void)
     ui_input(&u, IN_UP);
     ui_input(&u, IN_DOWN);
     CHECK(u.home_focus == HOME_ON_ITEMS);
+    /* The home music: Triangle turns it on or off, Square plays another (only while it's on). */
+    CHECK(ui_input(&u, IN_TRIANGLE).kind == UA_HOME_MUSIC);
+    u.home_music = 0;
+    CHECK(ui_input(&u, IN_ALT).kind == UA_NONE);
+    u.home_music = 1;
+    CHECK(ui_input(&u, IN_ALT).kind == UA_HOME_NEXT && u.screen == UI_HOME);
     ui_free(&u);
 
     /* 3D: projection, and a cube shows one face head on, three from an angle. */
@@ -1341,6 +1373,154 @@ static void test_ftp_get(void)
           !data && strstr(err, "550"));
     close(fake_ftp_fd);
     pthread_join(t, NULL);
+}
+
+/* A tiny web server on port 80 for the cartridge setting: answers each request,
+ * keeping "METHOD path body" of each in fake_http_log. */
+static int fake_http_fd = -1;
+static char fake_http_log[2048];
+
+static void *fake_http(void *arg)
+{
+    int requests = *(int *)arg;
+    for (int i = 0; i < requests; i++) {
+        int c = accept(fake_http_fd, NULL, NULL);
+        if (c < 0)
+            return NULL;
+        char req[4096];
+        size_t n = 0;
+        char *body = NULL;
+        long want = 0;
+        for (;;) {                                  /* headers, then Content-Length bytes */
+            ssize_t r = recv(c, req + n, sizeof(req) - 1 - n, 0);
+            if (r <= 0)
+                break;
+            n += (size_t)r;
+            req[n] = 0;
+            if (!body && (body = strstr(req, "\r\n\r\n")) != NULL) {
+                body += 4;
+                const char *cl = strstr(req, "Content-Length:");
+                want = cl ? atol(cl + 15) : 0;
+            }
+            if (body && (long)(req + n - body) >= want)
+                break;
+        }
+        char method[8] = "", path[256] = "";
+        sscanf(req, "%7s %255s", method, path);
+        size_t used = strlen(fake_http_log);
+        snprintf(fake_http_log + used, sizeof(fake_http_log) - used, "%s %s %s\n", method, path,
+                 body ? body : "");
+        const char *answer = strstr(path, "/Cartridge")
+            ? "{ \"C64 and Cartridge Settings\" : { \"Cartridge\" : { \"current\" : \"Epyx \\\"Fast\\\" Load.crt\","
+              " \"presets\" : [ \"\" ], \"default\" : \"\" } }, \"errors\" : [ ] }"
+            : "{ \"errors\" : [ ] }";
+        char reply[600];
+        snprintf(reply, sizeof(reply), "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                 "Content-Length: %zu\r\nConnection: close\r\n\r\n%s", strlen(answer), answer);
+        send(c, reply, strlen(reply), 0);
+        close(c);
+    }
+    return NULL;
+}
+
+static int wait_files(c64files *f, files_result *r)
+{
+    for (int i = 0; i < 500; i++) {
+        if (files_poll(f, r))
+            return 1;
+        usleep(10000);
+    }
+    return 0;
+}
+
+/* Cartridges on the C64 Ultimate: the setting read and written, then a reboot. */
+static void test_carts(void)
+{
+    char cur[64];
+    CHECK(files_parse_config_current("{ \"X\" : { \"Cartridge\" : { \"current\" : \"Epyx FastLoad.crt\", "
+                                     "\"default\" : \"\" } } }", cur, sizeof(cur)) == 0 &&
+          !strcmp(cur, "Epyx FastLoad.crt"));
+    CHECK(files_parse_config_current("{ \"current\" : \"\" }", cur, sizeof(cur)) == 0 && !cur[0]);
+    CHECK(files_parse_config_current("{ \"current\" : 8 }", cur, sizeof(cur)) == -1);
+    CHECK(files_parse_config_current("{ \"errors\" : [ ] }", cur, sizeof(cur)) == -1);
+
+    fake_http_fd = socket(AF_INET, SOCK_STREAM, 0);
+    int one = 1;
+    setsockopt(fake_http_fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    struct sockaddr_in a = { .sin_family = AF_INET, .sin_port = htons(80) };
+    if (bind(fake_http_fd, (struct sockaddr *)&a, sizeof(a)) != 0 || listen(fake_http_fd, 4) != 0) {
+        printf("(cartridges not tested: can't listen on port 80)\n");
+        close(fake_http_fd);
+        return;
+    }
+    static int requests = 3;
+    pthread_t t;
+    pthread_create(&t, NULL, fake_http, &requests);
+    c64files *f = files_start("127.0.0.1", NULL, NULL);
+    files_result r;
+    /* No FTP server here: no .crt files, but the setting still says which is in. */
+    files_carts(f);
+    CHECK(wait_files(f, &r) && r.kind == FR_CARTS && r.count == 0 && !strcmp(r.cart, "Epyx \"Fast\" Load.crt"));
+    free(r.entries);
+    files_set_cart(f, "Epyx \"Fast\" Load.crt");
+    CHECK(wait_files(f, &r) && r.kind == FR_DONE && strstr(r.message, "C64 restarted"));
+    files_stop(f);
+    pthread_join(t, NULL);
+    close(fake_http_fd);
+    CHECK(strstr(fake_http_log, "GET /v1/configs/C64%20and%20Cartridge%20Settings/Cartridge") != NULL);
+    CHECK(strstr(fake_http_log, "POST /v1/configs { \"C64 and Cartridge Settings\" : { \"Cartridge\" : "
+                                "\"Epyx \\\"Fast\\\" Load.crt\" } }\nPUT /v1/machine:reboot") != NULL);
+}
+
+/* The home screen's random tune: every one can come up, folders and USB drives aren't tunes. */
+static void test_sidrandom(void)
+{
+    char dir[] = "/tmp/ps64-sidrandom-XXXXXX", p[600];
+    CHECK(mkdtemp(dir) != NULL);
+    char found[512];
+    CHECK(sidrandom_pick(dir, 1, 100, NULL, found, sizeof(found)) == 0);       /* empty */
+    snprintf(p, sizeof(p), "%s/Hubbard", dir);
+    mkdir(p, 0777);
+    snprintf(p, sizeof(p), "%s/USB0", dir);           /* a drive, as the PS5's /mnt/usb0 */
+    mkdir(p, 0777);
+    static const char *const tunes[] = { "/a.sid", "/Hubbard/Commando.sid", "/Hubbard/Delta.SID" };
+    for (int i = 0; i < 3; i++) {
+        snprintf(p, sizeof(p), "%s%s", dir, tunes[i]);
+        localfs_write(p, "PSID", 4);
+    }
+    snprintf(p, sizeof(p), "%s/readme.txt", dir);
+    localfs_write(p, "x", 1);
+    snprintf(p, sizeof(p), "%s/USB0/drive.sid", dir);
+    localfs_write(p, "PSID", 4);
+    snprintf(p, sizeof(p), "%s/USB", dir);
+    localfs_set_usb(p);                               /* USB0 is a drive: not searched */
+    int seen[3] = {0}, other = 0;
+    for (unsigned seed = 1; seed <= 60; seed++) {
+        CHECK(sidrandom_pick(dir, seed * 2654435761u, 100, NULL, found, sizeof(found)) == 1);
+        int k = -1;
+        for (int i = 0; i < 3; i++)
+            if (!strcmp(found, tunes[i]))
+                k = i;
+        if (k < 0)
+            other++;
+        else
+            seen[k]++;
+    }
+    CHECK(!other && seen[0] && seen[1] && seen[2]);
+    /* On its thread. */
+    sidrandom *r = sidrandom_start(dir, 7);
+    int rc = 0;
+    for (int i = 0; i < 500 && (rc = sidrandom_poll(r, found, sizeof(found))) == 0; i++)
+        usleep(2000);
+    CHECK(rc == 1 && strcasestr(found, ".sid") != NULL);
+    sidrandom_free(r);
+    localfs_set_usb(NULL);
+    /* Reservoir sampling keeps candidate n with chance 1/n: the first always. */
+    unsigned st = 5;
+    CHECK(sidrandom_take(&st, 1));
+    char cmd[700];
+    snprintf(cmd, sizeof(cmd), "rm -rf '%s'", dir);
+    CHECK(system(cmd) == 0);
 }
 
 /* The SID player: its list, subfolders, playing and its buttons; the play order. */
@@ -1516,6 +1696,8 @@ static void test_prompts(void)
 int main(void)
 {
     test_ftp_get();
+    test_carts();
+    test_sidrandom();
     test_prompts();
     test_home();
     test_sid_player();

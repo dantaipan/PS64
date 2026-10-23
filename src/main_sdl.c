@@ -40,6 +40,7 @@
 #endif
 #ifdef PS64_SID
 #include "sidplay.h"
+#include "sidrandom.h"
 #endif
 
 #include <SDL2/SDL.h>
@@ -56,6 +57,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <time.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -111,6 +113,9 @@ typedef struct {
     const char *songlengths;  /* HVSC Songlengths.md5 */
     int         sid_volume;   /* dB, the SID player */
     int         sid_ultimate; /* the SID player plays on the C64 Ultimate (when there is one) */
+    int         home_music;   /* the home screen plays a random SID (on PS64) */
+    const char *carts_dir;    /* the emulator's cartridges (default: "carts" next to the config) */
+    const char *emu_cart;     /* emulator: the cartridge kept in (a file in carts_dir; "off" none) */
 } options;
 
 /* A saved level onto the menu's steps: UI_VOLUME_MIN..0 dB in UI_VOLUME_STEP dB. */
@@ -139,7 +144,8 @@ static void usage(const char *argv0)
         "          [--assembly64-url URL] [--a64-search TEXT]\n"
         "          [--a64-latest CATEGORY]\n"
         "          [--c64 emulator] [--games-dir DIR] [--usb-prefix PATH|none] [--dpad joystick|keys]\n"
-        "          [--emu-load FILE]\n"
+        "          [--emu-load FILE] [--carts-dir DIR] [--emu-cartridge FILE.crt|off]\n"
+        "          [--home-music on|off]\n"
         "\n"
         "--c64 (alias --start) streams from and controls that C64; --remote only controls it;\n"
         "      --c64 emulator runs the built-in emulator instead (if this build has it).\n"
@@ -211,6 +217,9 @@ static int parse_args(int argc, char **argv, options *o)
 #endif
     o->sid_volume = -12;
     o->sid_ultimate = 0;
+    o->home_music = 1;
+    o->carts_dir = NULL;
+    o->emu_cart = NULL;
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
         const char *next = i + 1 < argc ? argv[i + 1] : NULL;
@@ -234,6 +243,13 @@ static int parse_args(int argc, char **argv, options *o)
         else if (!strcmp(a, "--sids-dir") && next)  { o->sids_dir = next; i++; }
         else if (!strcmp(a, "--songlengths") && next) { o->songlengths = next; i++; }
         else if (!strcmp(a, "--sid-volume") && next) { o->sid_volume = atoi(next); i++; }
+        else if (!strcmp(a, "--home-music") && next) {
+            o->home_music = strcasecmp(next, "off") && strcmp(next, "0") && strcasecmp(next, "no") &&
+                            strcasecmp(next, "false");
+            i++;
+        }
+        else if (!strcmp(a, "--carts-dir") && next) { o->carts_dir = next; i++; }
+        else if (!strcmp(a, "--emu-cartridge") && next) { o->emu_cart = next; i++; }
         else if (!strcmp(a, "--sid-output") && next) { o->sid_ultimate = !strcasecmp(next, "ultimate"); i++; }
         else if (!strcmp(a, "--browse-dir") && next) { o->browse_dir = next; i++; }
         else if (!strcmp(a, "--browse") && next)    { o->browse_path = next; i++; }
@@ -686,6 +702,9 @@ static int session_begin(session *s, const options *o, const char *host, const c
  */
 static char games_dir[600] = "games", emu_dir[600] = "emulator";
 static char emu_index_file[600] = "ps64-emu-index.txt";
+/* The cartridges folder, and the cartridge kept in the emulator's port ("" none). */
+static char carts_dir[600] = "carts", emu_cart[128];
+static int emu_set_cart(const char *name);
 
 static void emu_tap(int key, int mods)       { emulator_key_tap(key, mods); }
 static void emu_joy(int port, unsigned bits) { emulator_joystick(port, bits); }
@@ -694,6 +713,8 @@ static void emu_release(void)                { emulator_release_keys(); }
 static int session_begin_emulator(session *s, const options *o)
 {
     /* Started before (then left for the home screen): carry on where it was. */
+    if (!emulator_running() && emu_cart[0])
+        emu_set_cart(emu_cart);              /* (kept for the start) */
     if (emulator_running())
         emulator_joystick(o->joystick_port, 0);
     else if (emulator_start(emu_dir, o->joystick_port) != 0)
@@ -722,6 +743,35 @@ static void emu_list(ui_state *ui, const char *path)
     } else {
         ui_set_listing(ui, path, e, n);
     }
+}
+
+/* The emulator's cartridges: the .crt files in the carts folder, for the menu. */
+static void emu_carts(ui_state *ui)
+{
+    enum { MAX = 256 };
+    ftp_entry *e = malloc(sizeof(*e) * MAX);
+    char err[160];
+    int n = e ? localfs_list(carts_dir, "/", e, MAX, err, sizeof(err)) : -1;
+    ui->ncarts = 0;
+    ui->cart_sel = -1;
+    for (int i = 0; i < n && ui->ncarts < UI_CARTS; i++)
+        if (!e[i].is_dir && files_type(e[i].name, 0) == FT_CRT) {
+            if (!strcmp(e[i].name, emu_cart))
+                ui->cart_sel = ui->ncarts;
+            snprintf(ui->carts[ui->ncarts++], sizeof(ui->carts[0]), "%s", e[i].name);
+        }
+    ui->carts_state = CARTS_READY;
+    free(e);
+}
+
+/* Put cartridge name (a file in the carts folder; "" none) in the emulator's port. */
+static int emu_set_cart(const char *name)
+{
+    char path[800];
+    snprintf(path, sizeof(path), "%s/%s", carts_dir, name);
+    int rc = emulator_set_cartridge(name[0] ? path : NULL);
+    snprintf(emu_cart, sizeof(emu_cart), "%s", rc == 0 ? name : "");
+    return rc;
 }
 
 static double now_ms(void)
@@ -756,6 +806,7 @@ typedef struct {
     int            paused;
     int            prefer_ultimate;   /* "Play on: C64 Ultimate" chosen (sid-output) */
     int            on_ultimate;       /* this tune plays there (one is connected) */
+    int            home;              /* the home screen's random tune (always on PS64) */
     char           want_id[64];       /* the Assembly64 tune being fetched */
     char           want_path[512];    /* the C64 Ultimate's tune being fetched over FTP */
     char           ult_listing[512];  /* the C64 Ultimate folder being listed for the player */
@@ -765,6 +816,12 @@ typedef struct {
 } sid_player;
 static sid_player sp;
 static Uint32 sid_render_ms;          /* time spent rendering, for the log */
+
+/* The home screen's music: the random pick on its way (the SID folder walked, or one of
+ * Assembly64's tunes), when to pick next, and "the home tune ended in the SID player". */
+static sidrandom *home_pick;
+static int        home_a64_wait, home_next;
+static Uint32     home_music_at;
 
 /* Append stereo sound to the scope's window (mono, the latest SID_SCOPE samples). */
 static void sid_scope_add(const int16_t *stereo, int frames)
@@ -850,10 +907,16 @@ static void sid_show(ui_state *ui)
     int cur = playlist_current(&sp.list);
     ui->sid_play_tab = sp.n ? sp.tab : -1;
     ui->sid_play_index = sp.n && cur >= 0 ? sp.row[cur] : -1;
+    ui->home_tune[0] = 0;
     if (!sp.engine)
         return;
     sidplay_info si;
     sidplay_get_info(sp.engine, &si);
+    if (sp.home) {                      /* (HVSC writes "<?>" for unknown) */
+        int title = si.title[0] && strcmp(si.title, "<?>"), author = si.author[0] && strcmp(si.author, "<?>");
+        snprintf(ui->home_tune, sizeof(ui->home_tune), "%s%s%s", title ? si.title : sp.name,
+                 author ? " - " : "", author ? si.author : "");
+    }
     snprintf(ui->sid_title, sizeof(ui->sid_title), "%s", si.title[0] ? si.title : sp.name);
     snprintf(ui->sid_author, sizeof(ui->sid_author), "%s", si.author);
     snprintf(ui->sid_released, sizeof(ui->sid_released), "%s", si.released);
@@ -877,8 +940,10 @@ static void sid_stop(ui_state *ui, c64files *files)
     sp.data = NULL;
     sp.want_id[0] = sp.want_path[0] = 0;
     sp.paused = 0;
+    sp.home = 0;
     ui->sid_active = 0;
     ui->sid_status[0] = 0;
+    ui->home_tune[0] = 0;
     memset(sp.scope, 0, sizeof(sp.scope));
 }
 
@@ -899,11 +964,12 @@ static int sid_play_bytes(ui_state *ui, c64files *files, const char *name, unsig
     sp.data = data;
     sp.len = len;
     snprintf(sp.name, sizeof(sp.name), "%s", name);
-    printf("sid: playing %s (%zu bytes)%s\n", name, len,
-           sp.prefer_ultimate && ui->sid_can_ultimate && files ? " on the C64 Ultimate" : "");
+    /* (The home screen's music never touches the C64 Ultimate.) */
+    sp.on_ultimate = sp.prefer_ultimate && ui->sid_can_ultimate && files && !sp.home;
+    printf("sid: playing %s (%zu bytes)%s\n", name, len, sp.on_ultimate ? " on the C64 Ultimate"
+                                                       : sp.home ? " for the home screen" : "");
     ui->sid_status[0] = 0;
     sp.paused = 0;
-    sp.on_ultimate = sp.prefer_ultimate && ui->sid_can_ultimate && files;
     if (sp.on_ultimate) {
         unsigned char *copy = malloc(len);
         if (copy) {
@@ -976,6 +1042,7 @@ static void sid_play_list(ui_state *ui, int tab, int index, a64 *a64c, c64files 
     sp.items = NULL;
     sp.n = 0;
     sp.tab = tab;
+    sp.home = 0;
     const sid_folder *d = &ui->sid_dirs[tab];
     int folder = tab != SID_TAB_A64;
     int count = folder ? d->count : ui->sid_a64_count, start = 0;
@@ -1001,6 +1068,67 @@ static void sid_play_list(ui_state *ui, int tab, int index, a64 *a64c, c64files 
     }
     playlist_start(&sp.list, sp.n, start, ui->sid_mode, now);
     sid_load_current(ui, a64c, files);
+}
+
+/* The song-length database, once (~5 MB: read when it's first needed). */
+static void sid_lengths_once(const char *file)
+{
+    static int tried;
+    if (tried)
+        return;
+    tried = 1;
+    Uint32 t0 = SDL_GetTicks();
+    int rc = sidplay_songlengths(file);
+    printf("sid: song lengths %s (%u ms)\n", rc == 0 ? "loaded" : "not found", SDL_GetTicks() - t0);
+}
+
+/* The home screen's music: one tune, from the SID folder (path in it) or Assembly64 (item). */
+static void sid_play_home(ui_state *ui, const char *path, const a64_item *item, a64 *a64c)
+{
+    free(sp.row);
+    free(sp.paths);
+    free(sp.items);
+    sp.paths = NULL;
+    sp.items = NULL;
+    sp.n = 0;
+    sp.row = malloc(sizeof(int));
+    if (path) {
+        sp.paths = malloc(sizeof(*sp.paths));
+        if (sp.paths)
+            snprintf(sp.paths[0], sizeof(sp.paths[0]), "%s", path);
+        sp.tab = SID_TAB_LOCAL;
+    } else {
+        sp.items = malloc(sizeof(*sp.items));
+        if (sp.items)
+            sp.items[0] = *item;
+        sp.tab = SID_TAB_A64;
+    }
+    if (!sp.row || (!sp.paths && !sp.items))
+        return;
+    sp.row[0] = -1;                     /* (not an entry of the player's lists) */
+    sp.n = 1;
+    sp.home = 1;
+    playlist_start(&sp.list, 1, 0, PLAY_IN_ORDER, SDL_GetTicks());
+    sid_load_current(ui, a64c, NULL);
+}
+
+/* Stop the home screen's music, and a pick on its way. */
+static void home_music_stop(ui_state *ui)
+{
+    sidrandom_free(home_pick);
+    home_pick = NULL;
+    home_a64_wait = home_next = 0;
+    if (sp.home)
+        sid_stop(ui, NULL);
+}
+
+/* The next random tune for the home screen, soon. */
+static void home_music_next(ui_state *ui, Uint32 now)
+{
+    if (sp.home)
+        sid_stop(ui, NULL);
+    home_next = 1;
+    home_music_at = now;
 }
 
 /* List a folder of the SID folder into the player. */
@@ -1277,6 +1405,12 @@ int main(int argc, char **argv)
         snprintf(games_dir, sizeof(games_dir), "%s", opt.games_dir);
     /* The folders people fill over FTP: open to everyone (older PS64s made them 0755). */
     chmod(games_dir, 0777);
+    next_to_config(config, "carts", carts_dir, sizeof(carts_dir));
+    if (opt.carts_dir)
+        snprintf(carts_dir, sizeof(carts_dir), "%s", opt.carts_dir);
+    localfs_mkdirs(carts_dir);
+    if (opt.emu_cart && strcasecmp(opt.emu_cart, "off"))
+        snprintf(emu_cart, sizeof(emu_cart), "%s", opt.emu_cart);
     static emugames eg;
     eg_init(&eg, games_dir, emu_dir);
 #endif
@@ -1793,6 +1927,9 @@ int main(int argc, char **argv)
                 }
                 break;
             case UA_HOME_VICE:
+#ifdef PS64_SID
+                home_music_stop(&ui);
+#endif
 #ifdef PS64_EMU
                 discover_stop(scan);
                 scan = NULL;
@@ -1812,21 +1949,63 @@ int main(int argc, char **argv)
 #endif
                 break;
             case UA_HOME_STREAM:
+#ifdef PS64_SID
+                home_music_stop(&ui);
+#endif
                 ui_close(&ui);
+                break;
+            case UA_HOME_MUSIC:
+                opt.home_music = !opt.home_music;
+                printf("home music: %s\n", opt.home_music ? "on" : "off");
+                if (config)
+                    config_set(config, "home-music", opt.home_music ? "on" : "off", NULL);
+#ifdef PS64_SID
+                if (!opt.home_music)
+                    home_music_stop(&ui);
+                home_music_at = tick;
+#endif
+                ui.home_music = opt.home_music;
+                if (ui.screen == UI_HOME) {
+                    snprintf(ui.home_snack, sizeof(ui.home_snack), "Home music %s", opt.home_music ? "on" : "off");
+                    ui.home_snack_serial++;
+                }
+                break;
+            case UA_HOME_NEXT:
+#ifdef PS64_SID
+                if (!home_pick && !home_a64_wait)
+                    home_music_next(&ui, tick);
+#endif
+                break;
+            case UA_CART:
+#ifdef PS64_EMU
+                if (ses.emu) {
+                    int rc = emu_set_cart(a.text);
+                    if (config)
+                        config_set(config, "emu-cartridge", emu_cart[0] ? emu_cart : "off", NULL);
+                    if (rc != 0) {
+                        ui.cart_sel = -1;
+                        snprintf(msg, sizeof(msg), "Can't use the cartridge %s", a.text);
+                    } else if (a.text[0]) {
+                        snprintf(msg, sizeof(msg), "Cartridge %s in - C64 restarted", a.text);
+                    } else {
+                        snprintf(msg, sizeof(msg), "Cartridge out - C64 restarted");
+                    }
+                    printf("emulator: %s\n", msg);
+                    controls_banner(&ctl, msg);
+                    break;
+                }
+#endif
+                if (ses.files) {
+                    printf("c64: cartridge setting -> \"%s\"\n", a.text);
+                    files_set_cart(ses.files, a.text);
+                    controls_banner(&ctl, a.text[0] ? "Putting the cartridge in..." : "Taking the cartridge out...");
+                }
                 break;
 #ifdef PS64_SID
             case UA_HOME_SID:
             case UA_SID_LIST:
-                if (a.kind == UA_HOME_SID) {
-                    static int lengths_tried;
-                    if (!lengths_tried) {           /* the song-length database, once */
-                        lengths_tried = 1;
-                        Uint32 t0 = SDL_GetTicks();
-                        int rc = sidplay_songlengths(opt.songlengths);
-                        printf("sid: song lengths %s (%u ms)\n", rc == 0 ? "loaded" : "not found",
-                               SDL_GetTicks() - t0);
-                    }
-                }
+                if (a.kind == UA_HOME_SID)
+                    sid_lengths_once(opt.songlengths);
                 if (a.category == SID_TAB_ULTIMATE) {
                     if (ses.files) {                /* over FTP: arrives in files_poll below */
                         snprintf(sp.ult_listing, sizeof(sp.ult_listing), "%s", a.path);
@@ -1859,6 +2038,10 @@ int main(int argc, char **argv)
                 }
                 break;
             case UA_SID_SKIP:
+                if (sp.home) {
+                    home_music_next(&ui, tick);
+                    break;
+                }
                 if (sp.n && (a.offset < 0 ? playlist_prev(&sp.list) : playlist_next(&sp.list, 1, 1)) >= 0)
                     sid_load_current(&ui, a64c, ses.files);
                 break;
@@ -2201,8 +2384,39 @@ int main(int argc, char **argv)
         }
         if (sp.engine && sp.n && !sp.paused) {
             unsigned len = ui.sid_length_ms > 0 ? (unsigned)ui.sid_length_ms : SID_DEFAULT_MS;
-            if (ui.sid_time_ms >= len && playlist_next(&sp.list, 0, 1) >= 0)
+            if (ui.sid_time_ms >= len && sp.home)
+                home_music_next(&ui, tick);
+            else if (ui.sid_time_ms >= len && playlist_next(&sp.list, 0, 1) >= 0)
                 sid_load_current(&ui, a64c, ses.files);
+        }
+
+        /* The home screen's music: a random tune from the SID folder (or, with none there, one
+         * of Assembly64's), on PS64. It goes on into the SID player, and stops for the others. */
+        ui.home_music = opt.home_music;
+        int home_wants = opt.home_music && (ui.screen == UI_HOME || (ui.screen == UI_SID && home_next));
+        if (home_wants && !sp.engine && !sp.want_id[0] && !sp.want_path[0] && !home_pick &&
+            !home_a64_wait && SDL_TICKS_PASSED(tick, home_music_at)) {
+            sid_lengths_once(opt.songlengths);
+            home_pick = sidrandom_start(sids_dir, tick ^ (unsigned)time(NULL));
+            home_music_at = tick + 30000;   /* (nothing came of it: again in a while) */
+        }
+        if (home_pick) {
+            char path[512];
+            int rc = sidrandom_poll(home_pick, path, sizeof(path));
+            if (rc != 0) {
+                sidrandom_free(home_pick);
+                home_pick = NULL;
+            }
+            if (rc == 1 && home_wants && !sp.engine) {
+                home_next = 0;
+                printf("home music: %s\n", path);
+                sid_play_home(&ui, path, NULL, a64c);
+            } else if (rc < 0 && home_wants && a64c) {
+                printf("home music: no tunes in %s - one from Assembly64\n", sids_dir);
+                home_a64_wait = 1;
+                home_music_at = tick + 120000;
+                a64_latest(a64c, "type:sid");
+            }
         }
 #endif
         if (opt.audio)
@@ -2287,6 +2501,22 @@ int main(int argc, char **argv)
             a64_result r;
             while (a64_poll(a64c, &r)) {
 #ifdef PS64_SID
+                /* The home screen's music from Assembly64: one of its latest tunes, at random. */
+                if ((r.kind == A64R_SEARCH || r.kind == A64R_ERROR) && home_a64_wait) {
+                    home_a64_wait = 0;
+                    if (r.kind == A64R_SEARCH && r.count > 0 && opt.home_music && !sp.engine &&
+                        (ui.screen == UI_HOME || ui.screen == UI_SID)) {
+                        unsigned x = tick ^ (unsigned)time(NULL);
+                        sidrandom_take(&x, 1);
+                        home_next = 0;
+                        printf("home music: %s (Assembly64)\n", r.items[x % (unsigned)r.count].name);
+                        sid_play_home(&ui, NULL, &r.items[x % (unsigned)r.count], a64c);
+                    } else if (r.kind == A64R_ERROR) {
+                        printf("home music: Assembly64: %s\n", r.message);
+                    }
+                    a64_result_free(&r);
+                    continue;
+                }
                 /* The SID player's tune: its file list, then the .sid itself (kept in the cache). */
                 if (r.kind == A64R_ENTRIES && sp.want_id[0] && !strcmp(r.item_id, sp.want_id) &&
                     r.category == sp.want_cat) {
@@ -2434,6 +2664,24 @@ int main(int argc, char **argv)
             }
         }
 
+        /* The menu opened: which cartridges there are (the C64 Ultimate's over FTP). */
+        static int menu_was_open;
+        if (ui.screen == UI_MENU && !menu_was_open) {
+#ifdef PS64_EMU
+            if (ses.emu)
+                emu_carts(&ui);
+            else
+#endif
+            if (ses.files) {
+                ui.carts_state = CARTS_LOADING;
+                files_carts(ses.files);
+            } else {
+                ui.ncarts = 0;
+                ui.carts_state = CARTS_READY;
+            }
+        }
+        menu_was_open = ui.screen == UI_MENU;
+
         if (ses.files) {
             files_result fr;
             while (files_poll(ses.files, &fr)) {
@@ -2460,6 +2708,25 @@ int main(int argc, char **argv)
                     continue;
                 }
 #endif
+                /* The C64 Ultimate's cartridges, for the menu. */
+                if (fr.kind == FR_CARTS || (fr.kind == FR_ERROR && !strcmp(fr.path, FILES_CARTS_DIR))) {
+                    ui.ncarts = 0;
+                    ui.cart_sel = -1;
+                    for (int i = 0; i < fr.count && ui.ncarts < UI_CARTS; i++) {
+                        if (!strcmp(fr.entries[i].name, fr.cart))
+                            ui.cart_sel = ui.ncarts;
+                        snprintf(ui.carts[ui.ncarts++], sizeof(ui.carts[0]), "%s", fr.entries[i].name);
+                    }
+                    if (fr.cart[0] && ui.cart_sel < 0 && ui.ncarts < UI_CARTS) {   /* (not in the folder) */
+                        ui.cart_sel = ui.ncarts;
+                        snprintf(ui.carts[ui.ncarts++], sizeof(ui.carts[0]), "%s", fr.cart);
+                    }
+                    ui.carts_state = fr.kind == FR_CARTS ? CARTS_READY : CARTS_ERROR;
+                    if (fr.kind == FR_ERROR)
+                        printf("c64: cartridges: %s\n", fr.message);
+                    free(fr.entries);
+                    continue;
+                }
                 free(fr.data);
                 fr.data = NULL;
                 if (fr.kind == FR_LISTING && browsing)
@@ -2582,6 +2849,7 @@ int main(int argc, char **argv)
     emulator_stop();
 #endif
 #ifdef PS64_SID
+    home_music_stop(&ui);
     sid_stop(&ui, ses.files);
 #endif
     ui_free(&ui);

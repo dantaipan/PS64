@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 
 /* VICE internals (the core is linked statically, so these are reachable). */
@@ -19,6 +20,9 @@ void keyboard_clear_keymatrix(void);
 void machine_set_restore_key(int v);
 void machine_trigger_reset(unsigned int mode);
 int  file_system_attach_disk(unsigned int unit, unsigned int drive, const char *filename);
+int  cartridge_attach_image(int type, const char *filename);
+void cartridge_detach_image(int type);
+#define VICE_CARTRIDGE_CRT 0              /* a .crt file: its header says the type */
 #define VICE_RESET_CPU    0
 #define VICE_POWER_CYCLE  1
 
@@ -33,6 +37,8 @@ static struct retro_system_av_info av;
 static int fast;
 static unsigned joy_bits;
 static int joy_port = 2;
+static char cart_path[512];               /* the cartridge kept in the slot ("" none) */
+static void attach_cart(void);
 
 /* Audio between frames: a frame is ~960 stereo frames; keep a few. */
 #define AUDIO_CAP 16384
@@ -394,6 +400,7 @@ int emulator_start(const char *dir, int joystick_port)
     printf("emulator: first frame\n");
     retro_run();
     running = 1;
+    attach_cart();
     printf("emulator: %ux%u, %.3f fps, audio %.0f Hz\n", av.geometry.base_width,
            av.geometry.base_height, av.timing.fps, av.timing.sample_rate);
     return 0;
@@ -455,6 +462,40 @@ int emulator_take_message(char *out, size_t cap)
 
 /* ---- content --------------------------------------------------------------------- */
 
+/* Put the chosen cartridge back (the core takes everything out on each load). VICE
+ * switches the C64 off and on around a cartridge change. */
+static void attach_cart(void)
+{
+    if (cart_path[0] && cartridge_attach_image(VICE_CARTRIDGE_CRT, cart_path) != 0)
+        fprintf(stderr, "emulator: can't attach the cartridge %s\n", cart_path);
+}
+
+static int is_crt(const char *path)
+{
+    const char *dot = strrchr(path, '.');
+    return dot && !strcasecmp(dot, ".crt");
+}
+
+int emulator_set_cartridge(const char *path)
+{
+    snprintf(cart_path, sizeof(cart_path), "%s", path ? path : "");
+    if (!running)
+        return 0;
+    emulator_release_keys();
+    cartridge_detach_image(-1);
+    if (!cart_path[0]) {
+        machine_trigger_reset(VICE_POWER_CYCLE);
+        return 0;
+    }
+    if (cartridge_attach_image(VICE_CARTRIDGE_CRT, cart_path) != 0) {
+        fprintf(stderr, "emulator: can't attach the cartridge %s\n", cart_path);
+        cart_path[0] = 0;
+        machine_trigger_reset(VICE_POWER_CYCLE);
+        return -1;
+    }
+    return 0;
+}
+
 int emulator_load(const char *path)
 {
     if (!running)
@@ -467,6 +508,8 @@ int emulator_load(const char *path)
     /* A load into a running core is otherwise only a plain reset; this
      * rebuilds the autostart command line and starts the file. */
     reload_restart();
+    if (!is_crt(path))
+        attach_cart();                       /* (a cartridge game takes the slot) */
     return 0;
 }
 
@@ -482,8 +525,10 @@ void emulator_reset(int power_cycle)
     if (!running)
         return;
     emulator_release_keys();
-    if (power_cycle)
+    if (power_cycle) {
         retro_unload_game();                 /* detach disks, tapes and cartridges */
+        attach_cart();                       /* ...but the chosen cartridge stays in */
+    }
     machine_trigger_reset(power_cycle ? VICE_POWER_CYCLE : VICE_RESET_CPU);
 }
 

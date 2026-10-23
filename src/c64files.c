@@ -173,6 +173,24 @@ int files_parse_drive_a(const char *json, int *bus_id, int *enabled)
     return 0;
 }
 
+int files_parse_config_current(const char *json, char *out, size_t cap)
+{
+    const char *end = json + strlen(json);
+    const char *v = json_value(json, end, "current");
+    if (!v || *v != '"' || !cap)
+        return -1;
+    size_t n = 0;
+    for (v++; v < end && *v != '"'; v++) {
+        char c = *v;
+        if (c == '\\' && v + 1 < end)
+            c = *++v;                           /* \" and \\ (names don't hold others) */
+        if (n + 1 < cap)
+            out[n++] = c;
+    }
+    out[n] = 0;
+    return v < end ? 0 : -1;
+}
+
 int files_screen_ready(const unsigned char *screen, int len)
 {
     static const unsigned char ready[6] = { 0x12, 0x05, 0x01, 0x04, 0x19, 0x2E };  /* READY. */
@@ -184,7 +202,9 @@ int files_screen_ready(const unsigned char *screen, int len)
 
 /* ---- worker ------------------------------------------------------------------ */
 
-enum { REQ_NONE, REQ_LIST, REQ_ACTION, REQ_DATA, REQ_GET };
+enum { REQ_NONE, REQ_LIST, REQ_ACTION, REQ_DATA, REQ_GET, REQ_CARTS, REQ_SET_CART };
+
+#define CART_SETTING "/v1/configs/C64%20and%20Cartridge%20Settings/Cartridge"
 
 struct c64files {
     char            host[64], password[64];
@@ -455,6 +475,66 @@ static int do_action(c64files *f, const char *path, int action, char *msg, size_
     return 0;
 }
 
+/* The .crt files in FILES_CARTS_DIR and the one the "Cartridge" setting names. */
+static int list_carts(c64files *f, files_result *res)
+{
+    ftp_entry *all = malloc(sizeof(ftp_entry) * MAX_ENTRIES);
+    if (!all) {
+        snprintf(res->message, sizeof(res->message), "Out of memory");
+        return -1;
+    }
+    char err[160];
+    int n = ftp_list(f->host, f->password[0] ? f->password : NULL, FILES_CARTS_DIR, all, MAX_ENTRIES,
+                     err, sizeof(err));
+    int count = 0;
+    for (int i = 0; i < n; i++)                 /* (no folder: no cartridges) */
+        if (!all[i].is_dir && files_type(all[i].name, 0) == FT_CRT)
+            all[count++] = all[i];
+    res->entries = all;
+    res->count = count;
+    char json[1024];
+    size_t got = 0;
+    int status = c64api_request(&f->api, "GET", CART_SETTING, NULL, NULL, 0, json, sizeof(json) - 1, &got);
+    json[got] = 0;
+    if (status != 200 || files_parse_config_current(json, res->cart, sizeof(res->cart)) != 0) {
+        snprintf(res->message, sizeof(res->message), status < 0 ? "Can't reach the C64"
+                 : "The C64 has no cartridge setting (HTTP %d)", status);
+        free(all);
+        res->entries = NULL;
+        res->count = 0;
+        return -1;
+    }
+    return 0;
+}
+
+/* Name the cartridge in the setting (memory only), then reboot so the C64 starts with it. */
+static int set_cart(c64files *f, const char *name, char *msg, size_t cap)
+{
+    char body[400], esc[260];
+    size_t n = 0;
+    for (const char *p = name; *p && n + 2 < sizeof(esc); p++) {
+        if (*p == '"' || *p == '\\')
+            esc[n++] = '\\';
+        esc[n++] = *p;
+    }
+    esc[n] = 0;
+    int len = snprintf(body, sizeof(body), "{ \"C64 and Cartridge Settings\" : { \"Cartridge\" : \"%s\" } }",
+                       esc);
+    int status = c64api_request(&f->api, "POST", "/v1/configs", "application/json",
+                                (const unsigned char *)body, (size_t)len, NULL, 0, NULL);
+    if (status >= 200 && status < 300)
+        status = c64api_request(&f->api, "PUT", "/v1/machine:reboot", NULL, NULL, 0, NULL, 0, NULL);
+    if (status < 200 || status >= 300) {
+        snprintf(msg, cap, status < 0 ? "Can't reach the C64" : "The C64 refused that (HTTP %d)", status);
+        return -1;
+    }
+    if (name[0])
+        snprintf(msg, cap, "Cartridge %s in - C64 restarted", name);
+    else
+        snprintf(msg, cap, "Cartridge out - C64 restarted");
+    return 0;
+}
+
 static void *worker(void *arg)
 {
     c64files *f = arg;
@@ -496,6 +576,10 @@ static void *worker(void *arg)
             res.kind = ftp_get(f->host, f->password[0] ? f->password : NULL, path, &res.data,
                                &res.len, 128 * 1024, res.message, sizeof(res.message)) == 0
                        ? FR_FILE : FR_ERROR;
+        } else if (req == REQ_CARTS) {
+            res.kind = list_carts(f, &res) == 0 ? FR_CARTS : FR_ERROR;
+        } else if (req == REQ_SET_CART) {
+            res.kind = set_cart(f, path, res.message, sizeof(res.message)) == 0 ? FR_DONE : FR_ERROR;
         } else if (req == REQ_DATA) {
             res.kind = do_data_action(f, path, data, data_len, action, song, res.message,
                                       sizeof(res.message)) == 0 ? FR_DONE : FR_ERROR;
@@ -572,6 +656,16 @@ void files_list(c64files *f, const char *path)
 void files_get(c64files *f, const char *path)
 {
     request(f, REQ_GET, path, 0);
+}
+
+void files_carts(c64files *f)
+{
+    request(f, REQ_CARTS, FILES_CARTS_DIR, 0);
+}
+
+void files_set_cart(c64files *f, const char *name)
+{
+    request(f, REQ_SET_CART, name, 0);
 }
 
 void files_action(c64files *f, const char *path, int action)

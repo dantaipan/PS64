@@ -31,7 +31,7 @@ all: $(OUT)/eboot.elf $(OUT)/ps64.cfg $(OUT)/sce_sys/icon0.png $(OUT)/INSTALL.tx
 SOURCES := $(addprefix $(SRC)/, main_sdl.c controls.c osk_sdl.c font_sdl.c ui_sdl.c \
                                  vicstream.c audiostream.c c64api.c c64keys.c c64remote.c \
                                  osk.c settings.c discover.c ftp.c c64files.c ui.c c64index.c a64.c favs.c \
-                                 localfs.c emulator.c emugames.c image.c shots.c \
+                                 localfs.c sidrandom.c emulator.c emugames.c image.c shots.c \
                                  mesh3d.c models.c home.c home_sdl.c playlist.c \
                                  prompts.c prompts_sdl.c)
 

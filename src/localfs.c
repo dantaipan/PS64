@@ -5,6 +5,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <pthread.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -123,14 +124,26 @@ static int parse_dents(const char *dir, const char *buf, int got, ftp_entry *out
     return 0;
 }
 
+static int list_raw_locked(const char *dir, ftp_entry *out, int max, char *buf, int cap);
+
+/* One buffer, shared: the SID player's random pick lists folders on its own thread. */
 static int list_raw(const char *dir, ftp_entry *out, int max)
 {
     static char buf[65536] __attribute__((aligned(4096)));
+    static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_lock(&lock);
+    int n = list_raw_locked(dir, out, max, buf, (int)sizeof(buf));
+    pthread_mutex_unlock(&lock);
+    return n;
+}
+
+static int list_raw_locked(const char *dir, ftp_entry *out, int max, char *buf, int cap)
+{
     int n = 0, got;
     /* 1. open + getdents. */
     int fd = open(dir, O_RDONLY);
     if (fd >= 0) {
-        while (n < max && (got = getdents(fd, buf, sizeof(buf))) > 0)
+        while (n < max && (got = getdents(fd, buf, cap)) > 0)
             parse_dents(dir, buf, got, out, &n, max);
         if (got == 0 || n) {
             close(fd);
@@ -140,7 +153,7 @@ static int list_raw(const char *dir, ftp_entry *out, int max)
         /* 2. getdirentries on the same descriptor. */
         long base = 0;
         lseek(fd, 0, SEEK_SET);
-        while (n < max && (got = getdirentries(fd, buf, sizeof(buf), &base)) > 0)
+        while (n < max && (got = getdirentries(fd, buf, cap, &base)) > 0)
             parse_dents(dir, buf, got, out, &n, max);
         int ok = got == 0 || n;
         if (!ok)
@@ -157,7 +170,7 @@ static int list_raw(const char *dir, ftp_entry *out, int max)
         printf("localfs: %s: sceKernelOpen: 0x%08x\n", dir, (unsigned)fd);
         return -1;
     }
-    while (n < max && (got = sceKernelGetdents(fd, buf, sizeof(buf))) > 0)
+    while (n < max && (got = sceKernelGetdents(fd, buf, cap)) > 0)
         parse_dents(dir, buf, got, out, &n, max);
     if (got < 0 && !n)
         printf("localfs: %s: sceKernelGetdents: 0x%08x\n", dir, (unsigned)got);

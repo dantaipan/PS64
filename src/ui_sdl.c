@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #define PX     56                       /* panel */
 #define PY     28
@@ -73,6 +74,21 @@ static void draw_menu(SDL_Renderer *ren, const ui_state *u)
     else
         snprintf(audio, sizeof(audio), "Audio: < %d dB >", u->volume_db);
     snprintf(disk, sizeof(disk), "Disk: < %d of %d >", u->disk + 1, u->disks);
+    char cart[96], name[64];
+    if (u->carts_state == CARTS_LOADING)
+        snprintf(cart, sizeof(cart), "Cartridge: ...");
+    else if (u->carts_state == CARTS_ERROR)
+        snprintf(cart, sizeof(cart), "Cartridge: (can't read the C64's)");
+    else if (!u->ncarts)
+        snprintf(cart, sizeof(cart), u->emulator ? "Cartridge: none in the carts folder"
+                                                 : "Cartridge: none in /flash/carts");
+    else {
+        snprintf(name, sizeof(name), "%s", u->cart_sel >= 0 ? u->carts[u->cart_sel] : "Off");
+        char *dot = strrchr(name, '.');
+        if (dot && !strcasecmp(dot, ".crt"))
+            *dot = 0;
+        snprintf(cart, sizeof(cart), "Cartridge: < %.40s >", name);
+    }
     const char *labels[MI_COUNT] = {
         [MI_HOME] = "Home",
         [MI_RESUME] = "Resume",
@@ -87,6 +103,8 @@ static void draw_menu(SDL_Renderer *ren, const ui_state *u)
         [MI_INDEX] = "Update search index", [MI_ABOUT] = "About PS64...", [MI_QUIT] = "Quit",
         [MI_DISK] = disk,
         [MI_CONTROLLER] = u->joy_keys ? "D-pad: < Cursor keys >" : "D-pad: < Joystick >",
+        [MI_CART] = cart,
+        [MI_HOME_MUSIC] = u->home_music ? "Home music: < On >" : "Home music: < Off >",
     };
     int items[MI_COUNT];
     int n = ui_menu_items(u, items);

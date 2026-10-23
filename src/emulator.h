@@ -44,6 +44,13 @@ int    emulator_take_message(char *out, size_t cap);
 int  emulator_load(const char *path);
 /* Put a disk image into drive 8 without starting anything. */
 int  emulator_insert_disk(const char *path);
+/*
+ * The cartridge kept in the expansion port (a .crt, e.g. a fast loader), or NULL for
+ * none: put in straight away (the C64 is switched off and on) and again after each
+ * load and power cycle, except when a cartridge game is loaded. Can be set before
+ * emulator_start. 0, or -1 if VICE couldn't attach it (then none).
+ */
+int  emulator_set_cartridge(const char *path);
 /* Reset (programs and cartridges stay), or switch off and on (everything detached). */
 void emulator_reset(int power_cycle);
 
