@@ -1772,7 +1772,14 @@ int main(int argc, char **argv)
                     perror("recv audio");
                 break;
             }
-            if (SDL_TICKS_PASSED(SDL_GetTicks(), audio_from) == 0 || ses.emu || ui.screen == UI_HOME || sid_playing)
+            int sid_quiet = 0;
+#ifdef PS64_SID
+            /* The SID player passes the stream's sound only for its tune on the Ultimate (not a
+             * game left running there). */
+            sid_quiet = ui.screen == UI_SID && !(sp.engine && sp.on_ultimate);
+#endif
+            if (SDL_TICKS_PASSED(SDL_GetTicks(), audio_from) == 0 || ses.emu || ui.screen == UI_HOME ||
+                sid_playing || sid_quiet)
                 continue;   /* (the home screen is silent) */
             size_t frames = audio_feed(&adec, buf, (size_t)n, samples, AUDIO_MAX_FRAMES);
             if (frames)

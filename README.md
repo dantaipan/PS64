@@ -314,7 +314,8 @@ and an oscilloscope. Options > Audio sets its level (`sid-volume`, -12 dB to sta
 With a C64 Ultimate connected, the list's first row, **Play on**, sends the tunes to the
 Ultimate's SID chips instead (its sound comes back through the stream; `sid-output`), and a
 third list, **C64 Ultimate**, browses its storage (SD, USB): a tune from it is fetched over
-FTP and plays wherever Play on says.
+FTP and plays wherever Play on says. With no tune of the player's on the Ultimate, the
+stream's sound is off (a game left running there stays quiet).
 
 **Home music**: while the home screen is up, PS64 plays a random tune from the SID folder
 (and its subfolders; if there are none, one of Assembly64's latest tunes). It always plays
