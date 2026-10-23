@@ -30,7 +30,6 @@ enum { MI_HOME, MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS, MI_RECENTS, MI
        MI_DISK, MI_CONTROLLER,          /* emulator only */
        MI_ABOUT,
        MI_CART,                         /* the cartridge kept in the port (e.g. a fast loader) */
-       MI_HOME_MUSIC,                   /* a random SID on the home screen */
        MI_COUNT };
 
 enum { UA_NONE, UA_MUTE, UA_PORT, UA_QUIT, UA_CONNECT, UA_RESCAN,
@@ -53,7 +52,7 @@ enum { UA_NONE, UA_MUTE, UA_PORT, UA_QUIT, UA_CONNECT, UA_RESCAN,
        UA_A64_LATEST,    /* Assembly64: the latest releases (category_key) */
        UA_VOLUME,        /* audio: one step quieter (offset -1) or louder (1) */
        UA_CART,          /* menu: put cartridge text in (a name from carts[]; "" takes it out) */
-       UA_HOME_MUSIC,    /* the home screen's music on <-> off */
+       UA_HOME_MUSIC,    /* the home screen's music: level offset -1/+1, or 0 off <-> on */
        UA_HOME_NEXT };   /* home: another random tune */
 
 typedef struct {
@@ -77,6 +76,12 @@ typedef struct {
 #define UI_ABOUT_ROWS 22    /* About text lines shown at once */
 
 enum { SHOT_NONE, SHOT_LOADING, SHOT_READY };
+
+/* The home screen's music: levels 1..10 (0 is off), UI_HOME_MUSIC_STEP dB apart below 0 dB. */
+#define UI_HOME_MUSIC_MAX     10
+#define UI_HOME_MUSIC_DEFAULT 5
+#define UI_HOME_MUSIC_STEP    4
+int ui_home_music_db(int level);
 
 /* Audio level in the menu: 0 dB down to UI_VOLUME_MIN in UI_VOLUME_STEP steps, then Off. */
 #define UI_VOLUME_MIN  (-30)
@@ -127,7 +132,7 @@ typedef struct {
     char carts[UI_CARTS][64];     /* cartridge files (set by main) */
     int  ncarts, cart_sel;        /* cart_sel: index of the one in, -1 none */
     int  carts_state;             /* CARTS_* */
-    int  home_music;              /* the home screen plays a random SID (set by main) */
+    int  home_music;              /* the home screen's music level, 0 (off)..UI_HOME_MUSIC_MAX (set by main) */
     char home_tune[128];          /* what it plays ("" nothing; set by main) */
 
     /* Home screen. */
@@ -291,7 +296,7 @@ int ui_search_rows(int focus);
 /* Menu items shown for the current machine; returns the count. */
 int ui_menu_items(const ui_state *u, int *out);
 
-/* Number of rows in the picker (devices + 4 fixed entries). */
+/* Number of rows in the picker (devices + Enter address, Search again, Home music). */
 int ui_picker_rows(const ui_state *u);
 /* Parent folder of path ("/" for top level). */
 void ui_parent(const char *path, char *out, size_t cap);

@@ -340,7 +340,7 @@ static void test_ui(void)
     for (int i = 0; i < nmenu; i++)
         if (menu[i] == MI_AUDIO)
             u.sel = i;
-    CHECK(menu[u.sel] == MI_AUDIO && menu[u.sel - 1] == MI_CART && menu[u.sel + 1] == MI_HOME_MUSIC);
+    CHECK(menu[u.sel] == MI_AUDIO && menu[u.sel - 1] == MI_CART);
     CHECK(ui_input(&u, IN_OK).kind == UA_MUTE);
     ui_action va = ui_input(&u, IN_RIGHT);
     CHECK(va.kind == UA_VOLUME && va.offset == 1);
@@ -366,11 +366,8 @@ static void test_ui(void)
         CHECK(g.a64_cat == -1);
         ui_free(&g);
     }
-    /* Home music: any of Left, Right, Cross turns it on or off. */
-    u.sel++;
-    CHECK(ui_input(&u, IN_LEFT).kind == UA_HOME_MUSIC && ui_input(&u, IN_OK).kind == UA_HOME_MUSIC);
     /* Cartridge: nothing while the list is on its way or empty; then Off -> each -> Off. */
-    u.sel -= 2;
+    u.sel--;
     CHECK(u.cart_sel == -1 && ui_input(&u, IN_RIGHT).kind == UA_NONE);
     u.carts_state = CARTS_READY;
     CHECK(ui_input(&u, IN_RIGHT).kind == UA_NONE);
@@ -416,7 +413,15 @@ static void test_ui(void)
     memset(dev, 0, sizeof(dev));
     strcpy(dev[0].ip, "192.168.2.64");
     ui_set_devices(&u, dev, 1, 100, 1);
-    CHECK(ui_picker_rows(&u) == 3);
+    CHECK(ui_picker_rows(&u) == 4);
+    /* Home music's level: Left/Right on the last row (0 is off; 5 is 20 dB down). */
+    u.sel = 3;
+    ui_action hm = ui_input(&u, IN_LEFT);
+    CHECK(hm.kind == UA_HOME_MUSIC && hm.offset == -1);
+    hm = ui_input(&u, IN_RIGHT);
+    CHECK(hm.kind == UA_HOME_MUSIC && hm.offset == 1);
+    CHECK(ui_home_music_db(10) == 0 && ui_home_music_db(5) == -20 && ui_home_music_db(1) == -36);
+    u.sel = 0;
     ui_action a = ui_input(&u, IN_OK);
     CHECK(a.kind == UA_CONNECT && !strcmp(a.ip, "192.168.2.64") && u.screen == UI_CLOSED);
 
@@ -1145,7 +1150,7 @@ static void test_emulator_mode(void)
     ui_setup(&u);
     int items[MI_COUNT];
     int nu = ui_menu_items(&u, items);
-    CHECK(nu == 16 && items[nu - 1] == MI_QUIT && items[nu - 2] == MI_ABOUT);
+    CHECK(nu == 15 && items[nu - 1] == MI_QUIT && items[nu - 2] == MI_ABOUT);
     u.emulator = 1;
     int ne = ui_menu_items(&u, items);
     int has_disk = 0, has_ctl = 0;
@@ -1153,10 +1158,10 @@ static void test_emulator_mode(void)
         has_disk |= items[i] == MI_DISK;
         has_ctl |= items[i] == MI_CONTROLLER;
     }
-    CHECK(ne == 17 && !has_disk && has_ctl && items[ne - 2] == MI_ABOUT);
+    CHECK(ne == 16 && !has_disk && has_ctl && items[ne - 2] == MI_ABOUT);
     u.disks = 2;
     ne = ui_menu_items(&u, items);
-    CHECK(ne == 18 && items[0] == MI_HOME && items[7] == MI_DISK && items[11] == MI_CART);
+    CHECK(ne == 17 && items[0] == MI_HOME && items[7] == MI_DISK && items[11] == MI_CART);
     ui_open_menu(&u);
     u.sel = 7;
     ui_action a = ui_input(&u, IN_LEFT);

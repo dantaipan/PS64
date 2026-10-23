@@ -104,7 +104,6 @@ static void draw_menu(SDL_Renderer *ren, const ui_state *u)
         [MI_DISK] = disk,
         [MI_CONTROLLER] = u->joy_keys ? "D-pad: < Cursor keys >" : "D-pad: < Joystick >",
         [MI_CART] = cart,
-        [MI_HOME_MUSIC] = u->home_music ? "Home music: < On >" : "Home music: < Off >",
     };
     int items[MI_COUNT];
     int n = ui_menu_items(u, items);
@@ -121,7 +120,7 @@ static void draw_menu(SDL_Renderer *ren, const ui_state *u)
 
 static void draw_picker(SDL_Renderer *ren, const ui_state *u, Uint32 now)
 {
-    panel(ren, "C64 Ultimate settings");
+    panel(ren, u->picker_from_home ? "Settings" : "C64 Ultimate settings");
     char status[96];
     if (u->scanning)
         snprintf(status, sizeof(status), "Searching the network %c %d%%",
@@ -143,6 +142,11 @@ static void draw_picker(SDL_Renderer *ren, const ui_state *u, Uint32 now)
             else
                 snprintf(text, sizeof(text), "%-15s  %s  %s %s", d->ip,
                          d->hostname[0] ? d->hostname : "-", d->product, d->firmware);
+        } else if (i - u->ndevices == 2) {
+            if (u->home_music)
+                snprintf(text, sizeof(text), "Home music: < %d >", u->home_music);
+            else
+                snprintf(text, sizeof(text), "Home music: < Off >");
         } else {
             static const char *const fixed[2] = { "Enter address...", "Search again" };
             snprintf(text, sizeof(text), "%s", fixed[i - u->ndevices]);
@@ -151,7 +155,7 @@ static void draw_picker(SDL_Renderer *ren, const ui_state *u, Uint32 now)
         fit(text, CHARS, line, sizeof(line));
         row(ren, i - u->top, i == u->sel, line, c);
     }
-    footer(ren, u->picker_from_home ? "{cross} choose   {circle} back     The C64 needs its web remote control turned on"
+    footer(ren, u->picker_from_home ? "{cross} choose  {lr} change  {circle} back    The C64 needs web remote control on"
                                     : "{cross} choose   {circle} close    The C64 needs its web remote control turned on");
 }
 

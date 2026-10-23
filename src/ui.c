@@ -95,7 +95,14 @@ ui_action ui_open_browser(ui_state *u, const char *path)
 
 int ui_picker_rows(const ui_state *u)
 {
-    return u->ndevices + 2;     /* + Enter address, Search again */
+    return u->ndevices + 3;     /* + Enter address, Search again, Home music */
+}
+
+int ui_home_music_db(int level)
+{
+    if (level > UI_HOME_MUSIC_MAX)
+        level = UI_HOME_MUSIC_MAX;
+    return -UI_HOME_MUSIC_STEP * (UI_HOME_MUSIC_MAX - level);
 }
 
 void ui_set_devices(ui_state *u, const c64_device *d, int n, int progress, int done)
@@ -202,12 +209,11 @@ static int petscii_to_ascii(int p)
 int ui_menu_items(const ui_state *u, int *out)
 {
     static const int ultimate[] = { MI_HOME, MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS,
-                                    MI_RECENTS, MI_RESET, MI_REBOOT, MI_CART, MI_AUDIO, MI_HOME_MUSIC,
-                                    MI_PORT, MI_INDEX, MI_ABOUT, MI_QUIT };
+                                    MI_RECENTS, MI_RESET, MI_REBOOT, MI_CART, MI_AUDIO, MI_PORT,
+                                    MI_INDEX, MI_ABOUT, MI_QUIT };
     static const int emulator[] = { MI_HOME, MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS,
                                     MI_RECENTS, MI_DISK, MI_RESET, MI_REBOOT, MI_CONTROLLER,
-                                    MI_CART, MI_AUDIO, MI_HOME_MUSIC, MI_PORT, MI_INDEX, MI_ABOUT,
-                                    MI_QUIT };
+                                    MI_CART, MI_AUDIO, MI_PORT, MI_INDEX, MI_ABOUT, MI_QUIT };
     const int *src = u->emulator ? emulator : ultimate;
     int n = u->emulator ? (int)(sizeof(emulator) / sizeof(emulator[0]))
                         : (int)(sizeof(ultimate) / sizeof(ultimate[0]));
@@ -256,7 +262,6 @@ static ui_action input_menu(ui_state *u, int in)
             return a;
         case MI_PORT:  return act(UA_PORT);
         case MI_CONTROLLER: return act(UA_CONTROLLER);
-        case MI_HOME_MUSIC: return act(UA_HOME_MUSIC);
         case MI_CART: {
             if (u->carts_state != CARTS_READY || !u->ncarts)
                 return none();
@@ -309,6 +314,13 @@ static ui_action input_picker(ui_state *u, int in)
             ui_open_home(u);
         else
             ui_close(u);
+        break;
+    case IN_LEFT: case IN_RIGHT:
+        if (u->sel == u->ndevices + 2) {        /* Home music: < 5 > */
+            ui_action a = act(UA_HOME_MUSIC);
+            a.offset = in == IN_LEFT ? -1 : 1;
+            return a;
+        }
         break;
     case IN_OK:
         if (u->sel < u->ndevices) {

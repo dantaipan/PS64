@@ -318,8 +318,9 @@ FTP and plays wherever Play on says.
 
 **Home music**: while the home screen is up, PS64 plays a random tune from the SID folder
 (and its subfolders; if there are none, one of Assembly64's latest tunes). It always plays
-on PS64, never on the Ultimate. Square plays another, Triangle turns it off or on (also
-**Options > Home music**, saved as `home-music`). It stops when you open Vice, Stream or
+on PS64, never on the Ultimate. Square plays another, Triangle turns it off or on. Its
+volume is **Home music: < 5 >** in the home screen's settings (the gear): 1 to 10, 4 dB a
+step (5 is 20 dB down), 0 is off; saved as `home-music`. It stops when you open Vice, Stream or
 the SID player, and starts again when you come back.
 
 ## Built-in emulator (no C64 Ultimate needed)

@@ -113,7 +113,7 @@ typedef struct {
     const char *songlengths;  /* HVSC Songlengths.md5 */
     int         sid_volume;   /* dB, the SID player */
     int         sid_ultimate; /* the SID player plays on the C64 Ultimate (when there is one) */
-    int         home_music;   /* the home screen plays a random SID (on PS64) */
+    int         home_music;   /* level of the home screen's random SID (on PS64), 0 off..10 */
     const char *carts_dir;    /* the emulator's cartridges (default: "carts" next to the config) */
     const char *emu_cart;     /* emulator: the cartridge kept in (a file in carts_dir; "off" none) */
 } options;
@@ -145,7 +145,7 @@ static void usage(const char *argv0)
         "          [--a64-latest CATEGORY]\n"
         "          [--c64 emulator] [--games-dir DIR] [--usb-prefix PATH|none] [--dpad joystick|keys]\n"
         "          [--emu-load FILE] [--carts-dir DIR] [--emu-cartridge FILE.crt|off]\n"
-        "          [--home-music on|off]\n"
+        "          [--home-music 0..10]\n"
         "\n"
         "--c64 (alias --start) streams from and controls that C64; --remote only controls it;\n"
         "      --c64 emulator runs the built-in emulator instead (if this build has it).\n"
@@ -217,7 +217,7 @@ static int parse_args(int argc, char **argv, options *o)
 #endif
     o->sid_volume = -12;
     o->sid_ultimate = 0;
-    o->home_music = 1;
+    o->home_music = UI_HOME_MUSIC_DEFAULT;
     o->carts_dir = NULL;
     o->emu_cart = NULL;
     for (int i = 1; i < argc; i++) {
@@ -244,8 +244,12 @@ static int parse_args(int argc, char **argv, options *o)
         else if (!strcmp(a, "--songlengths") && next) { o->songlengths = next; i++; }
         else if (!strcmp(a, "--sid-volume") && next) { o->sid_volume = atoi(next); i++; }
         else if (!strcmp(a, "--home-music") && next) {
-            o->home_music = strcasecmp(next, "off") && strcmp(next, "0") && strcasecmp(next, "no") &&
-                            strcasecmp(next, "false");
+            /* 0..10 (0 off); older configs said on / off */
+            if (isdigit((unsigned char)next[0]))
+                o->home_music = atoi(next) > UI_HOME_MUSIC_MAX ? UI_HOME_MUSIC_MAX : atoi(next);
+            else
+                o->home_music = strcasecmp(next, "off") && strcasecmp(next, "no") && strcasecmp(next, "false")
+                                ? UI_HOME_MUSIC_DEFAULT : 0;
             i++;
         }
         else if (!strcmp(a, "--carts-dir") && next) { o->carts_dir = next; i++; }
@@ -1953,11 +1957,25 @@ int main(int argc, char **argv)
 #endif
                 ui_close(&ui);
                 break;
-            case UA_HOME_MUSIC:
-                opt.home_music = !opt.home_music;
-                printf("home music: %s\n", opt.home_music ? "on" : "off");
-                if (config)
-                    config_set(config, "home-music", opt.home_music ? "on" : "off", NULL);
+            case UA_HOME_MUSIC: {
+                /* A level step (settings), or off <-> the level it had (Triangle on Home). */
+                static int home_level = UI_HOME_MUSIC_DEFAULT;
+                if (opt.home_music)
+                    home_level = opt.home_music;
+                if (a.offset)
+                    opt.home_music += a.offset;
+                else
+                    opt.home_music = opt.home_music ? 0 : home_level;
+                if (opt.home_music < 0)
+                    opt.home_music = 0;
+                if (opt.home_music > UI_HOME_MUSIC_MAX)
+                    opt.home_music = UI_HOME_MUSIC_MAX;
+                printf("home music: %d\n", opt.home_music);
+                if (config) {
+                    char v[8];
+                    snprintf(v, sizeof(v), "%d", opt.home_music);
+                    config_set(config, "home-music", v, NULL);
+                }
 #ifdef PS64_SID
                 if (!opt.home_music)
                     home_music_stop(&ui);
@@ -1969,6 +1987,7 @@ int main(int argc, char **argv)
                     ui.home_snack_serial++;
                 }
                 break;
+            }
             case UA_HOME_NEXT:
 #ifdef PS64_SID
                 if (!home_pick && !home_a64_wait)
@@ -2360,7 +2379,7 @@ int main(int argc, char **argv)
         /* The SID player: sound, time, the visualiser, and on to the next tune at the end. */
         ui_sid_set_ultimate(&ui, ses.streaming && ses.files);
         if (sp.engine && !sp.on_ultimate) {
-            ui.volume_db = opt.sid_volume;
+            ui.volume_db = sp.home ? ui_home_music_db(opt.home_music) : opt.sid_volume;
             if (opt.audio && !aout.muted && !sp.paused)
                 sid_step(&aout, sp.engine);
             else if (!sp.paused)
