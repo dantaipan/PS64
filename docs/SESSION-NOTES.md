@@ -301,7 +301,9 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
     The core detaches every cartridge on each load (`retro_unload_game`, and
     `initcmdline_cleanup` in `reload_restart`), so PS64 re-attaches it after loads and power
     cycles (not when the load is itself a CRT). VICE's `CartridgeReset` power-cycles on
-    attach, and autostart still works. Its own `vice_cartridge` core option isn't used: it
+    attach. Epyx FastLoad prints "FASTLOAD" under READY., which made VICE's autostart give up
+    ("AUTOSTART: Turned off"); `tools/get_vice.sh` patches `check()` in `autostart.c` to also
+    accept READY. one line higher (it deletes the built `.a` files so both get rebuilt). Its own `vice_cartridge` core option isn't used: it
     scans with `opendir` (EPERM on the PS5). Files: `carts/` (`carts-dir`), saved as
     `emu-cartridge` (`off`). Tested on the Mac with a homemade 8K .crt that turns the border
     red (BASIC shows 30719 bytes free).
