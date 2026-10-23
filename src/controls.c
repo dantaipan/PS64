@@ -149,8 +149,17 @@ static void set_osk(controls *c, int open)
 
 static void toggle_menu(controls *c)
 {
-    if (c->ui && c->ui->screen == UI_HOME)      /* no Options menu on the home screen */
+    /* On the home screen, Options opens (and closes) its settings instead of the menu. */
+    if (c->ui && c->ui->screen == UI_HOME) {
+        push_action(c, ui_open_home_settings(c->ui));
+        c->repeat_dirs = 0;
         return;
+    }
+    if (c->ui && c->ui->screen == UI_PICKER && c->ui->picker_from_home) {
+        ui_open_home(c->ui);
+        c->repeat_dirs = 0;
+        return;
+    }
     if (ui_open(c))
         ui_close(c->ui);
     else

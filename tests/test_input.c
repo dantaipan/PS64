@@ -1233,6 +1233,8 @@ static void test_home(void)
     ui_input(&u, IN_RIGHT);
     CHECK(ui_input(&u, IN_OK).kind == UA_RESCAN && u.screen == UI_PICKER && u.picker_from_home);
     ui_input(&u, IN_BACK);
+    CHECK(ui_open_home_settings(&u).kind == UA_RESCAN && u.screen == UI_PICKER && u.picker_from_home);
+    ui_input(&u, IN_BACK);
     CHECK(u.screen == UI_HOME && u.home_focus == HOME_ON_ITEMS && u.home_sel == HOME_VICE);
     ui_input(&u, IN_UP);
     ui_input(&u, IN_DOWN);

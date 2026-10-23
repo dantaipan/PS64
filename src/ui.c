@@ -1440,9 +1440,7 @@ static ui_action input_home(ui_state *u, int in)
         case IN_OK:
             if (u->home_focus == HOME_ON_POWER)
                 return act(UA_QUIT);
-            ui_open_picker(u, NULL);
-            u->picker_from_home = 1;
-            return act(UA_RESCAN);
+            return ui_open_home_settings(u);
         }
         return none();
     }
@@ -1477,6 +1475,13 @@ static ui_action input_home(ui_state *u, int in)
         break;
     }
     return none();
+}
+
+ui_action ui_open_home_settings(ui_state *u)
+{
+    ui_open_picker(u, NULL);
+    u->picker_from_home = 1;
+    return act(UA_RESCAN);              /* (it lists the C64 Ultimates found) */
 }
 
 ui_action ui_input(ui_state *u, int in)

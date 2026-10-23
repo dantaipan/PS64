@@ -240,8 +240,10 @@ void ui_free(ui_state *u);
 
 void ui_open_menu(ui_state *u);
 void ui_open_picker(ui_state *u, const char *message);
-/* The home screen (keeps the item chosen last). */
+/* The home screen (keeps the item chosen last), and its settings (the gear, or Options):
+ * the C64 Ultimate to stream from and the home music; returns the search to start. */
 void ui_open_home(ui_state *u);
+ui_action ui_open_home_settings(ui_state *u);
 
 /* The SID player (returns the UA_SID_LIST for its folder), a folder listing of a tab
  * (takes entries; keeps folders and .sid files) and a failed listing. */

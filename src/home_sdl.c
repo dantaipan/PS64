@@ -318,8 +318,8 @@ void home_draw(SDL_Renderer *ren, const ui_state *u, SDL_Texture *live, Uint32 n
     }
     draw_icons(ren, u);
     const char *hint = u->home_focus != HOME_ON_ITEMS ? "{cross} select     {lr} choose     {ud} back"
-                     : !u->home_music ? "{cross} start     {lr} choose     {ud} settings, power     {triangle} music on"
-                     : "{cross} start     {lr} choose     {ud} settings, power     {triangle} music off     {square} next tune";
+                     : !u->home_music ? "{cross} start    {lr} choose    {options} settings    {ud} power    {triangle} music on"
+                     : "{cross} start    {lr} choose    {options} settings    {ud} power    {triangle} music off    {square} next tune";
     prompts_draw(ren, hint, (HW - prompts_width(ren, hint, 2)) / 2, 1032, 2, DIM);
     if (u->home_music && u->home_tune[0]) {      /* the tune playing, above the hints */
         char line[160];

@@ -320,7 +320,7 @@ stream's sound is off (a game left running there stays quiet).
 **Home music**: while the home screen is up, PS64 plays a random tune from the SID folder
 (and its subfolders; if there are none, one of Assembly64's latest tunes). It always plays
 on PS64, never on the Ultimate. Square plays another, Triangle turns it off or on. Its
-volume is **Home music: < 5 >** in the home screen's settings (the gear): 1 to 10, 4 dB a
+volume is **Home music: < 5 >** in the home screen's settings (Options, or the gear): 1 to 10, 4 dB a
 step (5 is 20 dB down), 0 is off; saved as `home-music`. It stops when you open Vice, Stream or
 the SID player, and starts again when you come back.
 
