@@ -3,11 +3,11 @@
 How PS64 gets to the Prospero Store, how updates reach people, and how to test a new
 version on the PS5 next to the copy installed from the store.
 
-Status (2026-10-22): **1.0.3 released** (GitHub release `01.000.003`: SID player, USB drives,
-Assembly64 built-in client ID, the 32-byte heap alignment crash fix; catalog pull request #584
-merged). Listed at https://prosperostore.net/app/PPSA06464/. **Next release**: collect changes in
-`docs/release-notes/01.000.004.md` (features and fixes; cosmetic changes as "Enhancements to
-the UI"); release when it's ready. Commits use the private GitHub address
+Status (2026-10-23): **1.0.4 released** (GitHub release `01.000.004`: cartridge option such as
+Epyx FastLoad, home-screen music with its own volume, the SID player's C64 Ultimate list;
+catalog pull request #634). Listed at https://prosperostore.net/app/PPSA06464/. **Next
+release**: collect changes in `docs/release-notes/01.000.005.md` (features and fixes; cosmetic
+changes as "Enhancements to the UI"); release when it's ready. Commits use the private GitHub address
 `642598+dantaipan@users.noreply.github.com`.
 
 ## How the store works

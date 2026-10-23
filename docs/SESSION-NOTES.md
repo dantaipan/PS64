@@ -283,7 +283,7 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
 - Catalog PRs from the `dantaipan` fork are recognised as developer release bumps and merged
   automatically (#489 1.0.1, #527 1.0.2, #584 1.0.3).
 
-## Unreleased (on main, for 1.0.4)
+## 1.0.4 (released 2026-10-23, catalog PR #634)
 
 - SID player: "Play on" shows the choice (it showed the playing tune's output).
 - SID player: its Assembly64 search and the games search don't share results; choosing
