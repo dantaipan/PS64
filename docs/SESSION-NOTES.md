@@ -216,7 +216,7 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
   (see `docs/RELEASING.md`). The user wants fixes **bundled into 1.0.1**, released only when
   they say so. Draft notes: `docs/release-notes/01.000.001.md`.
 
-### Unreleased (on main, for 1.0.1)
+### Released in 1.0.1 (2026-10-20)
 - Mount & run reads drive A's bus ID from `GET /v1/drives` (`files_parse_drive_a`) and types
   `LOAD"*",<id>,1`; says so if drive A is off. (The user's FILE NOT FOUND turned out to be an
   unpowered real 1541-II on device 9 hanging the serial bus: power it on or unplug it.)
@@ -235,12 +235,77 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
   14/15, Gamebase64 16, HVSC 18-20, Guybrush 26-31, OneLoad64 33). `main_sdl.c` asks for the
   highlighted item when the selection changes and hands the pixels to `ui` (`a64_shot*`);
   `ui_sdl.c` `draw_shot` keeps one texture keyed on the pixel pointer.
-  **Open bug (user, 2026-10-20): the picture changes look "a bit buggy" when moving down the
-  list on the PS5** - not yet investigated. Things to check: the texture keyed by pixel pointer
-  (a freed+reallocated buffer can get the same address, so a new picture may not upload);
-  stale `SHOT_LOADING` when `shots_want` is replaced quickly (the worker only fetches the
-  latest want; earlier ids stay "loading" until revisited); the cache key vs ids longer than
-  23 chars; `shot_id` reset when results are replaced (new search with the same first id).
+  The "buggy" picture changes were the texture keyed on the pixel pointer (same-size
+  pictures reuse the freed address): now keyed on a serial. Several pictures per release are
+  one animated GIF; all frames (up to 8) are decoded and cycled.
+
+## 1.0.2 (2026-10-21): home screen, audio level
+
+- **Home screen** (`src/home*.c`, `src/mesh3d.[ch]`, `src/models.[ch]`): 1920x1080 canvas,
+  three objects built in code (the linked Sketchfab/GrabCAD models can't be redistributed):
+  1702 (Vice: BASIC start-up screen), 1084 (Stream: live picture once found, TV static
+  otherwise), SID chip. Drawn with `SDL_RenderGeometry` (the PS5 has only SDL's software
+  renderer: flat shading, back-face culling, painter's sort with per-part layers; the chip's
+  pin rows are separate meshes drawn far row/body/near row). Holds 60 fps on the PS5.
+  - Power/settings icons: Material Icons (Apache 2.0) rasterised with nanosvg (zlib).
+  - Home replaced the C64 picker: settings (the gear) is the old picker; Options > Home is the
+    first menu item; the emulator pauses at Home and resumes with Vice. On Home, PS64 finds
+    the saved C64 (or the only one) with `discover` and starts its stream; audio is silent.
+- **Audio level**: Options > Audio steps 0..-30 dB (2 dB), then Off; separate levels per
+  source (`stream-volume`, `emulator-volume`, later `sid-volume`), all default -12 dB.
+- Release notes style (user): features and real fixes only; cosmetic changes are one line,
+  "Enhancements to the UI".
+
+## 1.0.3 (2026-10-22): SID player, USB, fixes
+
+- **SID player** (UI_SID; `src/sidplay.[ch]`, `src/playlist.[ch]`): libsidplayfp 3.1.1 +
+  libresidfp 1.2.3 (GPL-2+, `tools/get_sidplayfp.sh`, pinned tarballs; cross-built for the
+  PS5 with its configure in the container). VICE has its own older reSIDfp in the same
+  namespace, so this copy is built with `-DreSIDfp=ps64_reSIDfp`. About 9.5% CPU on the PS5.
+  - Lists: Local (SID folder `/data/ps64/sids`), Assembly64 (search with `type:sid`, R1
+    latest; downloads cached in `sid-cache`). Play on PS64 or the C64 Ultimate (POST
+    `runners:sidplay?songnr=N`, 1-based, verified). Playlist in order/shuffle/repeat-one,
+    subtunes, visualiser (voice notes from the SID registers, oscilloscope).
+  - Song lengths: HVSC `Songlengths.md5` is HTTPS-only (PS64's HTTP client is plain HTTP), so
+    `tools/get_songlengths.sh` (pinned SHA-256) bundles it in `/app0/assets`.
+- **Random crashes**: the PS5's C++ ABI expects 32-byte aligned `new`
+  (`__STDCPP_DEFAULT_NEW_ALIGNMENT__` 32, AVX2 `vmovaps ymm`); `ps5/native/src/ps64_heap.c`
+  dlmalloc now uses `MALLOC_ALIGNMENT` 32 (was 16).
+- **Native sandbox**: `opendir()` fails (EPERM); `src/localfs.c` lists with `open()` (no
+  O_DIRECTORY) + `getdents()`.
+- **USB drives**: `/mnt/usbN` (ShadowMountPlus mounts them into the app's sandbox) appear as
+  folders `USB0..USB7` at the top of the games folder and the SID player (only mounted or
+  non-empty ones: the PS5 keeps empty mount points); `usb-prefix`; the index covers them.
+- **Folders 0777**: PS64 made `games` 0755 (owned by the app), so FTP couldn't add files;
+  folders are now created 0777 and opened up at start-up.
+- **Assembly64 client ID** is per app (the Assembly64 admin confirmed): built in as "PS64"
+  (`A64_CLIENT_ID`), the setting and its entry screen removed (old config lines ignored).
+- Catalog PRs from the `dantaipan` fork are recognised as developer release bumps and merged
+  automatically (#489 1.0.1, #527 1.0.2, #584 1.0.3).
+
+## Unreleased (on main, for 1.0.4)
+
+- SID player: "Play on" shows the choice (it showed the playing tune's output).
+- SID player: its Assembly64 search and the games search don't share results; choosing
+  another machine on Home starts a fresh search.
+- SID player: a third list, **C64 Ultimate** (while connected): its storage over FTP
+  (`ftp_get` / `files_get` -> FR_FILE), plays as "Play on" says. Not yet tried on the PS5.
+- Hints use **PlayStation button icons**: Kenney Input Prompts 1.5 (CC0), PlayStation set,
+  embedded by `tools/gen_prompts.sh` into `src/prompts_svg.h`; hint strings use tokens
+  (`"{cross} play  {l1}{r1} page"`, `src/prompts.[ch]`, `src/prompts_sdl.c`); D-pad icons
+  recoloured (directions white, others 60%). Only PS64's own hint strings use tokens.
+- The keyboard's own hint line shows only when typing onto the C64 (not on PS64's screens).
+- Notes so far: `docs/release-notes/01.000.004.md`. Release only when the user says so.
+
+## Diagnosing native crashes
+
+- ShadowMountPlus writes RIP/backtrace to `/data/shadowmount/debug.log`, but only in an app's
+  first 60 s: reproduce soon after launch. Addresses = `llvm-pie.elf` + 0x400000; keep
+  `third_party/ps5-native-app-boilerplate/build/llvm-pie.elf` of the build being tested and
+  look addresses up with `prospero-nm` / `llvm-objdump-18` in the `ps64-native` container.
+- `ps64.log` gets a `CRASH:` line from PS64's signal handler when the process gets a signal
+  (not when the system kills it), and SID player / audio-reopen milestones.
+- Debug keys for the UI on the Mac: `--keys "right,ok,r1,wait,ok"` (one every 1.5 s).
 
 ## Working conventions
 
@@ -256,13 +321,11 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
 
 ## Open items
 
-- Try Assembly64 search end to end on the PS5 now that the client ID is configured.
-- Try emulator mode on the PS5 (speed, sound, controller, Assembly64 downloads).
-- Possible later: SID playback in the emulator (a PSID player stub), save states.
-- **Next:** debug the CSDb screenshot updates when scrolling (see "Unreleased" above), then
-  more fixes for 1.0.1 as the user finds them; release when the user says so.
+- **Next:** install PS64 Dev when the PS5 is on (the SID player's C64 Ultimate list and the
+  D-pad icon colours are built but not yet on the PS5), then the user tests the C64 Ultimate
+  list (browse /SD or /USB0, play on PS64 and on the Ultimate). Keep collecting 1.0.4 fixes.
 - Possible: a README/About note that an unpowered real drive on the bus blocks loading.
-- Store release and the update process: `docs/RELEASING.md`; dev build
-  (`ps5/native/build.sh dev`, PPSA06465 "PS64 Dev", /data/ps64-dev) and
-  `ps5/native/release.sh` (with `--dry-run`) are ready. Publishing only with the user's go-ahead.
-- Optional: faster disk loading (Ultimate drive/speed settings), not investigated.
+- Possible: faster disk loading (Ultimate drive/speed settings), save states.
+- The Prospero Store's own self-update was broken in its 1.000.070 (fixed upstream); the user's
+  store is on 1.000.104. Opening the store can leave ShadowMountPlus waiting on a "same-app
+  handoff": restart + jailbreak before launching PS64 if it won't start.
