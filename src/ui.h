@@ -195,7 +195,8 @@ typedef struct {
     int            a64_ready;       /* the Assembly64 client is running (set by main) */
     char           a64_query[64];
     int            a64_focus;       /* 0 keyboard, 1 results */
-    int            a64_cat;         /* index into a64_cats, -1 = all */
+    int            a64_cat;         /* index into a64_cats, -1 = all (Games until one is chosen) */
+    int            a64_cat_chosen;  /* L2 has chosen a category (else Games once the list arrives) */
     a64_categories a64_cats;
     a64_item      *a64_items;       /* owned */
     int            a64_count, a64_more, a64_loading, a64_sel, a64_top;

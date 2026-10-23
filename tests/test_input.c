@@ -346,6 +346,26 @@ static void test_ui(void)
     CHECK(va.kind == UA_VOLUME && va.offset == 1);
     va = ui_input(&u, IN_LEFT);
     CHECK(va.kind == UA_VOLUME && va.offset == -1);
+    /* Assembly64 searches start on Games once the categories arrive, until L2 chooses another. */
+    {
+        static ui_state g;
+        ui_setup(&g);
+        a64_result cr;
+        memset(&cr, 0, sizeof(cr));
+        cr.kind = A64R_CATEGORIES;
+        cr.cats.count = 2;
+        snprintf(cr.cats.keys[0], sizeof(cr.cats.keys[0]), "demos");
+        snprintf(cr.cats.keys[1], sizeof(cr.cats.keys[1]), "games");
+        CHECK(g.a64_cat == -1);
+        ui_a64_results(&g, &cr);
+        CHECK(g.a64_cat == 1);
+        ui_open_a64(&g);
+        ui_input(&g, IN_L2);
+        CHECK(g.a64_cat == -1 && g.a64_cat_chosen);
+        ui_a64_results(&g, &cr);
+        CHECK(g.a64_cat == -1);
+        ui_free(&g);
+    }
     /* Home music: any of Left, Right, Cross turns it on or off. */
     u.sel++;
     CHECK(ui_input(&u, IN_LEFT).kind == UA_HOME_MUSIC && ui_input(&u, IN_OK).kind == UA_HOME_MUSIC);

@@ -692,6 +692,9 @@ void ui_a64_results(ui_state *u, a64_result *r)
         u->a64_cats = r->cats;
         if (u->a64_cat >= u->a64_cats.count)
             u->a64_cat = -1;
+        for (int i = 0; !u->a64_cat_chosen && i < u->a64_cats.count; i++)
+            if (!strcmp(u->a64_cats.keys[i], "games"))      /* searches start on Games */
+                u->a64_cat = i;
     }
 }
 
@@ -732,8 +735,10 @@ static ui_action input_a64(ui_state *u, int in)
             return none();
         }
         if (in == IN_L2) {
-            if (!u->a64_for_sid)                /* (the SID player always searches .sid files) */
+            if (!u->a64_for_sid) {              /* (the SID player always searches .sid files) */
                 u->a64_cat = u->a64_cat + 1 >= u->a64_cats.count ? -1 : u->a64_cat + 1;
+                u->a64_cat_chosen = 1;
+            }
             return none();
         }
         if (in == IN_R1)

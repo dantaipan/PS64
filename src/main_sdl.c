@@ -818,9 +818,9 @@ static sid_player sp;
 static Uint32 sid_render_ms;          /* time spent rendering, for the log */
 
 /* The home screen's music: the random pick on its way (the SID folder walked, or one of
- * Assembly64's tunes), when to pick next, and "the home tune ended in the SID player". */
+ * Assembly64's tunes) and when to pick next. */
 static sidrandom *home_pick;
-static int        home_a64_wait, home_next;
+static int        home_a64_wait;
 static Uint32     home_music_at;
 
 /* Append stereo sound to the scope's window (mono, the latest SID_SCOPE samples). */
@@ -1117,7 +1117,7 @@ static void home_music_stop(ui_state *ui)
 {
     sidrandom_free(home_pick);
     home_pick = NULL;
-    home_a64_wait = home_next = 0;
+    home_a64_wait = 0;
     if (sp.home)
         sid_stop(ui, NULL);
 }
@@ -1127,7 +1127,6 @@ static void home_music_next(ui_state *ui, Uint32 now)
 {
     if (sp.home)
         sid_stop(ui, NULL);
-    home_next = 1;
     home_music_at = now;
 }
 
@@ -2391,9 +2390,15 @@ int main(int argc, char **argv)
         }
 
         /* The home screen's music: a random tune from the SID folder (or, with none there, one
-         * of Assembly64's), on PS64. It goes on into the SID player, and stops for the others. */
+         * of Assembly64's), on PS64, while the home screen is up (straight away on coming back). */
         ui.home_music = opt.home_music;
-        int home_wants = opt.home_music && (ui.screen == UI_HOME || (ui.screen == UI_SID && home_next));
+        static int was_home;
+        if (ui.screen == UI_HOME && !was_home)
+            home_music_at = tick;
+        was_home = ui.screen == UI_HOME;
+        if (ui.screen == UI_SID && (sp.home || home_pick || home_a64_wait))
+            home_music_stop(&ui);           /* (the SID player starts silent) */
+        int home_wants = opt.home_music && ui.screen == UI_HOME;
         if (home_wants && !sp.engine && !sp.want_id[0] && !sp.want_path[0] && !home_pick &&
             !home_a64_wait && SDL_TICKS_PASSED(tick, home_music_at)) {
             sid_lengths_once(opt.songlengths);
@@ -2408,7 +2413,6 @@ int main(int argc, char **argv)
                 home_pick = NULL;
             }
             if (rc == 1 && home_wants && !sp.engine) {
-                home_next = 0;
                 printf("home music: %s\n", path);
                 sid_play_home(&ui, path, NULL, a64c);
             } else if (rc < 0 && home_wants && a64c) {
@@ -2505,10 +2509,9 @@ int main(int argc, char **argv)
                 if ((r.kind == A64R_SEARCH || r.kind == A64R_ERROR) && home_a64_wait) {
                     home_a64_wait = 0;
                     if (r.kind == A64R_SEARCH && r.count > 0 && opt.home_music && !sp.engine &&
-                        (ui.screen == UI_HOME || ui.screen == UI_SID)) {
+                        ui.screen == UI_HOME) {
                         unsigned x = tick ^ (unsigned)time(NULL);
                         sidrandom_take(&x, 1);
-                        home_next = 0;
                         printf("home music: %s (Assembly64)\n", r.items[x % (unsigned)r.count].name);
                         sid_play_home(&ui, NULL, &r.items[x % (unsigned)r.count], a64c);
                     } else if (r.kind == A64R_ERROR) {

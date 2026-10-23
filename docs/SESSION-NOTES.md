@@ -317,7 +317,8 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
 - **Home music**: `src/sidrandom.[ch]` walks the SID folder on a thread (skips USBn,
   at most 5000 folders, reservoir sampling). With no tunes it falls back to a random one of
   Assembly64's latest `type:sid`. `sp.home` marks the tune: always on PS64; at its end or on
-  Square another; it stops for Vice and Stream and carries into the SID player. Saved as
+  Square another; it stops for Vice, Stream and the SID player, and restarts at once back on Home.
+  Assembly64 searches (games, Vice and Ultimate) start on the Games category. Saved as
   `home-music` (on by default). localfs's PS5 getdents buffer is now behind a mutex (the
   walk runs off the main thread).
 - Notes so far: `docs/release-notes/01.000.004.md`. Release only when the user says so.
