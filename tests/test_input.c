@@ -21,9 +21,13 @@
 #include "../src/settings.h"
 #include "../src/ui.h"
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -1246,25 +1250,119 @@ static void test_home(void)
     CHECK(home_icon(icon, 72, "not svg") == -1);
 }
 
+/* A tiny FTP server on port 21 for ftp_get: one session, RETR /SD/tune.sid only. */
+static const unsigned char fake_tune[] = "PSID\0\2 a tune's bytes";
+static int fake_ftp_fd = -1;
+
+static void say(int fd, const char *s) { send(fd, s, strlen(s), 0); }
+
+static void *fake_ftp(void *arg)
+{
+    (void)arg;
+    for (int session = 0; session < 2; session++) {
+        int c = accept(fake_ftp_fd, NULL, NULL);
+        if (c < 0)
+            return NULL;
+        say(c, "220 fake\r\n");
+        char line[256];
+        int data_listen = -1;
+        size_t n = 0;
+        for (;;) {
+            ssize_t r = recv(c, line + n, 1, 0);
+            if (r <= 0)
+                break;
+            if (line[n] != '\n') {
+                if (n < sizeof(line) - 1)
+                    n++;
+                continue;
+            }
+            line[n] = 0;
+            if (n && line[n - 1] == '\r')
+                line[n - 1] = 0;
+            n = 0;
+            if (!strncmp(line, "USER", 4))
+                say(c, "230 in\r\n");
+            else if (!strncmp(line, "TYPE", 4))
+                say(c, "200 ok\r\n");
+            else if (!strncmp(line, "PASV", 4)) {
+                data_listen = socket(AF_INET, SOCK_STREAM, 0);
+                struct sockaddr_in a = { .sin_family = AF_INET };
+                socklen_t al = sizeof(a);
+                bind(data_listen, (struct sockaddr *)&a, sizeof(a));
+                listen(data_listen, 1);
+                getsockname(data_listen, (struct sockaddr *)&a, &al);
+                int port = ntohs(a.sin_port);
+                char reply[96];
+                snprintf(reply, sizeof(reply), "227 Entering Passive Mode (127,0,0,1,%d,%d)\r\n",
+                         port / 256, port % 256);
+                say(c, reply);
+            } else if (!strncmp(line, "RETR", 4)) {
+                int d = accept(data_listen, NULL, NULL);
+                if (!strcmp(line + 5, "/SD/tune.sid")) {
+                    say(c, "150 sending\r\n");
+                    send(d, fake_tune, sizeof(fake_tune), 0);
+                    close(d);
+                    say(c, "226 done\r\n");
+                } else {
+                    close(d);
+                    say(c, "550 no such file\r\n");
+                }
+                close(data_listen);
+            } else {
+                say(c, "221 bye\r\n");
+                break;
+            }
+        }
+        close(c);
+    }
+    return NULL;
+}
+
+static void test_ftp_get(void)
+{
+    fake_ftp_fd = socket(AF_INET, SOCK_STREAM, 0);
+    int one = 1;
+    setsockopt(fake_ftp_fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    struct sockaddr_in a = { .sin_family = AF_INET, .sin_port = htons(21) };
+    if (bind(fake_ftp_fd, (struct sockaddr *)&a, sizeof(a)) != 0 || listen(fake_ftp_fd, 2) != 0) {
+        printf("(ftp_get not tested: can't listen on port 21)\n");
+        close(fake_ftp_fd);
+        return;
+    }
+    pthread_t t;
+    pthread_create(&t, NULL, fake_ftp, NULL);
+    unsigned char *data = NULL;
+    size_t len = 0;
+    char err[160] = "";
+    CHECK(ftp_get("127.0.0.1", NULL, "/SD/tune.sid", &data, &len, 4096, err, sizeof(err)) == 0 &&
+          len == sizeof(fake_tune) && data && !memcmp(data, fake_tune, len));
+    free(data);
+    CHECK(ftp_get("127.0.0.1", NULL, "/SD/none.sid", &data, &len, 4096, err, sizeof(err)) == -1 &&
+          !data && strstr(err, "550"));
+    close(fake_ftp_fd);
+    pthread_join(t, NULL);
+}
+
 /* The SID player: its list, subfolders, playing and its buttons; the play order. */
 static void test_sid_player(void)
 {
     static ui_state u;
     ui_setup(&u);
-    CHECK(ui_open_sid(&u).kind == UA_SID_LIST && u.sid_loading);
+    CHECK(ui_open_sid(&u).kind == UA_SID_LIST && u.sid_dirs[SID_TAB_LOCAL].loading);
     ftp_entry *e = calloc(4, sizeof(*e));
     strcpy(e[0].name, "Hubbard_Rob");
     e[0].is_dir = 1;
     strcpy(e[1].name, "Commando.sid");
     strcpy(e[2].name, "readme.txt");                                /* not a tune: hidden */
     strcpy(e[3].name, "Delta.sid");
-    ui_sid_set_listing(&u, "/", e, 4);
-    CHECK(u.sid_count == 3 && !u.sid_loading && !strcmp(u.sid_entries[2].name, "Delta.sid"));
+    ui_sid_set_listing(&u, SID_TAB_LOCAL, "/", e, 4);
+    CHECK(u.sid_dirs[SID_TAB_LOCAL].count == 3 && !u.sid_dirs[SID_TAB_LOCAL].loading &&
+          !strcmp(u.sid_dirs[SID_TAB_LOCAL].entries[2].name, "Delta.sid"));
     ui_action a = ui_input(&u, IN_OK);                              /* into the folder */
     CHECK(a.kind == UA_SID_LIST && !strcmp(a.path, "/Hubbard_Rob"));
     e = calloc(1, sizeof(*e));
     strcpy(e[0].name, "Commando.sid");
-    ui_sid_set_listing(&u, "/Hubbard_Rob", e, 1);
+    ui_sid_set_listing(&u, SID_TAB_LOCAL, "/Hubbard_Rob", e, 1);
     CHECK(u.sid_sel[SID_TAB_LOCAL] == 1);                           /* on its first tune */
     u.sid_sel[SID_TAB_LOCAL] = 0;
     a = ui_input(&u, IN_OK);                                        /* ".." goes back up */
@@ -1272,7 +1370,7 @@ static void test_sid_player(void)
     e = calloc(2, sizeof(*e));
     strcpy(e[0].name, "Commando.sid");
     strcpy(e[1].name, "Delta.sid");
-    ui_sid_set_listing(&u, "/", e, 2);
+    ui_sid_set_listing(&u, SID_TAB_LOCAL, "/", e, 2);
     ui_input(&u, IN_DOWN);
     a = ui_input(&u, IN_OK);
     CHECK(a.kind == UA_SID_PLAY && a.category == SID_TAB_LOCAL && a.offset == 1);
@@ -1299,6 +1397,33 @@ static void test_sid_player(void)
     CHECK(u.screen == UI_A64 && u.a64_for_sid);
     ui_input(&u, IN_BACK);                                          /* (typing) back to the player */
     CHECK(u.screen == UI_SID && !u.a64_for_sid);
+
+    /* With a C64 Ultimate, a third list: its storage, listed the first time it's shown. */
+    a = ui_input(&u, IN_RIGHT);
+    CHECK(u.sid_tab == SID_TAB_ULTIMATE && a.kind == UA_SID_LIST && a.category == SID_TAB_ULTIMATE &&
+          !strcmp(a.path, "/"));
+    e = calloc(2, sizeof(*e));
+    strcpy(e[0].name, "SD");
+    e[0].is_dir = 1;
+    strcpy(e[1].name, "game.d64");                                  /* not a tune: hidden */
+    ui_sid_set_listing(&u, SID_TAB_ULTIMATE, "/", e, 2);
+    CHECK(u.sid_dirs[SID_TAB_ULTIMATE].count == 1 && u.sid_sel[SID_TAB_ULTIMATE] == 1);
+    a = ui_input(&u, IN_OK);                                        /* into /SD */
+    CHECK(a.kind == UA_SID_LIST && a.category == SID_TAB_ULTIMATE && !strcmp(a.path, "/SD"));
+    e = calloc(1, sizeof(*e));
+    strcpy(e[0].name, "Commando.sid");
+    ui_sid_set_listing(&u, SID_TAB_ULTIMATE, "/SD", e, 1);
+    a = ui_input(&u, IN_OK);                                        /* (on its first tune) */
+    CHECK(a.kind == UA_SID_PLAY && a.category == SID_TAB_ULTIMATE && a.offset == 0);
+    ui_input(&u, IN_RIGHT);                                         /* wraps round to Local */
+    CHECK(u.sid_tab == SID_TAB_LOCAL);
+    ui_input(&u, IN_LEFT);
+    CHECK(u.sid_tab == SID_TAB_ULTIMATE);
+    ui_sid_set_ultimate(&u, 0);                                     /* gone: back to Local */
+    CHECK(u.sid_tab == SID_TAB_LOCAL);
+    ui_input(&u, IN_RIGHT);
+    ui_input(&u, IN_RIGHT);                                         /* (two lists now) */
+    CHECK(u.sid_tab == SID_TAB_LOCAL);
 
     /* The games search and the SID player's search don't share results. */
     ui_open_a64(&u);                                                /* a games search... */
@@ -1390,6 +1515,7 @@ static void test_prompts(void)
 
 int main(void)
 {
+    test_ftp_get();
     test_prompts();
     test_home();
     test_sid_player();

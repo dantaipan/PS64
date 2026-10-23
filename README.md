@@ -312,7 +312,9 @@ title, author and year, the song, the chip, the time, each voice's note and wave
 and an oscilloscope. Options > Audio sets its level (`sid-volume`, -12 dB to start).
 
 With a C64 Ultimate connected, the list's first row, **Play on**, sends the tunes to the
-Ultimate's SID chips instead (its sound comes back through the stream; `sid-output`).
+Ultimate's SID chips instead (its sound comes back through the stream; `sid-output`), and a
+third list, **C64 Ultimate**, browses its storage (SD, USB): a tune from it is fetched over
+FTP and plays wherever Play on says.
 
 ## Built-in emulator (no C64 Ultimate needed)
 

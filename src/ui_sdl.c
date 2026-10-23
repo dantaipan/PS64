@@ -600,10 +600,10 @@ static void mmss(unsigned ms, char *out, size_t cap)
 static void draw_sid(SDL_Renderer *ren, const ui_state *u, Uint32 now)
 {
     panel(ren, "SID player");
-    /* Tabs. */
-    int tx = PX + 16;
-    static const char *const tabs[2] = { "Local", "Assembly64" };
-    for (int t = 0; t < 2; t++) {
+    /* Tabs (the C64 Ultimate's storage while one is connected). */
+    int tx = PX + 16, ntabs = u->sid_can_ultimate ? 3 : 2;
+    static const char *const tabs[SID_TABS] = { "Local", "Assembly64", "C64 Ultimate" };
+    for (int t = 0; t < ntabs; t++) {
         font_draw(ren, tabs[t], tx, PY + 35, 1, t == u->sid_tab ? WHITE : DIM);
         if (t == u->sid_tab)
             fill_rect(ren, tx, PY + 44, font_width(tabs[t], 1), 2, 0x70, 0x6D, 0xEB, 255);
@@ -612,9 +612,10 @@ static void draw_sid(SDL_Renderer *ren, const ui_state *u, Uint32 now)
     font_draw(ren, "< >", tx, PY + 35, 1, DIM);
 
     /* The list. */
-    int tab = u->sid_tab, extra = (u->sid_can_ultimate ? 1 : 0) +
-                                  (tab == SID_TAB_A64 || strcmp(u->sid_path, "/") ? 1 : 0);
-    int n = tab == SID_TAB_LOCAL ? u->sid_count : u->sid_a64_count, rows = extra + n;
+    int tab = u->sid_tab, folder = tab != SID_TAB_A64;
+    const sid_folder *d = &u->sid_dirs[tab];
+    int extra = (u->sid_can_ultimate ? 1 : 0) + (!folder || strcmp(d->path, "/") ? 1 : 0);
+    int n = folder ? d->count : u->sid_a64_count, rows = extra + n;
     int chars = SID_LIST_W / 8 - 2;
     for (int i = u->sid_top[tab]; i < rows && i < u->sid_top[tab] + 20; i++) {
         char text[200], line[64];
@@ -624,10 +625,10 @@ static void draw_sid(SDL_Renderer *ren, const ui_state *u, Uint32 now)
             snprintf(text, sizeof(text), "Play on: %s", u->sid_prefer_ultimate ? "C64 Ultimate" : "PS64");
             c = CYAN;
         } else if (i < extra) {
-            snprintf(text, sizeof(text), "%s", tab == SID_TAB_LOCAL ? ".. (up)" : "Search Assembly64 music...");
+            snprintf(text, sizeof(text), "%s", folder ? ".. (up)" : "Search Assembly64 music...");
             c = CYAN;
-        } else if (tab == SID_TAB_LOCAL) {
-            const ftp_entry *e = &u->sid_entries[i - extra];
+        } else if (folder) {
+            const ftp_entry *e = &d->entries[i - extra];
             snprintf(text, sizeof(text), e->is_dir ? "%s/" : "%s", e->name);
             c = e->is_dir ? CYAN : WHITE;
             playing = u->sid_play_tab == tab && u->sid_play_index == i - extra;
@@ -643,10 +644,13 @@ static void draw_sid(SDL_Renderer *ren, const ui_state *u, Uint32 now)
             fill_rect(ren, PX + 8, y - 5, SID_LIST_W + 8, ROW_H, 0x70, 0x6D, 0xEB, 255);
         font_draw(ren, line, PX + 12, y, 1, sel ? WHITE : playing ? YELLOW : c);
     }
-    if (tab == SID_TAB_LOCAL && !n && !u->sid_loading)
-        font_draw(ren, u->sid_error[0] ? u->sid_error : "No .sid files here (copy them to the SID folder)",
-                  PX + 16, LIST_Y + extra * ROW_H, 1, u->sid_error[0] ? YELLOW : DIM);
-    if (tab == SID_TAB_A64 && !n)
+    if (folder && !n) {
+        const char *empty = tab == SID_TAB_LOCAL ? "No .sid files here (copy them to the SID folder)"
+                                                 : "No .sid files here";
+        font_draw(ren, d->loading ? "Loading..." : d->error[0] ? d->error : empty,
+                  PX + 16, LIST_Y + extra * ROW_H, 1, d->error[0] && !d->loading ? YELLOW : DIM);
+    }
+    if (!folder && !n)
         font_draw(ren, "Search, then pick a tune", PX + 16, LIST_Y + extra * ROW_H, 1, DIM);
 
     /* Now playing. */

@@ -184,7 +184,7 @@ int files_screen_ready(const unsigned char *screen, int len)
 
 /* ---- worker ------------------------------------------------------------------ */
 
-enum { REQ_NONE, REQ_LIST, REQ_ACTION, REQ_DATA };
+enum { REQ_NONE, REQ_LIST, REQ_ACTION, REQ_DATA, REQ_GET };
 
 struct c64files {
     char            host[64], password[64];
@@ -492,6 +492,10 @@ static void *worker(void *arg)
                 res.kind = FR_LISTING;
                 res.count = n;
             }
+        } else if (req == REQ_GET) {
+            res.kind = ftp_get(f->host, f->password[0] ? f->password : NULL, path, &res.data,
+                               &res.len, 128 * 1024, res.message, sizeof(res.message)) == 0
+                       ? FR_FILE : FR_ERROR;
         } else if (req == REQ_DATA) {
             res.kind = do_data_action(f, path, data, data_len, action, song, res.message,
                                       sizeof(res.message)) == 0 ? FR_DONE : FR_ERROR;
@@ -563,6 +567,11 @@ static void request(c64files *f, int req, const char *path, int action)
 void files_list(c64files *f, const char *path)
 {
     request(f, REQ_LIST, path, 0);
+}
+
+void files_get(c64files *f, const char *path)
+{
+    request(f, REQ_GET, path, 0);
 }
 
 void files_action(c64files *f, const char *path, int action)

@@ -21,6 +21,13 @@ typedef struct {
 int ftp_list(const char *host, const char *password, const char *dir,
              ftp_entry *out, int max, char *err, size_t errcap);
 
+/*
+ * Fetch the file at path (binary). Returns 0 with a malloc'd copy in *data (free it), or
+ * -1 with a message in err (also when it's max bytes or more).
+ */
+int ftp_get(const char *host, const char *password, const char *path,
+            unsigned char **data, size_t *len, size_t max, char *err, size_t errcap);
+
 /* A logged-in connection for listing many folders in a row. */
 typedef struct ftp_session ftp_session;
 ftp_session *ftp_open(const char *host, const char *password, char *err, size_t errcap);

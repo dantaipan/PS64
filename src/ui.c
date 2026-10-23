@@ -32,7 +32,8 @@ void ui_setup(ui_state *u)
     u->port = 2;
     u->a64_cat = -1;                    /* all categories */
     snprintf(u->path, sizeof(u->path), "/");
-    snprintf(u->sid_path, sizeof(u->sid_path), "/");
+    for (int t = 0; t < SID_TABS; t++)
+        snprintf(u->sid_dirs[t].path, sizeof(u->sid_dirs[t].path), "/");
     u->sid_play_index = -1;
     u->home_last = -1;
 }
@@ -47,11 +48,14 @@ void ui_free(ui_state *u)
     u->a64_items = NULL;
     u->a64_files = NULL;
     u->a64_count = u->a64_nfiles = 0;
-    free(u->sid_entries);
+    for (int t = 0; t < SID_TABS; t++) {
+        free(u->sid_dirs[t].entries);
+        u->sid_dirs[t].entries = NULL;
+        u->sid_dirs[t].count = 0;
+    }
     free(u->sid_a64);
-    u->sid_entries = NULL;
     u->sid_a64 = NULL;
-    u->sid_count = u->sid_a64_count = 0;
+    u->sid_a64_count = 0;
 }
 
 static void go(ui_state *u, int screen)
@@ -1206,34 +1210,43 @@ static ui_action input_about(ui_state *u, int in)
 
 #define SID_ROWS 20     /* list rows shown */
 
+static int is_folder_tab(int tab) { return tab != SID_TAB_A64; }
+
+static int sid_tunes(const ui_state *u, int tab)
+{
+    return is_folder_tab(tab) ? u->sid_dirs[tab].count : u->sid_a64_count;
+}
+
 /* Rows above the tunes: "Play on" (with a C64 Ultimate), then ".." (in a subfolder) or
  * the Assembly64 search. */
 static int sid_extra(const ui_state *u, int tab)
 {
     int n = u->sid_can_ultimate ? 1 : 0;
-    if (tab == SID_TAB_A64 || strcmp(u->sid_path, "/"))
+    if (!is_folder_tab(tab) || strcmp(u->sid_dirs[tab].path, "/"))
         n++;
     return n;
 }
 
 static int sid_rows(const ui_state *u, int tab)
 {
-    return sid_extra(u, tab) + (tab == SID_TAB_LOCAL ? u->sid_count : u->sid_a64_count);
+    return sid_extra(u, tab) + sid_tunes(u, tab);
 }
 
-static ui_action sid_list_action(ui_state *u)
+static ui_action sid_list_action(ui_state *u, int tab)
 {
-    u->sid_loading = 1;
-    u->sid_error[0] = 0;
+    sid_folder *d = &u->sid_dirs[tab];
+    d->loading = 1;
+    d->error[0] = 0;
     ui_action a = act(UA_SID_LIST);
-    snprintf(a.path, sizeof(a.path), "%s", u->sid_path);
+    a.category = tab;
+    snprintf(a.path, sizeof(a.path), "%s", d->path);
     return a;
 }
 
 /* Start the selection on the first tune, not on "Play on" or "..". */
 static void sid_first_tune(ui_state *u, int tab)
 {
-    int extra = sid_extra(u, tab), n = tab == SID_TAB_LOCAL ? u->sid_count : u->sid_a64_count;
+    int extra = sid_extra(u, tab), n = sid_tunes(u, tab);
     u->sid_sel[tab] = n ? extra : extra - 1 < 0 ? 0 : extra - 1;
     u->sid_top[tab] = 0;
 }
@@ -1241,7 +1254,9 @@ static void sid_first_tune(ui_state *u, int tab)
 ui_action ui_open_sid(ui_state *u)
 {
     u->screen = UI_SID;
-    return sid_list_action(u);
+    if (u->sid_tab == SID_TAB_ULTIMATE && !u->sid_can_ultimate)
+        u->sid_tab = SID_TAB_LOCAL;
+    return sid_list_action(u, is_folder_tab(u->sid_tab) ? u->sid_tab : SID_TAB_LOCAL);
 }
 
 void ui_sid_set_ultimate(ui_state *u, int connected)
@@ -1250,68 +1265,82 @@ void ui_sid_set_ultimate(ui_state *u, int connected)
     if (connected == u->sid_can_ultimate)
         return;
     u->sid_can_ultimate = connected;
-    for (int t = 0; t < 2; t++) {
+    for (int t = 0; t < SID_TABS; t++) {
         u->sid_sel[t] += connected ? 1 : -1;
         if (u->sid_sel[t] < 0)
             u->sid_sel[t] = 0;
         if (u->sid_top[t] > u->sid_sel[t])
             u->sid_top[t] = u->sid_sel[t];
     }
+    if (!connected && u->sid_tab == SID_TAB_ULTIMATE)
+        u->sid_tab = SID_TAB_LOCAL;                 /* (its storage is gone) */
 }
 
-void ui_sid_set_listing(ui_state *u, const char *path, ftp_entry *entries, int n)
+void ui_sid_set_listing(ui_state *u, int tab, const char *path, ftp_entry *entries, int n)
 {
-    int first = !u->sid_entries, kept = 0;
+    sid_folder *d = &u->sid_dirs[tab];
+    int first = !d->entries, kept = 0;
     for (int i = 0; i < n; i++)
         if (entries[i].is_dir || files_type(entries[i].name, 0) == FT_SID)
             entries[kept++] = entries[i];
-    free(u->sid_entries);
-    u->sid_entries = entries;
-    u->sid_count = kept;
-    u->sid_loading = 0;
-    u->sid_error[0] = 0;
-    if (strcmp(u->sid_path, path) || first || u->sid_sel[SID_TAB_LOCAL] < 0) {
-        snprintf(u->sid_path, sizeof(u->sid_path), "%s", path);
-        sid_first_tune(u, SID_TAB_LOCAL);
+    free(d->entries);
+    d->entries = entries;
+    d->count = kept;
+    d->loading = 0;
+    d->error[0] = 0;
+    if (strcmp(d->path, path) || first || u->sid_sel[tab] < 0) {
+        snprintf(d->path, sizeof(d->path), "%s", path);
+        sid_first_tune(u, tab);
     }
-    int rows = sid_rows(u, SID_TAB_LOCAL);
-    if (u->sid_sel[SID_TAB_LOCAL] >= rows)
-        u->sid_sel[SID_TAB_LOCAL] = rows ? rows - 1 : 0;
+    int rows = sid_rows(u, tab);
+    if (u->sid_sel[tab] >= rows)
+        u->sid_sel[tab] = rows ? rows - 1 : 0;
 }
 
-void ui_sid_list_error(ui_state *u, const char *path, const char *message)
+void ui_sid_list_error(ui_state *u, int tab, const char *path, const char *message)
 {
     (void)path;
-    if (u->sid_sel[SID_TAB_LOCAL] < 0)
-        u->sid_sel[SID_TAB_LOCAL] = 0;
-    u->sid_loading = 0;
-    snprintf(u->sid_error, sizeof(u->sid_error), "%s", message);
+    sid_folder *d = &u->sid_dirs[tab];
+    if (u->sid_sel[tab] < 0)
+        u->sid_sel[tab] = 0;
+    d->loading = 0;
+    snprintf(d->error, sizeof(d->error), "%s", message);
 }
 
-/* The parent of a SID-folder path ("/a/b" -> "/a"). */
-static void sid_up(ui_state *u)
+/* The parent of a folder path ("/a/b" -> "/a"). */
+static void sid_up(sid_folder *d)
 {
-    char *slash = strrchr(u->sid_path, '/');
-    if (slash && slash != u->sid_path)
+    char *slash = strrchr(d->path, '/');
+    if (slash && slash != d->path)
         *slash = 0;
     else
-        snprintf(u->sid_path, sizeof(u->sid_path), "/");
+        snprintf(d->path, sizeof(d->path), "/");
+}
+
+/* Left/right: the next list (the C64 Ultimate's only while one is connected). */
+static ui_action sid_switch_tab(ui_state *u, int dir)
+{
+    int tabs = u->sid_can_ultimate ? 3 : 2;
+    u->sid_tab = ((u->sid_tab + dir) % tabs + tabs) % tabs;
+    int tab = u->sid_tab;
+    if (tab == SID_TAB_A64 && !u->sid_a64_count)
+        sid_first_tune(u, tab);                     /* on the search */
+    if (is_folder_tab(tab) && !u->sid_dirs[tab].entries && !u->sid_dirs[tab].loading)
+        return sid_list_action(u, tab);             /* first time there: list it */
+    return none();
 }
 
 static ui_action input_sid(ui_state *u, int in)
 {
     int tab = u->sid_tab, rows = sid_rows(u, tab), extra = sid_extra(u, tab);
     int *sel = &u->sid_sel[tab], *top = &u->sid_top[tab];
+    sid_folder *d = &u->sid_dirs[tab];
     ui_action a;
     switch (in) {
     case IN_UP:    move_in(sel, top, rows, SID_ROWS, -1, 1); break;
     case IN_DOWN:  move_in(sel, top, rows, SID_ROWS, 1, 1); break;
-    case IN_LEFT:
-    case IN_RIGHT:
-        u->sid_tab = !u->sid_tab;
-        if (u->sid_tab == SID_TAB_A64 && !u->sid_a64_count)
-            sid_first_tune(u, SID_TAB_A64);         /* on the search */
-        break;
+    case IN_LEFT:  return sid_switch_tab(u, -1);
+    case IN_RIGHT: return sid_switch_tab(u, 1);
     case IN_L1: case IN_R1:
         a = act(UA_SID_SONG);
         a.offset = in == IN_L1 ? -1 : 1;
@@ -1330,24 +1359,24 @@ static ui_action input_sid(ui_state *u, int in)
         if (u->sid_can_ultimate && row == 0)
             return act(UA_SID_OUTPUT);
         if (row < extra) {                          /* ".." or the Assembly64 search */
-            if (tab == SID_TAB_LOCAL) {
-                sid_up(u);
+            if (is_folder_tab(tab)) {
+                sid_up(d);
                 u->sid_sel[tab] = -1;               /* (a new folder: its first tune when listed) */
-                return sid_list_action(u);
+                return sid_list_action(u, tab);
             }
             u->a64_for_sid = 1;
             ui_open_a64(u);
             break;
         }
         int i = row - extra;
-        if (tab == SID_TAB_LOCAL && i < u->sid_count && u->sid_entries[i].is_dir) {
-            size_t len = strlen(u->sid_path);
-            snprintf(u->sid_path + len, sizeof(u->sid_path) - len, "%s%s",
-                     u->sid_path[len - 1] == '/' ? "" : "/", u->sid_entries[i].name);
+        if (is_folder_tab(tab) && i < d->count && d->entries[i].is_dir) {
+            size_t len = strlen(d->path);
+            snprintf(d->path + len, sizeof(d->path) - len, "%s%s",
+                     d->path[len - 1] == '/' ? "" : "/", d->entries[i].name);
             u->sid_sel[tab] = -1;                   /* (a new folder: its first tune when listed) */
-            return sid_list_action(u);
+            return sid_list_action(u, tab);
         }
-        if (i < (tab == SID_TAB_LOCAL ? u->sid_count : u->sid_a64_count)) {
+        if (i < sid_tunes(u, tab)) {
             a = act(UA_SID_PLAY);
             a.category = tab;
             a.offset = i;

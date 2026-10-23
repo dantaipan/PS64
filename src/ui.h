@@ -38,7 +38,7 @@ enum { UA_NONE, UA_MUTE, UA_PORT, UA_QUIT, UA_CONNECT, UA_RESCAN,
        UA_HOME_VICE,     /* home: the built-in emulator (resumes it if it ran) */
        UA_HOME_STREAM,   /* home: the C64 Ultimate's stream (it's live) */
        UA_HOME_SID,      /* home: the SID player (path: its folder to list) */
-       UA_SID_LIST,      /* SID player: list a folder of the SID folder (path) */
+       UA_SID_LIST,      /* SID player: list folder path of tab category (Local, C64 Ultimate) */
        UA_SID_PLAY,      /* SID player: play entry offset of tab category (SID_TAB_*) */
        UA_SID_SONG,      /* SID player: subtune -1 / +1 (offset) */
        UA_SID_SKIP,      /* SID player: previous (-1) or next (1) tune */
@@ -81,8 +81,17 @@ enum { SHOT_NONE, SHOT_LOADING, SHOT_READY };
  * louder from Off comes back at the lowest level. Updates *db and *muted. */
 void ui_volume_step(int *db, int *muted, int dir);
 
-/* SID player: the two lists, and the size of the oscilloscope's sample window. */
-enum { SID_TAB_LOCAL, SID_TAB_A64 };
+/* SID player: its lists (the C64 Ultimate's while one is connected), and the size of the
+ * oscilloscope's sample window. */
+enum { SID_TAB_LOCAL, SID_TAB_A64, SID_TAB_ULTIMATE, SID_TABS };
+
+/* A folder list of the SID player (Local, the C64 Ultimate's storage). */
+typedef struct {
+    char       path[512];         /* the folder shown ("/" = its top) */
+    ftp_entry *entries;           /* owned: its folders and .sid files */
+    int        count, loading;
+    char       error[128];
+} sid_folder;
 #define SID_SCOPE 384
 
 /* Home screen items, focus and the C64 Ultimate stream's state. */
@@ -117,14 +126,11 @@ typedef struct {
     int  picker_from_home;        /* the picker is the home screen's settings */
 
     /* SID player. Lists: */
-    int        sid_tab;           /* SID_TAB_LOCAL or SID_TAB_A64 */
-    char       sid_path[512];     /* folder of the SID folder shown ("/" = its top) */
-    ftp_entry *sid_entries;       /* owned: folders and .sid files of sid_path */
-    int        sid_count, sid_loading;
-    char       sid_error[128];
+    int        sid_tab;           /* SID_TAB_* */
+    sid_folder sid_dirs[SID_TABS];  /* [SID_TAB_LOCAL], [SID_TAB_ULTIMATE] ([SID_TAB_A64] unused) */
     a64_item  *sid_a64;           /* owned: the Assembly64 music results played from */
     int        sid_a64_count;
-    int        sid_sel[2], sid_top[2];
+    int        sid_sel[SID_TABS], sid_top[SID_TABS];
     int        a64_for_sid;       /* the Assembly64 search was opened by the SID player */
     int        a64_results_sid;   /* the search's query and results are the SID player's */
     int        a64_pending_sid;   /* the search on its way was sent by the SID player */
@@ -216,11 +222,11 @@ void ui_open_picker(ui_state *u, const char *message);
 /* The home screen (keeps the item chosen last). */
 void ui_open_home(ui_state *u);
 
-/* The SID player (returns the UA_SID_LIST for its folder), its folder listing (takes
- * entries; keeps folders and .sid files) and a failed listing. */
+/* The SID player (returns the UA_SID_LIST for its folder), a folder listing of a tab
+ * (takes entries; keeps folders and .sid files) and a failed listing. */
 ui_action ui_open_sid(ui_state *u);
-void ui_sid_set_listing(ui_state *u, const char *path, ftp_entry *entries, int n);
-void ui_sid_list_error(ui_state *u, const char *path, const char *message);
+void ui_sid_set_listing(ui_state *u, int tab, const char *path, ftp_entry *entries, int n);
+void ui_sid_list_error(ui_state *u, int tab, const char *path, const char *message);
 /* Whether a C64 Ultimate is connected (the "Play on" row): keeps the selection on the
  * same entry when that row comes or goes. */
 void ui_sid_set_ultimate(ui_state *u, int connected);

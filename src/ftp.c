@@ -175,6 +175,27 @@ void ftp_close(ftp_session *s)
     free(s);
 }
 
+/* Passive mode and its data connection; -1 with a message in err. */
+static int open_data(ftp_session *s, char *err, size_t errcap)
+{
+    char msg[512];
+    int code = command(&s->c, "PASV", msg, sizeof(msg));
+    if (code != 227) {
+        if (code < 0) s->broken = 1;
+        snprintf(err, errcap, "FTP passive mode failed");
+        return -1;
+    }
+    /* Connect to the C64's own address: the one in the PASV reply may not be reachable. */
+    int port = ftp_parse_pasv_port(msg);
+    int data = port > 0 ? c64api_connect(s->host, port, 2000) : -1;
+    if (data < 0) {
+        s->broken = 1;                      /* server waits on a data connection that never came */
+        snprintf(err, errcap, "FTP data connection failed");
+        return -1;
+    }
+    return data;
+}
+
 int ftp_list_dir(ftp_session *s, const char *dir, ftp_entry *out, int max,
                  char *err, size_t errcap)
 {
@@ -190,20 +211,9 @@ int ftp_list_dir(ftp_session *s, const char *dir, ftp_entry *out, int max,
         snprintf(err, errcap, "Can't open %s", dir);
         return -1;
     }
-    code = command(&s->c, "PASV", msg, sizeof(msg));
-    if (code != 227) {
-        if (code < 0) s->broken = 1;
-        snprintf(err, errcap, "FTP passive mode failed");
+    int data = open_data(s, err, errcap);
+    if (data < 0)
         return -1;
-    }
-    /* Connect to the C64's own address: the one in the PASV reply may not be reachable. */
-    int port = ftp_parse_pasv_port(msg);
-    int data = port > 0 ? c64api_connect(s->host, port, 2000) : -1;
-    if (data < 0) {
-        s->broken = 1;                      /* server waits on a data connection that never came */
-        snprintf(err, errcap, "FTP data connection failed");
-        return -1;
-    }
     code = command(&s->c, "LIST", msg, sizeof(msg));
     if (code != 150 && code != 125) {
         close(data);
@@ -227,6 +237,49 @@ int ftp_list_dir(ftp_session *s, const char *dir, ftp_entry *out, int max,
         s->broken = 1;
     ftp_sort(out, count);
     return count;
+}
+
+int ftp_get(const char *host, const char *password, const char *path,
+            unsigned char **data, size_t *len, size_t max, char *err, size_t errcap)
+{
+    *data = NULL;
+    *len = 0;
+    ftp_session *s = ftp_open(host, password, err, errcap);
+    if (!s)
+        return -1;
+    char msg[512], cmd[600];
+    int rc = -1, fd = open_data(s, err, errcap);
+    if (fd >= 0) {
+        snprintf(cmd, sizeof(cmd), "RETR %s", path);
+        int code = command(&s->c, cmd, msg, sizeof(msg));
+        if (code != 150 && code != 125) {
+            snprintf(err, errcap, "Can't fetch %s (%d)", path, code);
+        } else {
+            unsigned char *buf = malloc(max ? max : 1);
+            size_t n = 0;
+            ssize_t got = 0;
+            while (buf && n < max && (got = recv(fd, buf + n, max - n, 0)) > 0)
+                n += (size_t)got;
+            if (!buf) {
+                snprintf(err, errcap, "Out of memory");
+            } else if (n == max) {
+                snprintf(err, errcap, "%s is too big", path);
+                free(buf);
+            } else if (got < 0) {
+                snprintf(err, errcap, "Fetching %s failed", path);
+                free(buf);
+            } else {
+                *data = buf;
+                *len = n;
+                rc = 0;
+            }
+        }
+        close(fd);
+        if (code == 150 || code == 125)
+            read_reply(&s->c, msg, sizeof(msg));   /* 226 transfer complete */
+    }
+    ftp_close(s);
+    return rc;
 }
 
 int ftp_list(const char *host, const char *password, const char *dir,

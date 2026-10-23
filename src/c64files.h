@@ -59,7 +59,7 @@ int  files_screen_ready(const unsigned char *screen, int len);
  */
 int  files_parse_drive_a(const char *json, int *bus_id, int *enabled);
 
-enum { FR_NONE, FR_LISTING, FR_DONE, FR_ERROR };
+enum { FR_NONE, FR_LISTING, FR_DONE, FR_ERROR, FR_FILE };
 
 typedef struct {
     int        kind;
@@ -67,6 +67,8 @@ typedef struct {
     char       message[160];
     ftp_entry *entries;          /* FR_LISTING: owned by the caller after poll */
     int        count;
+    unsigned char *data;         /* FR_FILE: the file's bytes, owned by the caller after poll */
+    size_t     len;
 } files_result;
 
 typedef struct c64files c64files;
@@ -74,6 +76,8 @@ typedef struct c64files c64files;
 c64files *files_start(const char *host, const char *password, remote *rem);
 void files_stop(c64files *f);
 void files_list(c64files *f, const char *path);
+/* Fetch a file's bytes over FTP (small files: up to 128 KB); arrives as FR_FILE. */
+void files_get(c64files *f, const char *path);
 void files_action(c64files *f, const char *path, int action);
 /* Run an action on file bytes uploaded with the request (takes ownership of
  * data); name gives the type, e.g. "Boulder Dash.d64". */

@@ -757,6 +757,8 @@ typedef struct {
     int            prefer_ultimate;   /* "Play on: C64 Ultimate" chosen (sid-output) */
     int            on_ultimate;       /* this tune plays there (one is connected) */
     char           want_id[64];       /* the Assembly64 tune being fetched */
+    char           want_path[512];    /* the C64 Ultimate's tune being fetched over FTP */
+    char           ult_listing[512];  /* the C64 Ultimate folder being listed for the player */
     int            want_cat;
     Uint32         ult_started;       /* on the C64 Ultimate: when its song started */
     int16_t        scope[SID_SCOPE];
@@ -873,7 +875,7 @@ static void sid_stop(ui_state *ui, c64files *files)
     sp.engine = NULL;
     free(sp.data);
     sp.data = NULL;
-    sp.want_id[0] = 0;
+    sp.want_id[0] = sp.want_path[0] = 0;
     sp.paused = 0;
     ui->sid_active = 0;
     ui->sid_status[0] = 0;
@@ -920,8 +922,20 @@ static void sid_load_current(ui_state *ui, a64 *a64c, c64files *files)
     int cur = playlist_current(&sp.list);
     if (cur < 0)
         return;
-    sp.want_id[0] = 0;
-    if (sp.tab == SID_TAB_LOCAL) {
+    sp.want_id[0] = sp.want_path[0] = 0;
+    if (sp.tab == SID_TAB_ULTIMATE) {
+        /* Its bytes over FTP first (title, songs, lengths), then it plays as "Play on" says. */
+        const char *name = strrchr(sp.paths[cur], '/');
+        if (!files) {
+            snprintf(ui->sid_status, sizeof(ui->sid_status), "No C64 Ultimate connected");
+        } else {
+            sidplay_close(sp.engine);                /* silence while it's fetched */
+            sp.engine = NULL;
+            snprintf(sp.want_path, sizeof(sp.want_path), "%s", sp.paths[cur]);
+            files_get(files, sp.paths[cur]);
+            snprintf(ui->sid_status, sizeof(ui->sid_status), "Fetching %s...", name ? name + 1 : sp.paths[cur]);
+        }
+    } else if (sp.tab == SID_TAB_LOCAL) {
         char path[1200];
         size_t len;
         localfs_real_path(sids_dir, sp.paths[cur], path, sizeof(path));
@@ -962,17 +976,19 @@ static void sid_play_list(ui_state *ui, int tab, int index, a64 *a64c, c64files 
     sp.items = NULL;
     sp.n = 0;
     sp.tab = tab;
-    int count = tab == SID_TAB_LOCAL ? ui->sid_count : ui->sid_a64_count, start = 0;
+    const sid_folder *d = &ui->sid_dirs[tab];
+    int folder = tab != SID_TAB_A64;
+    int count = folder ? d->count : ui->sid_a64_count, start = 0;
     sp.row = malloc(sizeof(int) * (size_t)(count ? count : 1));
-    if (tab == SID_TAB_LOCAL) {
+    if (folder) {                       /* Local, the C64 Ultimate's: the folder's tunes */
         sp.paths = malloc(sizeof(*sp.paths) * (size_t)(count ? count : 1));
         for (int i = 0; sp.row && sp.paths && i < count; i++) {
-            if (ui->sid_entries[i].is_dir)
+            if (d->entries[i].is_dir)
                 continue;
             if (i == index)
                 start = sp.n;
-            snprintf(sp.paths[sp.n], sizeof(sp.paths[sp.n]), "%s%s%s", ui->sid_path,
-                     strcmp(ui->sid_path, "/") ? "/" : "", ui->sid_entries[i].name);
+            snprintf(sp.paths[sp.n], sizeof(sp.paths[sp.n]), "%s%s%s", d->path,
+                     strcmp(d->path, "/") ? "/" : "", d->entries[i].name);
             sp.row[sp.n++] = i;
         }
     } else {
@@ -997,9 +1013,9 @@ static void sid_list(ui_state *ui, const char *path)
     int n = e ? localfs_list(sids_dir, path, e, MAX, err, sizeof(err)) : -1;
     if (n < 0) {
         free(e);
-        ui_sid_list_error(ui, path, err);
+        ui_sid_list_error(ui, SID_TAB_LOCAL, path, err);
     } else {
-        ui_sid_set_listing(ui, path, e, n);
+        ui_sid_set_listing(ui, SID_TAB_LOCAL, path, e, n);
     }
 }
 #endif
@@ -1811,7 +1827,16 @@ int main(int argc, char **argv)
                                SDL_GetTicks() - t0);
                     }
                 }
-                sid_list(&ui, a.path);
+                if (a.category == SID_TAB_ULTIMATE) {
+                    if (ses.files) {                /* over FTP: arrives in files_poll below */
+                        snprintf(sp.ult_listing, sizeof(sp.ult_listing), "%s", a.path);
+                        files_list(ses.files, a.path);
+                    } else {
+                        ui_sid_list_error(&ui, SID_TAB_ULTIMATE, a.path, "No C64 Ultimate connected");
+                    }
+                } else {
+                    sid_list(&ui, a.path);
+                }
                 break;
             case UA_SID_PLAY:
                 sid_play_list(&ui, a.category, a.offset, a64c, ses.files, tick);
@@ -2413,6 +2438,30 @@ int main(int argc, char **argv)
             files_result fr;
             while (files_poll(ses.files, &fr)) {
                 int browsing = ui.screen == UI_BROWSER || ui.screen == UI_ACTIONS;
+#ifdef PS64_SID
+                /* The SID player's: a folder of the C64 Ultimate, or a tune fetched from it. */
+                if ((fr.kind == FR_LISTING || fr.kind == FR_ERROR) && sp.ult_listing[0] &&
+                    !strcmp(fr.path, sp.ult_listing)) {
+                    sp.ult_listing[0] = 0;
+                    if (fr.kind == FR_LISTING)
+                        ui_sid_set_listing(&ui, SID_TAB_ULTIMATE, fr.path, fr.entries, fr.count);
+                    else
+                        ui_sid_list_error(&ui, SID_TAB_ULTIMATE, fr.path, fr.message);
+                    continue;
+                }
+                if ((fr.kind == FR_FILE || fr.kind == FR_ERROR) && sp.want_path[0] &&
+                    !strcmp(fr.path, sp.want_path)) {
+                    sp.want_path[0] = 0;
+                    const char *name = strrchr(fr.path, '/');
+                    if (fr.kind == FR_FILE)
+                        sid_play_bytes(&ui, ses.files, name ? name + 1 : fr.path, fr.data, fr.len);
+                    else
+                        snprintf(ui.sid_status, sizeof(ui.sid_status), "%s", fr.message);
+                    continue;
+                }
+#endif
+                free(fr.data);
+                fr.data = NULL;
                 if (fr.kind == FR_LISTING && browsing)
                     ui_set_listing(&ui, fr.path, fr.entries, fr.count);
                 else if (fr.kind == FR_ERROR && browsing && ui.loading)
