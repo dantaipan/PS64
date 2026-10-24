@@ -59,4 +59,4 @@ echo "$DLMALLOC_SHA256  third_party/dlmalloc/dlmalloc.c" | shasum -a 256 -c - >/
 docker image inspect ps64-ps5-sdk >/dev/null 2>&1 || docker build -t ps64-ps5-sdk ps5
 docker image inspect ps64-native >/dev/null 2>&1 || docker build -t ps64-native ps5/native
 
-docker run --rm -v "$PWD":/src -w /src ps64-native bash ps5/native/inside.sh "$@"
+docker run --rm -e A64_CLIENT -v "$PWD":/src -w /src ps64-native bash ps5/native/inside.sh "$@"

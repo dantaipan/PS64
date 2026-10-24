@@ -638,7 +638,11 @@ static void test_a64(void)
     free(d);
 
     /* Screens: search (PS64's client ID is built in); open item; run a file. */
+#ifdef PS64_A64_CLIENT
+    CHECK(strcmp(A64_CLIENT_ID, "PS64") && !strcmp(A64_CLIENT_ID, A64_STR(PS64_A64_CLIENT)));
+#else
     CHECK(!strcmp(A64_CLIENT_ID, "PS64"));
+#endif
     static ui_state u;
     ui_setup(&u);
     ui_open_menu(&u);

@@ -19,6 +19,10 @@ LRC_SRC  := $(addprefix $(LRC)/, compat/compat_strl.c compat/compat_strcasestr.c
 LRC_LIB  := out/lrc.a
 
 CFLAGS  := -O2 -Wall -Wextra -std=gnu11 -I$(SDL_ROOT)/include -DPS64_EMU -I$(LRC)/include
+# Assembly64 client ID for a build distributed under another name (see src/a64.h).
+ifdef A64_CLIENT
+CFLAGS  += -DPS64_A64_CLIENT=$(A64_CLIENT)
+endif
 LDLIBS  := $(LRC_LIB) $(VICE_LIB) -lc++ -lc++abi -lunwind \
            -L$(SDL_ROOT)/lib -lSDL2main -lSDL2 \
            -lSceSystemService -lSceUserService -lScePad -lSceAudioOut \

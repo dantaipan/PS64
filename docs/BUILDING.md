@@ -82,6 +82,20 @@ Every config key is also a command-line option (`--key value`); `./ps64 --help` 
 `tests/test_input.c` runs small fake FTP (port 21) and REST (port 80) servers where it
 needs them; macOS lets them bind without root.
 
+## Forks: your own Assembly64 client ID
+
+Assembly64 identifies apps, not users, so PS64 sends a client ID built into the app:
+`PS64`, the official app's. Building PS64 for yourself is fine as it is. If you distribute
+your own build under another name, give it its own ID (ask the Assembly64 team for one):
+
+```sh
+make A64_CLIENT=MyFork                          # Mac
+A64_CLIENT=MyFork ps5/native/build.sh           # PS5 native app (ps5/build.sh likewise)
+```
+
+The ID is letters, digits and `_` (it becomes `PS64_A64_CLIENT`; see `src/a64.h`). It isn't
+a secret (requests go over plain HTTP), and it's never a per-user setting.
+
 ## PS5
 
 ### Native app (PPSA06464): the store build

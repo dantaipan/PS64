@@ -1,5 +1,9 @@
 CC      ?= cc
 CFLAGS  ?= -O2 -Wall -Wextra -std=c11 -D_DARWIN_C_SOURCE
+# Assembly64 client ID for a build distributed under another name (see src/a64.h).
+ifdef A64_CLIENT
+CFLAGS += -DPS64_A64_CLIENT=$(A64_CLIENT)
+endif
 SDL_FW  := third_party
 LDFLAGS_SDL := -F$(SDL_FW) -framework SDL2 -Wl,-rpath,@executable_path/$(SDL_FW)
 

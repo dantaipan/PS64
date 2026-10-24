@@ -9,7 +9,19 @@
 
 #include <stddef.h>
 
-#define A64_CLIENT_ID "PS64"          /* PS64's client ID, from the Assembly64 team */
+/*
+ * The client ID sent: "PS64" is the official app's, from the Assembly64 team. A build
+ * distributed under another name should identify itself with its own: build with
+ * A64_CLIENT=<id> (letters, digits, _), e.g. "make A64_CLIENT=MyFork"; the PS5 build
+ * scripts read A64_CLIENT from the environment. It defines PS64_A64_CLIENT.
+ */
+#ifdef PS64_A64_CLIENT
+#define A64_STR_(x) #x
+#define A64_STR(x)  A64_STR_(x)
+#define A64_CLIENT_ID A64_STR(PS64_A64_CLIENT)
+#else
+#define A64_CLIENT_ID "PS64"
+#endif
 #define A64_DEFAULT_URL "http://hackerswithstyle.se/leet"
 #define A64_PAGE        50
 #define A64_LATEST      25    /* items in "latest releases" */

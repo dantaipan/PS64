@@ -280,6 +280,8 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
   folders are now created 0777 and opened up at start-up.
 - **Assembly64 client ID** is per app (the Assembly64 admin confirmed): built in as "PS64"
   (`A64_CLIENT_ID`), the setting and its entry screen removed (old config lines ignored).
+  A fork distributing its own build overrides it at build time: `A64_CLIENT=<id>` (make, or
+  the env var for the PS5 scripts) defines `PS64_A64_CLIENT`; default stays `PS64`.
 - Catalog PRs from the `dantaipan` fork are recognised as developer release bumps and merged
   automatically (#489 1.0.1, #527 1.0.2, #584 1.0.3).
 
