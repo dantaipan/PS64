@@ -165,7 +165,7 @@ Assembly64 DNS + HTTP, the C64's UDP video stream at full rate. What it took:
 
 ## Native app build (2026-10-19): runs on the PS5
 
-`ps5/native/build.sh [deploy <ps5-ip>]` builds PS64 as `PPSA06464` (see README "Native PS5
+`ps5/native/build.sh [deploy <ps5-ip>]` builds PS64 as `PPSA06464` (see docs/BUILDING.md "Native
 app"). Status: tested by the user on the PS5 (fw 13.42): C64 streaming, controller and typing,
 on-screen keyboard, menu, file browser + search, Assembly64, and the emulator (Boulder Dash
 from Assembly64 with sound, keyboard and joystick) all work. Imports only system modules the

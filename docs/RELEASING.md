@@ -115,5 +115,5 @@ updates register the title fresh, so people get the current artwork.
   [versioning](https://github.com/darkxex/ps5-homebrew-catalog/blob/main/docs/versioning.md),
   [artifact formats](https://github.com/darkxex/ps5-homebrew-catalog/blob/main/docs/artifact-formats.md).
 - Store: [ProsperoStore README](https://github.com/blackbearreloaded/ProsperoStore).
-- Native build: README section "Native PS5 app (PPSA06464)"; findings in
+- Native build: [BUILDING.md](BUILDING.md), "Native app (PPSA06464)"; findings in
   `docs/SESSION-NOTES.md`.

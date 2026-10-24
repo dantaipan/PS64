@@ -1,424 +1,199 @@
 # PS64
 
-Play the Commodore 64 on a jailbroken PS5 (or a Mac), with or without the real hardware:
+Play the Commodore 64 on a jailbroken PS5 (or a Mac), with or without the real hardware.
 
-- **With a Commodore 64 Ultimate**: PS64 shows the Ultimate's video and audio
-  streams and controls it from the DualSense: on-screen C64 keyboard, file
-  browser and search over its storage, favourites and recents.
-- **Without one**: PS64's **built-in emulator** (VICE) runs a C64 itself.
-  Copy games into its games folder or download them from Assembly64; the
-  joystick and keyboard work in games, multi-disk games can swap disks, and
-  disks load at full speed. See [Built-in emulator](#built-in-emulator-no-c64-ultimate-needed). 
-  NOTE: For now, this is a very basic implementation of Vice designed to emulate C64 only. If you want something more feature-rich, look elsewhere.
+- **Stream**: show a **Commodore 64 Ultimate**'s picture and sound and drive it from the
+  DualSense: on-screen keyboard, file browser, search, favourites.
+- **Vice**: no C64? PS64's **built-in emulator** (VICE) runs one. Copy in games or download
+  them from Assembly64.
+- **SID**: a **music player** for C64 tunes, on PS64 itself or on the Ultimate's SID chips.
 
-Both modes can search the online **Assembly64** database and start what you
-find straight away. PS64 starts on a **home screen**: choose **Vice** (the emulator) or
-**Stream** (the C64 Ultimate, shown live on its monitor when found); **Options > Home**
-goes back there.
+Both machines can search the online **Assembly64** database and start what you find straight
+away.
 
-The video and audio decoders (`src/vicstream.c`, `src/audiostream.c`) have no
-OS or SDL dependencies; the same `src/` code builds for macOS (SDL2) and as a
-PS5 payload (ps5-payload-sdk).
+*Vice in PS64 is a deliberately simple C64-only emulator. For something more feature-rich,
+use a dedicated emulator.*
 
-## Build
+## Install
 
-```sh
-make          # builds ps64 and fake_sender (uses third_party/SDL2.framework)
-make test     # decoder unit tests
-```
+**PS5** (jailbroken, with [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus)):
+install **PS64** from the [Prospero Store](https://prosperostore.net/app/PPSA06464/), and
+update it there. It gets its own tile on the PS5's home screen. PS64 keeps your settings and
+files in **`/data/ps64/`**, so updates don't touch them. Copy files there with an FTP client
+(the PS5's FTP server, port 2121).
 
-The Mac build needs the official SDL 2.30.9 macOS framework in `third_party/`;
-fetch it once with `tools/get_sdl2.sh` (it isn't kept in the repository).
-For the built-in emulator, also run `tools/get_vice.sh` once: it fetches the
-VICE libretro core (pinned commit) into `third_party/vice` and builds it; the
-Makefile includes the emulator whenever that library is there, and
-`make test` then also runs `test_emulator` against the real core.
+**Mac**: `PS64.app` (a DMG; Apple Silicon). Drag it to Applications; the first time,
+right-click it > **Open**, and allow local network access when macOS asks. Its settings and
+folders are in **`~/Documents/PS64`**. To build it yourself, see
+[docs/BUILDING.md](docs/BUILDING.md).
 
-### Mac app (DMG)
+**C64 Ultimate** (for Stream): turn on **Web Remote Control** (the REST API) in its network
+settings, and **FTP** for the file browser. PS64 finds it on the network by itself.
 
-`tools/make_dmg.sh` packages the Mac build as **PS64.app** in `dist/PS64-<version>.dmg`
-(open it and drag PS64 to Applications). It needs the libraries above plus
-`tools/get_sidplayfp.sh` and `tools/get_songlengths.sh`; the app carries SDL2 and the song
-lengths. Started as an app, PS64 keeps its settings (`ps64.cfg`) and the folders you fill
-(`games`, `sids`, `carts`, made on the first start) in **`~/Documents/PS64`**.
+## The home screen
 
-- Apple Silicon only (VICE and libsidplayfp are built for arm64).
-- Signed ad hoc, not notarized: on another Mac, right-click PS64 > **Open** the first time
-  (or allow it in System Settings > Privacy & Security). macOS also asks once to let it use
-  the local network (to find the C64 Ultimate) and Documents.
+PS64 starts on a 3D home screen with three objects: **Vice** (the emulator), **Stream** (the
+C64 Ultimate, shown live on the monitor once found) and **SID** (the music player). Left/Right
+choose, Cross starts. **Options > Home** goes back there from a machine.
 
-## Run
+- **Settings** (Options, or the gear icon): the C64 Ultimates found (pick one, enter an
+  address, or give its network password) and the **Home music** volume.
+- **Home music**: a random tune from your SID folder plays on the home screen (one of
+  Assembly64's latest if the folder is empty). Square plays another, Triangle turns it off
+  or on; volume 1 to 10 in Settings (0 is off). It stops when you open a machine.
 
-On the C64 Ultimate, either start the VIC stream (port 11000) and audio stream
-(port 11001) from the menu (Data Streams, destination = this Mac's IP), or let
-the viewer start both over the REST API:
+## Controls
 
-```sh
-./ps64 --start 192.168.1.64                 # C64's IP; stops the stream on exit
-./ps64 --start 192.168.1.64 --password PW   # if the Ultimate has a network password
-./ps64                                      # just listen on UDP 11000 / 11001
-./ps64 --multicast 239.0.1.64               # receive a multicast video stream
-./ps64 --no-audio                           # video only
-./ps64 --audio-latency 100                  # bigger audio buffer for flaky Wi-Fi
-```
-
-Keys: `F` fullscreen, `M` mute, `S` save BMP snapshot, `N` swap nibble order, `Esc`/`Q` quit.
-The window title shows fps and packet-loss counters, plus audio underruns
-(buffer ran dry) and dropped packets (buffer too full, latency trimmed).
-Only one viewer can listen on a port at a time.
-
-Audio is 16-bit stereo at ~47983 Hz (PAL), 192 frames per packet, buffered
-~60 ms before playback.
-
-If the picture looks like vertical stripes or doubled pixels, the pixel order
-within each byte is the other way round: press `N` (or pass `--swap-nibbles`).
-
-## Testing without hardware
-
-```sh
-./fake_sender                    # PAL test pattern to 127.0.0.1:11000
-./fake_sender --ntsc --drop 50   # NTSC, dropping ~2% of packets
-./ps64
-```
-
-## Layout
-
-| File | Purpose |
+| Controller | On the C64 |
 | --- | --- |
-| `src/vicstream.[ch]` | Portable packet parser and frame assembler |
-| `src/audiostream.[ch]` | Portable audio packet decoder |
-| `src/main_sdl.c` | Viewer: UDP sockets, options, SDL2 display and audio |
-| `src/c64api.[ch]` | Minimal HTTP client for the Ultimate REST API |
-| `src/c64keys.[ch]` | C64 key table: REST names, PETSCII from the KERNAL tables |
-| `src/c64remote.[ch]` | Background thread sending keys/joystick to the C64 |
-| `src/controls.[ch]` | Controller and keyboard mapping |
-| `src/osk.[ch]`, `src/osk_sdl.[ch]` | On-screen keyboard |
-| `src/font8x8.h`, `src/font_sdl.[ch]` | Overlay font (generated by `tools/gen_font.py`) and drawing |
-| `src/ui.[ch]`, `src/ui_sdl.[ch]` | Menu, C64 Ultimate settings, address/password entry, file browser |
-| `src/home.[ch]`, `src/home_sdl.[ch]` | Home screen: its pictures (BASIC screen, static) and drawing |
-| `src/mesh3d.[ch]`, `src/models.[ch]` | The home screen's 3D objects (1702, 1084, SID chip), drawn with SDL_RenderGeometry |
-| `src/discover.[ch]` | Finds Ultimates on the local network |
-| `src/ftp.[ch]`, `src/c64files.[ch]` | Lists the C64's storage, starts files |
-| `src/settings.[ch]` | Saves choices back into the config file |
-| `src/c64index.[ch]` | Search index: FTP crawl, save/load, keyword search |
-| `src/a64.[ch]` | Assembly64 client: search, file lists, downloads |
-| `src/favs.[ch]` | Favourites and recents lists |
-| `src/emulator.[ch]` | Built-in emulator: libretro frontend for the VICE core |
-| `src/emugames.[ch]` | Starting games in the emulator (games folder, Assembly64, disk lists) |
-| `src/localfs.[ch]` | The emulator's games folder (and USB drives), the SID folder, the download cache |
-| `tools/get_vice.sh` | Fetches and builds the VICE core |
-| `tools/gen_icon.py`, `tools/gen_backgrounds.py` | Launcher icon and native home-screen backgrounds |
-| `src/version.h` | PS64's version (shown in About; matches the native app's contentVersion) |
-| `tests/test_emulator.c` | Drives the real core: typing, joystick, PRG/disk/.m3u starts, disk swap |
-| `tools/fake_sender.c` | Synthetic stream generator |
-| `tests/test_vicstream.c` | Video and audio decoder unit tests |
-| `tests/test_input.c` | Key table, JSON, joystick timing and on-screen keyboard tests |
-
-## PS5
-
-The same `src/` code builds as a PS5 homebrew payload (ps5-payload-sdk +
-the ps5-payload-dev SDL2 port, linked statically). No PKG is needed: it runs
-from `/data/homebrew/PS64/` and is launched through the websrv homebrew
-launcher, which works on firmware where fake PKGs can't be installed.
-
-Requirements on the PS5: jailbroken with elfldr (port 9021) and ftpsrv
-(port 2121) running, e.g. via the WebKit autoloader.
-
-```sh
-ps5/build.sh                 # builds in Docker -> ps5/out/PS64/
-ps5/deploy.sh <ps5-ip>       # FTP upload + load websrv
-ps5/build.sh dist            # ps5/out/PS64.zip to share (with INSTALL.txt)
-```
-
-Then open `http://<ps5-ip>:8080/` in the PS5's browser (or on any computer on
-the network) and launch **PS64**. To skip the manual websrv step, add
-`websrv-ps5.elf` to the autoloader's `autoload.txt`.
-
-Settings live in `/data/homebrew/PS64/ps64.cfg` (see `ps5/ps64.cfg`).
-PS64 starts on the home screen: Vice (the built-in emulator), Stream (the C64
-Ultimate) and SID (a SID player, coming soon). On the home screen it searches the
-local network for the C64 Ultimate saved as `c64 = <ip>` (the first time, the only one
-it finds) and starts its streams, so the Stream monitor shows its picture live; it
-stops them when you quit. The settings icon (up, then right) lists the C64 Ultimates
-found, takes an address or a network password, and saves the choice. A blue C64-style
-screen means it's running but no video has arrived yet; status messages appear as
-banners and PS5 notifications.
-
-The C64 needs **Web Remote Control** (REST API) turned on in its network
-settings, and **FTP** for the file browser.
-
-| File | Purpose |
-| --- | --- |
-| `ps5/Dockerfile` | SDK + static SDL2 build environment |
-| `ps5/Makefile` | PS5 build (run via `build.sh`) |
-| `ps5/ps64.cfg` | Default settings copied next to `eboot.elf` |
-| `ps5/INSTALL.txt` | Install notes shipped in the zip |
-| `ps5/icon0.png` | Launcher icon |
-| `ps5/native/` | Native-app build (`PPSA06464`): scripts, `param.json`, patches, native-only sources |
-
-## Controlling the C64
-
-Once attached to a C64 (picked, or `--c64 <ip>`; `--remote <ip>` controls it
-without touching its streams) a game controller drives it. On PS5 that's the
-DualSense; on the Mac any SDL-supported controller, plus **O** (menu), **B**
-(file browser) and **Tab** (on-screen keyboard).
-
-| Controller | Action |
-| --- | --- |
-| D-pad / left stick | Joystick, or cursor keys on firmware without joystick support |
-| Cross | Fire, or RETURN on firmware without joystick support |
+| D-pad / left stick, Cross | Joystick and fire |
 | Square / Triangle / Circle | SPACE / RETURN / RUN/STOP |
 | L1 / R1 / L2 / R2 | F1 / F3 / F5 / F7 |
-| Touchpad click | On-screen keyboard (all keys, Shift/C=/CTRL) |
-| R3 | Ultimate menu button |
+| Touchpad click | On-screen keyboard (every key, with Shift / C= / CTRL) |
 | L3 | File browser |
-| Options | Menu: home, browse files, search files, search Assembly64, favourites, recents, reset / reboot C64, audio level (or off), joystick port 1/2, update search index, quit |
+| R3 | The Ultimate's own menu |
+| Options | PS64's menu |
 
-On-screen keyboard: D-pad moves, Cross types, Circle closes, Square DEL,
-Triangle SPACE, R2 RETURN, L1 Shift (twice locks), R1 C=, L2 CTRL. Key
-labels show what each key will type with the current modifiers: Shift+2
-shows `"`, Shift/C= + letters show their PETSCII graphics, CTRL/C= + digits
-show colour names (labels assume the C64's default upper-case/graphics
-character set). Shortcut buttons can be changed with `button-square = f2` etc.
+**On-screen keyboard**: D-pad moves, Cross types, Circle closes, Square DEL, Triangle SPACE,
+R2 RETURN, L1 Shift (twice locks), R1 C=, L2 CTRL. Keys show what they'll type with the
+current modifiers. The shortcut buttons can be changed (`button-square = f2`, etc.).
 
-**File browser** (L3): lists the C64's storage (`/SD`, `/Flash`, `/Temp`,
-USB) over FTP. D-pad moves, L1/R1 page, Cross opens a folder or starts a
-file, Square shows more actions, Circle goes up. Starting a file:
+**The menu (Options)**: Home, Resume, browse and search files, Search Assembly64, Favourites,
+Recents, Disk (multi-disk games), Reset C64, Reboot / Switch off and on, D-pad mode (Vice),
+Cartridge, Audio level (Left/Right; Cross mutes), Joystick port, Update search index, About,
+Quit. On screens with lists, the hint line at the bottom shows the buttons.
 
-| Type | Default (Cross) | More (Square) |
-| --- | --- | --- |
-| `.prg` | Run | Load |
-| `.d64 .d71 .d81 .g64 .g71` | Mount & run: reboot (ends the running game and any cartridge), mount on drive A, `LOAD"*",8,1`, `RUN` | Mount on A / B only |
-| `.crt` | Run cartridge | |
-| `.sid` / `.mod` | Play | |
+On the Mac, any SDL-supported controller works, plus the keyboard: **O** menu, **B** file
+browser, **Tab** on-screen keyboard, **F** fullscreen, **M** mute, **Q** quit.
 
-The browser reopens in the last folder used (`browse-dir` in the config).
-**Reset C64** in the menu restarts the C64 (a running cartridge restarts
-too); **Reboot C64** also clears the cartridge and returns to BASIC.
-In the browser, L2 opens search and Triangle marks a favourite.
+## Stream: the C64 Ultimate
 
-**Search** (Options > Search files...): finds files by name across the
-C64's storage. The first time, it offers to build an index: it lists every
-folder under `search-roots` (default `/SD`; e.g. `search-roots = /SD,/USB0`)
-over FTP and keeps runnable files (PRG, disk images, CRT, SID, MOD). You can
-search while it builds. The index is saved as `ps64-index.txt` next to the
-config and reused until you pick **Update search index**. Type with the
-on-screen keyboard (or a real keyboard on the Mac); every word must appear in
-the path, and names that start with or contain the words rank first. R2 moves
-to the results: Cross runs the default action, Square shows more, Right shows
-the file in its folder.
+PS64 starts the Ultimate's video and audio streams, shows them, and stops them when you quit.
+It remembers the C64 you chose.
 
-**Two input methods**, picked automatically at startup:
-- **Typing buffer** (C64 Ultimate firmware 1.1.0): keys are written as
-  PETSCII into the KERNAL keyboard buffer. Works for BASIC, loaders and
-  most menus, but not for games that scan the keyboard directly; RUN/STOP
-  won't break a running program, RESTORE isn't possible, and the Ultimate
-  menu opens but can't be navigated. No joystick.
-- **Input command** (firmware with `POST /v1/machine:input`, Ultimate 3.15+):
-  real key presses and joystick on port 1/2. Not yet available for the C64
-  Ultimate as of firmware 1.1.0; used automatically once it is.
+- **File browser** (L3, or Options > Browse files): the Ultimate's storage (`/SD`, `/Flash`,
+  `/Temp`, USB). Cross opens a folder or starts a file; Square shows more actions; Circle
+  goes up; L1/R1 page.
 
-Debug options: `--type 'print 2+2\n{f1}{run_stop}'` types text and `{key}`
-names at startup; `--screenshot FILE.bmp` saves the window (overlays
-included) after `--screenshot-ms`; `--osk`, `--osk-mods N`, `--ui menu`,
-`--browse PATH`, `--search TEXT` and `--pick` open screens at launch;
-`--debug-connect IP` acts as if that C64 was picked; `--build-index` builds
-the search index, prints counts and timing, and exits.
+  | File | Cross | Square |
+  | --- | --- | --- |
+  | `.prg` | Run | Load |
+  | `.d64 .d71 .d81 .g64 .g71` | Mount & run (reboots, mounts on drive A, `LOAD"*",8,1`, `RUN`) | Mount on A or B only |
+  | `.crt` | Run cartridge | |
+  | `.sid` / `.mod` | Play | |
 
-## Assembly64
+- **Search files**: finds files by name across the C64's storage. The first time, it builds
+  an index of the folders in `search-roots` (default `/SD`, e.g. `/SD,/USB0`); you can search
+  while it builds. **Update search index** refreshes it.
+- **Reset C64** restarts it (a running cartridge restarts too); **Reboot C64** also clears
+  the cartridge.
+- **Typing**: on the C64 Ultimate's firmware 1.1.0, keys go into the C64's keyboard buffer.
+  That works in BASIC, loaders and most menus, but not in games that read the keyboard
+  directly, and there's no joystick. Real key presses and the joystick come with firmware
+  that has the Ultimate's input command; PS64 uses it automatically when it's there.
 
-**Options > Search Assembly64...** searches the online Assembly64 database
-(hackerswithstyle.se) and sends the chosen file straight to the C64, without
-saving it on the C64's storage. Assembly64 identifies apps, not users: PS64
-sends its own client ID (`PS64`, built in as `A64_CLIENT_ID` in `src/a64.h`), so
-there's nothing to set up. (An `assembly64-client-id` line left in an older
-config is ignored.)
+## Vice: the built-in emulator
 
-Type a name, pick a category with L2 (from the server's presets), and press
-R2 to search; "More results..." fetches the next 50. Cross opens an entry's
-file list; Cross on a file downloads it and runs the default action (disk
-images: reboot, mount on drive A, `LOAD"*",8,1`, `RUN`; PRG run; CRT start;
-SID/MOD play), Square shows the other actions.
+A C64 inside PS64: keyboard and joystick work in games, multi-disk games swap disks, and
+disks load at full speed. **Options > Home** pauses it; **Vice** carries on where it was.
 
-The API is used over plain HTTP (`assembly64-url`, default
-`http://hackerswithstyle.se/leet`), like other Assembly64 clients.
-
-## Favourites and recents
-
-**Triangle** on a highlighted title adds it to (or removes it from)
-**Favourites**: in the file browser (files or whole game folders), local
-search results, Assembly64 results and file lists, and Recents. Favourites
-are marked with a star. **Options > Favourites...** has two folders, **Games**
-and **SIDs** (SID/MOD files and Assembly64 music categories go under SIDs).
-Cross launches, Square shows the other actions, Triangle removes.
-
-A favourited game folder (e.g. `Boulder Dash/`) or Assembly64 entry starts
-its first runnable file: disk images first in name order (`Disk1.d64`), then
-PRG, CRT, SID.
-
-**Options > Recents...** lists the last 25 things launched (not mount-only
-actions), newest first; Triangle there makes one a favourite.
-
-Both lists are saved next to the config as `ps64-favourites.txt` and
-`ps64-recents.txt`.
-
-## Native PS5 app (PPSA06464)
-
-PS64 also builds as a **native PS5 app**, title ID `PPSA06464` (reserved in the
-[Prospero Store catalog](https://github.com/darkxex/ps5-homebrew-catalog)). It gets its own
-home-screen tile through [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus) instead
-of being launched from websrv, and it is the form the Prospero Store installs.
-
-```sh
-ps5/native/build.sh                         # -> ps5/native/out/PPSA06464/ and PPSA06464.zip
-ps5/native/build.sh deploy <ps5-ip>         # build and copy to /data/homebrew/PPSA06464
-ps5/native/build.sh dev deploy <ps5-ip>     # "PS64 Dev" (PPSA06465), next to the store copy
-ps5/native/release.sh 01.000.001 notes.md   # store release (--dry-run to try it)
-```
-
-Install by hand: copy the `PPSA06464` folder (from the zip) to `/data/homebrew/` on the PS5,
-with ShadowMountPlus running; the PS64 tile appears within seconds.
-
-Its home-screen artwork is generated: `tools/gen_icon.py` draws the icon (also used by the
-websrv build) and `tools/gen_backgrounds.py` the two 4K backgrounds (`pic0.dds` while the
-tile is selected, `pic1.dds` while it launches; BC7 DDS, written by the build), both with
-the Commodore rainbow. The PS5 keeps a copy of a title's artwork and name from when it was
-first registered (`/user/appmeta/<title>/` and `/user/app/<title>/sce_sys/`); replacing
-the app's files doesn't refresh that copy.
-
-Releasing to the Prospero Store, updates, and testing a dev build next to the store copy:
-see [docs/RELEASING.md](docs/RELEASING.md).
-
-The native app keeps its files in **`/data/ps64/`** (settings `ps64.cfg`, favourites,
-recents, search indexes, the emulator's `games/` and `emulator/` folders), because a store
-update replaces the app's own folder. On first start it copies the settings, lists and
-indexes of the websrv version from `/data/homebrew/PS64/`. It also writes a log,
-`/data/ps64/ps64.log`.
-
-How it's built: the [PS5 Native App Boilerplate](https://github.com/blackbearreloaded/ps5-native-app-boilerplate)
-(pinned in `build.sh`, with `boilerplate.patch`) links PS64, VICE and PS64's SDL2 (pinned
-ps5-payload-dev/SDL, with `sdl-ps5-native.patch`) into a signed development `eboot.bin`.
-A native app runs in a stricter environment than a payload, so `ps5/native/src/` adds:
-its own memory allocator (the C library's heap is only about 5 MB; dlmalloc in a 256 MB
-block), non-blocking sockets via the console's `SO_NBIO` option, C library stand-ins for
-what the C++ runtime and VICE expect, and stand-ins for SDL's USB-keyboard and text-dialog
-calls (their system modules aren't available to apps). `ps5/native/missing-symbols.sh`
-lists what the linked libraries need that the console doesn't provide.
-
-## SID player
-
-**SID** on the home screen plays C64 music (.sid files), with no C64 needed: the
-reSIDfp emulation of the 6581 and 8580 chips (libsidplayfp). Two lists, switched with
-left/right:
-
-- **Local**: the SID folder, `/data/ps64/sids` on the PS5 (`sids` next to `ps64.cfg`;
-  `sids-dir` sets another). Copy .sid files (and folders of them) there, or play them
-  from a USB drive: it's the **USB0** folder at the top.
-- **Assembly64**: search Assembly64 for .sid files (R1 there shows the latest); the tune
-  picked plays, and the results become the playlist. Downloaded tunes are kept in
-  `sid-cache`.
-
-X plays, L1/R1 change the subtune, L2/R2 the tune, Square pauses, Triangle switches
-between in order, shuffle and repeat-one, Circle goes home. Tunes end on time with HVSC's
-song lengths (unknown ones play 3 minutes) and the list plays on. The screen shows the
-title, author and year, the song, the chip, the time, each voice's note and waveform,
-and an oscilloscope. Options > Audio sets its level (`sid-volume`, -12 dB to start).
-
-With a C64 Ultimate connected, the list's first row, **Play on**, sends the tunes to the
-Ultimate's SID chips instead (its sound comes back through the stream; `sid-output`), and a
-third list, **C64 Ultimate**, browses its storage (SD, USB): a tune from it is fetched over
-FTP and plays wherever Play on says. With no tune of the player's on the Ultimate, the
-stream's sound is off (a game left running there stays quiet).
-
-**Home music**: while the home screen is up, PS64 plays a random tune from the SID folder
-(and its subfolders; if there are none, one of Assembly64's latest tunes). It always plays
-on PS64, never on the Ultimate. Square plays another, Triangle turns it off or on. Its
-volume is **Home music: < 5 >** in the home screen's settings (Options, or the gear): 1 to 10, 4 dB a
-step (5 is 20 dB down), 0 is off; saved as `home-music`. It stops when you open Vice, Stream or
-the SID player, and starts again when you come back.
-
-## Built-in emulator (no C64 Ultimate needed)
-
-PS64 can run its own C64 instead of showing a C64 Ultimate: the VICE
-emulator (x64sc, through its libretro core, linked into PS64). Pick
-**Vice** on the home screen; **Options > Home** pauses it (Vice again carries on where
-it was; Options > Reset C64 starts over). Keyboard and joystick
-go straight into the emulated C64, so unlike the Ultimate's typing buffer
-they work in games.
-
-- **Games folder**: `games/` next to the config (`/data/ps64/games` on the PS5;
-  change with `games-dir`). Copy D64/G64/D71/D81, PRG, T64/TAP and CRT files
-  into it over FTP, in folders if you like (PS64 keeps the folder writable,
-  0777). **Browse games folder** and **Search games folder** (after **Update
-  search index**) work like the Ultimate's browser and search; Cross starts a
-  file, Square on a disk offers **Insert into drive 8** without starting it.
-- **USB drives**: a USB drive plugged into the PS5 shows up at the top of the
-  games folder as **USB0** (USB1... for more), like the Ultimate's, so games run
-  straight from it, and Update search index covers it too. The PS5 app reads
-  drive n at `/mnt/usbn` (`usb-prefix`, `none` turns it off; a folder of your own
-  called USB0 in the games folder is hidden by the drive).
-- **Assembly64** downloads are saved under `emulator/downloads/` next to the
-  config and started; started again later, they come from there.
-- **Multi-disk games**: starting a disk also loads the other disk images of
-  its folder (or Assembly64 entry), in name order. **Options > Disk: < 1 of 2 >**
-  swaps disks (Left/Right).
-- **Loading** runs at full speed (sound off) until the game starts.
-- **Controller**: D-pad / left stick are the joystick and Cross is fire
-  (port 2; **Joystick port** in the menu). **Options > D-pad** switches them to
-  cursor keys and RETURN for BASIC and menus (saved as `dpad = keys`). The other
-  buttons, the on-screen keyboard and the shortcuts work as with the Ultimate.
-- **Reset C64** resets; **Switch off and on** also removes disks and cartridge games
-  (the cartridge chosen under **Options > Cartridge** stays in; see Cartridges below).
-- SID and MOD files can't be played in the emulator yet (VICE plays SIDs with
-  a separate program); they stay C64 Ultimate only.
-
-The emulator keeps its settings and saves in `emulator/` next to the config.
-The C64 ROMs come built into the VICE core; no ROM files are needed (its log
-mentions missing CMD drive ROMs, which only matter for drives PS64 doesn't use).
-Debug options: `--c64 emulator`, `--games-dir DIR`, `--emu-load /path/in/games`.
+- **Games folder**: `/data/ps64/games` (Mac: `~/Documents/PS64/games`). Copy in D64, G64,
+  D71, D81, PRG, T64, TAP and CRT files, in folders if you like. **Browse games folder** and
+  **Search games folder** work like the Ultimate's; Square on a disk offers **Insert into
+  drive 8** without starting it.
+- **USB drives** plugged into the PS5 appear at the top as **USB0**, USB1...
+- **Assembly64** downloads are kept (in `emulator/downloads/`) and start from there next time.
+- **Multi-disk games**: starting a disk also loads the folder's other disks, in name order;
+  **Options > Disk: < 1 of 2 >** swaps them.
+- **D-pad**: joystick by default (port 2; **Joystick port** in the menu). **Options > D-pad**
+  switches it to cursor keys and RETURN for BASIC and menus.
+- **Reset C64** resets; **Switch off and on** also removes disks and cartridge games.
+- No ROM files are needed. SID and MOD files play in the SID player, not in Vice.
 
 ## Cartridges (fast loaders)
 
-**Options > Cartridge: < Off >** puts a cartridge in the C64's expansion port and leaves it
-there, e.g. a fast loader like Epyx FastLoad. Left/Right go through Off and the cartridges
-found, and the C64 restarts with the one chosen. PS64 doesn't come with any: cartridge ROMs
-are copyrighted, so bring your own .crt files.
+**Options > Cartridge: < Off >** puts a cartridge such as **Epyx FastLoad** in the expansion
+port and leaves it there; Left/Right choose, and the C64 restarts with it. PS64 doesn't
+include any (cartridge ROMs are copyrighted): bring your own `.crt` files.
 
-- **Built-in emulator**: copy .crt files into `carts/` next to the config
-  (`/data/ps64/carts` on the PS5; `carts-dir` sets another). The choice is saved
-  (`emu-cartridge`) and the cartridge stays in through loads and Switch off and on. Loading
-  a cartridge game (CRT) puts that in instead, for that game.
-- **C64 Ultimate**: the list is the .crt files in the Ultimate's `/flash/carts` folder
-  (copy them there over FTP or from its menu). PS64 sets the Ultimate's **C64 and
-  Cartridge Settings > Cartridge** to the one chosen and reboots it. The setting isn't
-  saved to the Ultimate's flash, so switching the C64 off takes the cartridge out again
-  (save it from the Ultimate's own menu to keep it).
+- **Vice**: copy them into `/data/ps64/carts` (Mac: `~/Documents/PS64/carts`). The choice is
+  saved and stays through loads; a cartridge game (CRT) takes its place while it runs.
+- **C64 Ultimate**: copy them into the Ultimate's `/flash/carts` folder. PS64 sets its
+  Cartridge setting and reboots it. That isn't saved to the Ultimate's flash, so switching
+  the C64 off takes the cartridge out (save it from the Ultimate's menu to keep it).
 
-## Licence
+## SID: the music player
 
-PS64 is free software under the GNU General Public License v3.0; see
-`LICENSE`. It builds against SDL2 (zlib licence) and, on the PS5, the
-ps5-payload-sdk; the font includes `font8x8_basic` (public domain).
-The built-in emulator is VICE (https://vice-emu.sourceforge.io), GPL-2.0-or-later,
-through its libretro core (https://github.com/libretro/vice-libretro, PS5 port
-https://github.com/mihawk-99/PS5_VICE); `tools/get_vice.sh` names the exact
-source commit used. Binaries of PS64 that include it are distributed under
-GPL-3.0 with that source.
-The native app is built with the PS5 Native App Boilerplate (GPL-3.0-or-later) and includes
-dlmalloc by Doug Lea (public domain / MIT-0 style licence).
-Search Assembly64 shows screenshots of CSDb releases from [CSDb](https://csdb.dk) (for
-CSDb-sourced items the Assembly64 id is the CSDb release id), decoded with
-[stb_image](https://github.com/nothings/stb) (`src/stb_image.h`, public domain / MIT).
-The home screen's power and settings icons are [Material Icons](https://github.com/google/material-design-icons)
-by Google (Apache 2.0, `src/home_icons.h`), rasterised with
-[nanosvg](https://github.com/memononen/nanosvg) (`src/nanosvg.h`, `src/nanosvgrast.h`, zlib licence,
-commit 239e102e).
-The controller buttons in the hints are Kenney's [Input Prompts](https://kenney.nl/assets/input-prompts)
-1.5 (CC0; PlayStation set, embedded in `src/prompts_svg.h` by `tools/gen_prompts.sh`); hint
-strings write them as tokens, `"{cross} play  {l1}{r1} page"` (`src/prompts.[ch]`).
-The SID player plays tunes with [libsidplayfp](https://github.com/libsidplayfp/libsidplayfp) 3.1.1
-and [libresidfp](https://github.com/libsidplayfp/libresidfp) 1.2.3 (reSIDfp; both GPL-2.0-or-later,
-fetched and built by `tools/get_sidplayfp.sh`). Song lengths come from the
-[High Voltage SID Collection](https://hvsc.c64.org)'s `Songlengths.md5` (fetched by
-`tools/get_songlengths.sh`, carried in the native app's assets); no tunes are included.
+Plays C64 tunes (.sid files) with the reSIDfp emulation of the 6581 and 8580 chips. Its lists,
+switched with Left/Right:
 
+- **Local**: the SID folder, `/data/ps64/sids` (Mac: `~/Documents/PS64/sids`), with USB
+  drives at the top.
+- **Assembly64**: search for tunes (R1 shows the latest); the results become the playlist.
+- **C64 Ultimate** (while connected): the Ultimate's storage.
+
+Cross plays, L1/R1 change the subtune, L2/R2 the tune, Square pauses, Triangle cycles in
+order / shuffle / repeat-one, Circle goes home. Tunes end on time (HVSC song lengths; 3
+minutes if unknown) and the list plays on. The screen shows the title, author, chip, time,
+each voice and an oscilloscope.
+
+With a C64 Ultimate connected, the first row, **Play on**, sends tunes to its real SID chips
+instead (the sound comes back through the stream).
+
+## Assembly64, favourites and recents
+
+- **Search Assembly64** (Options): type a name, choose a category with L2 (it starts on
+  Games), R2 searches. Cross opens an entry's files; Cross on a file downloads and starts it,
+  Square shows other actions. Screenshots of CSDb releases show alongside.
+- **Favourites**: Triangle on a title (in the browser, search results, Assembly64, Recents)
+  adds or removes it; favourites have a star. **Options > Favourites** has **Games** and
+  **SIDs**. A favourite folder or Assembly64 entry starts its first runnable file.
+- **Recents**: the last 25 things started, newest first.
+
+## Settings file
+
+PS64 saves your choices in `ps64.cfg` (`/data/ps64/ps64.cfg`, Mac
+`~/Documents/PS64/ps64.cfg`), one `key = value` per line. You rarely need to edit it, but
+useful keys include:
+
+| Key | What |
+| --- | --- |
+| `c64`, `password` | The C64 Ultimate to stream from, and its network password |
+| `stream-volume`, `emulator-volume`, `sid-volume` | Levels in dB (0 to -30; -12 to start) |
+| `home-music` | Home music volume, 0 (off) to 10 |
+| `search-roots` | Folders the Ultimate's search index covers |
+| `games-dir`, `sids-dir`, `carts-dir` | Other folders for games, tunes, cartridges |
+| `dpad` | `keys` makes the D-pad cursor keys in Vice |
+| `button-square` (etc.) | A C64 key for a shortcut button |
+| `usb-prefix` | Where USB drives are mounted (`none` turns them off) |
+
+## Building, releasing
+
+- [docs/BUILDING.md](docs/BUILDING.md): building for the Mac and the PS5, command-line
+  options, testing, source layout.
+- [docs/RELEASING.md](docs/RELEASING.md): releases to the Prospero Store.
+
+## Licence and credits
+
+PS64 is free software under the GNU General Public License v3.0 (`LICENSE`). It includes or
+builds with:
+
+- [VICE](https://vice-emu.sourceforge.io) (GPL-2.0-or-later), through its
+  [libretro core](https://github.com/libretro/vice-libretro) and the
+  [PS5 port](https://github.com/mihawk-99/PS5_VICE); `tools/get_vice.sh` names the exact
+  source commit. Binaries that include it are distributed under GPL-3.0 with that source.
+- [libsidplayfp](https://github.com/libsidplayfp/libsidplayfp) 3.1.1 and
+  [libresidfp](https://github.com/libsidplayfp/libresidfp) 1.2.3 (GPL-2.0-or-later).
+- Song lengths from the [High Voltage SID Collection](https://hvsc.c64.org)
+  (`Songlengths.md5`); no tunes are included.
+- SDL2 (zlib licence); on the PS5, the ps5-payload-sdk and the
+  [PS5 Native App Boilerplate](https://github.com/blackbearreloaded/ps5-native-app-boilerplate)
+  (GPL-3.0-or-later), with dlmalloc by Doug Lea (public domain / MIT-0 style).
+- Screenshots of CSDb releases from [CSDb](https://csdb.dk), decoded with
+  [stb_image](https://github.com/nothings/stb) (public domain / MIT).
+- Home screen icons: [Material Icons](https://github.com/google/material-design-icons) by
+  Google (Apache 2.0), rasterised with [nanosvg](https://github.com/memononen/nanosvg) (zlib).
+- Controller button icons: Kenney's [Input Prompts](https://kenney.nl/assets/input-prompts)
+  1.5 (CC0).
+- The overlay font includes `font8x8_basic` (public domain).
+- Searching uses [Assembly64](https://hackerswithstyle.se) (PS64 sends its own client ID).
