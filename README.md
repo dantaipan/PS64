@@ -22,10 +22,9 @@ update it there. It gets its own tile on the PS5's home screen. PS64 keeps your 
 files in **`/data/ps64/`**, so updates don't touch them. Copy files there with an FTP client
 (the PS5's FTP server, port 2121).
 
-**Mac**: `PS64.app` (a DMG; Apple Silicon). Drag it to Applications; the first time,
-right-click it > **Open**, and allow local network access when macOS asks. Its settings and
-folders are in **`~/Documents/PS64`**. To build it yourself, see
-[docs/BUILDING.md](docs/BUILDING.md).
+**Mac** (Apple Silicon): build PS64 yourself; see [docs/BUILDING.md](docs/BUILDING.md).
+Run as an app, it keeps its settings and folders in **`~/Documents/PS64`** (the Mac paths
+below).
 
 **C64 Ultimate** (for Stream): turn on **Web Remote Control** (the REST API) in its network
 settings, and **FTP** for the file browser. PS64 finds it on the network by itself.
