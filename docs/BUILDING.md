@@ -25,7 +25,7 @@ Fetch the third-party parts once (they aren't kept in the repository):
 
 ### Mac app (DMG)
 
-`tools/make_dmg.sh` packages the Mac build as **PS64.app** in `dist/PS64-<version>.dmg`. It
+`tools/make_dmg.sh` packages the Mac build as **PS64.app** in `dist/PS64-<version>-mac-arm64.dmg`. It
 needs all four scripts above; the app carries SDL2 and the song lengths. Started as an app,
 PS64 keeps `ps64.cfg` and its `games`, `sids` and `carts` folders in `~/Documents/PS64`.
 Apple Silicon only (VICE and libsidplayfp are built for arm64); signed ad hoc, not

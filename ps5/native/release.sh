@@ -10,8 +10,9 @@
 # prosperostore.net and in the store (write it for players, what changed first).
 #
 # Steps: check everything is ready; set the version in ps5/native/sce_sys/param.json and
-# src/version.h; run the tests; build PPSA06464.zip; then (after you confirm) commit, tag,
-# push, and publish the GitHub release with the zip. Finally prints the SHA-256 and writes
+# src/version.h; run the tests; build PPSA06464.zip and the Mac disk image; then (after you
+# confirm) commit, tag, push, and publish the GitHub release with both (the catalog only
+# counts the .zip as installable). Finally prints the SHA-256 and writes
 # the catalog record to ps5/native/out/PPSA06464.json for the catalog pull request.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -74,11 +75,16 @@ ZIP=ps5/native/out/PPSA06464.zip
 unzip -p "$ZIP" PPSA06464/sce_sys/param.json | grep -q "\"contentVersion\": \"$VERSION\"" ||
     { restore; die "the zip doesn't carry contentVersion $VERSION"; }
 SHA=$(shasum -a 256 "$ZIP" | cut -d' ' -f1)
+echo "== building the Mac disk image"
+tools/make_dmg.sh >/dev/null || { restore; die "Mac disk image failed (run tools/make_dmg.sh to see why)"; }
+DMG=dist/PS64-$HUMAN-mac-arm64.dmg
+[[ -f $DMG ]] || { restore; die "no $DMG"; }
 
 # ---- confirm, then publish -------------------------------------------------------------
 echo
 echo "Release PS64 $HUMAN (contentVersion $VERSION)"
 echo "  zip     $ZIP ($(du -h "$ZIP" | cut -f1), sha256 $SHA)"
+echo "  mac     $DMG ($(du -h "$DMG" | cut -f1))"
 echo "  notes   $NOTES"
 echo "  then    commit + tag $VERSION, push to $REPO, publish the GitHub release"
 if [[ $YES == --dry-run ]]; then
@@ -97,7 +103,7 @@ git diff --cached --quiet || git commit -q -m "Release PS64 $HUMAN ($VERSION)"
 git tag -a "$VERSION" -m "PS64 $HUMAN"
 git push -q origin main
 git push -q origin "$VERSION"
-gh release create "$VERSION" "$ZIP" -R "$REPO" --title "PS64 $HUMAN" --notes-file "$NOTES"
+gh release create "$VERSION" "$ZIP" "$DMG" -R "$REPO" --title "PS64 $HUMAN" --notes-file "$NOTES"
 
 # ---- catalog record ----------------------------------------------------------------------
 RECORD=ps5/native/out/PPSA06464.json

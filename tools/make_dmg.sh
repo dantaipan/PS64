@@ -1,5 +1,5 @@
 #!/bin/sh
-# Package the Mac build as PS64.app in a disk image: dist/PS64-<version>.dmg.
+# Package the Mac build as PS64.app in a disk image: dist/PS64-<version>-mac-arm64.dmg.
 #
 #   tools/make_dmg.sh
 #
@@ -21,7 +21,7 @@ make ps64
 
 STAGE=dist/stage
 APP=$STAGE/PS64.app
-DMG=dist/PS64-$VERSION.dmg
+DMG=dist/PS64-$VERSION-mac-arm64.dmg
 rm -rf "$STAGE" "$DMG"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources"
 
