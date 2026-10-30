@@ -39,6 +39,18 @@ void home_vic20_screen(uint32_t *px, int cursor);
 float home_wrap(float d, int n);
 float home_shown(float off);
 
+/*
+ * An old TV's RF reception of picture base (w x h) at time t_ms, into out: always a little
+ * line wobble, a ghost to the right, colour bleed and snow; now and then (home_rf_burst) a
+ * short burst of tearing, more snow and a dark band rolling down. *seed carries the snow's
+ * random state.
+ */
+void home_rf(const uint32_t *base, uint32_t *out, int w, int h, unsigned t_ms, uint32_t *seed);
+/* Whether a burst is on at t_ms: 1 with *progress 0..1 through it, else 0. A burst of
+ * HOME_RF_BURST_MS starts every 6 to 9 seconds. */
+#define HOME_RF_BURST_MS 600
+int  home_rf_burst(unsigned t_ms, float *progress);
+
 /* n pixels of grey TV static; *seed carries the random state between calls. */
 void home_noise(uint32_t *px, int n, uint32_t *seed);
 

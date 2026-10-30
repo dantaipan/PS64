@@ -1270,6 +1270,43 @@ static void test_home(void)
     home_vic20_screen(vpx, 1);
     CHECK(vpx[0] == 0xFF78D1FFu && vpx[(HOME_VIC20_Y + 100) * HOME_VIC20_W + HOME_VIC20_X + 100] == 0xFFFFFFFFu);
 
+    /* RF reception on the TV: deterministic; outside a burst mostly the clean picture with
+     * some snow; in the middle of a burst the rolling band is darker. */
+    {
+        static uint32_t clean[HOME_VIC20_W * HOME_VIC20_H], a[HOME_VIC20_W * HOME_VIC20_H],
+                        b[HOME_VIC20_W * HOME_VIC20_H];
+        const int n = HOME_VIC20_W * HOME_VIC20_H;
+        home_vic20_screen(clean, 0);
+        float prog = 0;
+        unsigned quiet = 0, mid = 0;
+        while (home_rf_burst(quiet, &prog))
+            quiet += 50;
+        while (!home_rf_burst(mid, &prog) || prog < 0.5f)
+            mid += 10;
+        uint32_t s1 = 7, s2 = 7;
+        home_rf(clean, a, HOME_VIC20_W, HOME_VIC20_H, quiet, &s1);
+        home_rf(clean, b, HOME_VIC20_W, HOME_VIC20_H, quiet, &s2);
+        CHECK(!memcmp(a, b, sizeof(a)) && s1 == s2);
+        int near = 0, same = 0;
+        for (int i = 0; i < n; i++) {
+            int d = 0;
+            for (int k = 0; k < 24; k += 8) {
+                int p = (int)((a[i] >> k) & 255), q = (int)((clean[i] >> k) & 255);
+                d += p > q ? p - q : q - p;
+            }
+            near += d < 12;
+            same += a[i] == clean[i];
+        }
+        CHECK(near > n * 8 / 10 && same < n);
+        home_rf(clean, b, HOME_VIC20_W, HOME_VIC20_H, mid, &s1);
+        int band = (int)((prog * 1.3f - 0.15f) * HOME_VIC20_H) + HOME_VIC20_H / 16, lit_a = 0, lit_b = 0;
+        for (int x = 0; band >= 0 && band < HOME_VIC20_H && x < HOME_VIC20_W; x++) {
+            lit_a += (int)(a[band * HOME_VIC20_W + x] & 255);
+            lit_b += (int)(b[band * HOME_VIC20_W + x] & 255);
+        }
+        CHECK(band >= 0 && band < HOME_VIC20_H && lit_b < lit_a * 8 / 10);
+    }
+
     /* 3D: projection, and a cube shows one face head on, three from an angle. */
     pose3 p = { .cx = 960, .cy = 540, .scale = 100, .bright = 1 };
     float x, y, d;

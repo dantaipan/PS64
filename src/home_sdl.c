@@ -36,7 +36,9 @@ static const SDL_Color YELLOW = { 240, 210, 90, 255 };
 
 static struct {
     SDL_Renderer *ren;
-    SDL_Texture  *background, *basic[2], *vic20[2], *noise, *label, *icons[2], *disc;
+    SDL_Texture  *background, *basic[2], *vic20, *noise, *label, *icons[2], *disc;
+    uint32_t      vic20_clean[2][HOME_VIC20_W * HOME_VIC20_H];   /* cursor off, on */
+    uint32_t      vic20_seed, vic20_at;                          /* its RF reception */
     mesh          models[HOME_ITEMS];
     mesh          pins[2];              /* the SID chip's two rows */
     uint32_t      noise_seed, noise_at;
@@ -110,14 +112,11 @@ static void setup(SDL_Renderer *ren)
         }
         free(px);
     }
-    px = malloc((size_t)HOME_VIC20_W * HOME_VIC20_H * 4);
-    if (px) {
-        for (int c = 0; c < 2; c++) {
-            home_vic20_screen(px, c);
-            H.vic20[c] = texture(ren, px, HOME_VIC20_W, HOME_VIC20_H, SDL_TEXTUREACCESS_STATIC);
-        }
-        free(px);
-    }
+    /* The VIC-20's TV: its start-up screen, redrawn through home_rf while it's in view. */
+    for (int c = 0; c < 2; c++)
+        home_vic20_screen(H.vic20_clean[c], c);
+    H.vic20 = texture(ren, H.vic20_clean[0], HOME_VIC20_W, HOME_VIC20_H, SDL_TEXTUREACCESS_STREAMING);
+    H.vic20_at = 0;
     uint32_t label[HOME_LABEL_W * HOME_LABEL_H];
     home_chip_label(label);
     H.label = texture(ren, label, HOME_LABEL_W, HOME_LABEL_H, SDL_TEXTUREACCESS_STATIC);
@@ -141,7 +140,7 @@ static void setup(SDL_Renderer *ren)
 
 void home_cleanup(void)
 {
-    SDL_Texture **all[] = { &H.background, &H.basic[0], &H.basic[1], &H.vic20[0], &H.vic20[1],
+    SDL_Texture **all[] = { &H.background, &H.basic[0], &H.basic[1], &H.vic20,
                             &H.noise, &H.label,
                             &H.icons[0], &H.icons[1], &H.disc };
     for (size_t i = 0; i < sizeof(all) / sizeof(all[0]); i++)
@@ -270,13 +269,21 @@ void home_draw(SDL_Renderer *ren, const ui_state *u, SDL_Texture *live, Uint32 n
         H.basic[(now / 500) & 1],
         u->home_stream == HOME_STREAM_LIVE && live ? live : H.noise,
         H.label,
-        H.vic20[(now / 500) & 1],
+        H.vic20,
     };
 
     /* Each object's place: its offset from the chosen one, round the carousel. */
     float offs[HOME_ITEMS];
     for (int i = 0; i < HOME_ITEMS; i++)
         offs[i] = home_wrap(i - H.pos, HOME_ITEMS);
+
+    /* The TV's picture, as an old set gets it over RF (only while the TV is in view). */
+    if (H.vic20 && home_shown(offs[HOME_VIC20]) > 0 && now - H.vic20_at >= 40) {
+        static uint32_t rf[HOME_VIC20_W * HOME_VIC20_H];
+        home_rf(H.vic20_clean[(now / 500) & 1], rf, HOME_VIC20_W, HOME_VIC20_H, now, &H.vic20_seed);
+        SDL_UpdateTexture(H.vic20, NULL, rf, HOME_VIC20_W * 4);
+        H.vic20_at = now;
+    }
 
     /* Far objects first: the chosen one comes forward and turns almost to face us. */
     int order[HOME_ITEMS];

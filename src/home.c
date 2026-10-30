@@ -99,6 +99,76 @@ float home_shown(float off)
     return a <= 1 ? 1 : a >= 2 ? 0 : 2 - a;
 }
 
+/* A small integer hash (bursts and tears are placed by it, so they repeat for a time). */
+static uint32_t hash32(uint32_t x)
+{
+    x ^= x >> 16;
+    x *= 0x7FEB352Du;
+    x ^= x >> 15;
+    x *= 0x846CA68Bu;
+    x ^= x >> 16;
+    return x;
+}
+
+int home_rf_burst(unsigned t_ms, float *progress)
+{
+    /* One burst somewhere in each 7.5 s, so 6 to 9 s apart. */
+    unsigned cycle = t_ms / 7500, start = cycle * 7500 + hash32(cycle) % 1500;
+    if (t_ms < start || t_ms >= start + HOME_RF_BURST_MS)
+        return 0;
+    *progress = (float)(t_ms - start) / HOME_RF_BURST_MS;
+    return 1;
+}
+
+static uint32_t mix_argb(uint32_t a, uint32_t b, int wb)       /* b weighted wb/256 */
+{
+    uint32_t r = (((a >> 16) & 255) * (256 - wb) + ((b >> 16) & 255) * wb) >> 8;
+    uint32_t g = (((a >> 8) & 255) * (256 - wb) + ((b >> 8) & 255) * wb) >> 8;
+    uint32_t bl = ((a & 255) * (256 - wb) + (b & 255) * wb) >> 8;
+    return 0xFF000000u | r << 16 | g << 8 | bl;
+}
+
+void home_rf(const uint32_t *base, uint32_t *out, int w, int h, unsigned t_ms, uint32_t *seed)
+{
+    uint32_t s = *seed ? *seed : 0x2545F491u;
+    float burst = 0;
+    int bursting = home_rf_burst(t_ms, &burst);
+    float strength = bursting ? sinf(3.14159265f * burst) : 0;    /* rises and falls */
+    int band_y = (int)((burst * 1.3f - 0.15f) * h), band_h = h / 8;
+    unsigned snow = bursting ? 46 : 16;                            /* of 256: ~6%, ~18% */
+    for (int y = 0; y < h; y++) {
+        /* The line's shift: a slow wobble, a little jitter, and during a burst whole groups
+         * of lines torn sideways. */
+        float wob = sinf(y * 0.15f + t_ms * 0.004f) * 0.8f;
+        s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+        int shift = (int)lrintf(wob) + ((s & 15) == 0 ? ((s >> 4) & 1 ? 1 : -1) : 0);
+        if (bursting) {
+            uint32_t tear = hash32((uint32_t)(y / 6) * 2654435761u ^ (t_ms / 80));
+            shift += (int)lrintf(((int)(tear % 17) - 8) * strength);
+        }
+        int dark = bursting && y >= band_y && y < band_y + band_h;
+        const uint32_t *row = base + y * w;
+        uint32_t left = row[0];
+        for (int x = 0; x < w; x++) {
+            int sx = x - shift, gx = sx - 6;
+            uint32_t c = row[sx < 0 ? 0 : sx >= w ? w - 1 : sx];
+            uint32_t g = row[gx < 0 ? 0 : gx >= w ? w - 1 : gx];
+            c = mix_argb(c, g, 46);                    /* the ghost, ~18% */
+            c = mix_argb(c, left, 90);                 /* colour bleed from the left */
+            left = c;
+            s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+            if ((s & 255) < snow) {
+                uint32_t v = 90 + ((s >> 8) & 127);
+                c = mix_argb(c, 0xFF000000u | v << 16 | v << 8 | v, 150);
+            }
+            if (dark)
+                c = mix_argb(c, 0xFF000000u, 110);
+            out[y * w + x] = c;
+        }
+    }
+    *seed = s;
+}
+
 void home_noise(uint32_t *px, int n, uint32_t *seed)
 {
     uint32_t s = *seed ? *seed : 0x9E3779B9u;

@@ -1888,9 +1888,9 @@ int main(int argc, char **argv)
                         SDL_TEXTUREACCESS_STREAMING, w, h);
                     tex_w = w;
                     tex_h = h;
-                    /* The VIC-20's pixels are wide (the core draws each twice): shown at the
-                     * aspect the core gives. (The C64's are shown square, as they always were.) */
-                    double aspect = ses.emu == 2 ? emulator_aspect() : 0;
+                    /* Shown at the display aspect the core gives: the C64's pixels are a little
+                     * narrow, the VIC-20's wide (its core draws each one twice). */
+                    double aspect = emulator_aspect();
                     SDL_RenderSetLogicalSize(ren, aspect > 0.5 ? (int)(h * aspect + 0.5) : tex_w, tex_h);
                 }
                 SDL_UpdateTexture(tex, NULL, px, w * 4);
