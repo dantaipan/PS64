@@ -99,7 +99,7 @@ void model_1702(mesh *m)
 #define SLOPE_Z(y) (set_back * ((y) - y_low) / (y_top - y_low))
     m->layer = 1;
     {
-        const float x0 = -0.25f, x1 = 0.11f, y0 = -0.267f, y1 = -0.212f, zf = -0.006f;
+        const float x0 = -0.14f, x1 = 0.14f, y0 = -0.261f, y1 = -0.219f, zf = -0.006f;   /* centred */
         const float z0 = SLOPE_Z(y0), z1 = SLOPE_Z(y1);
         mesh_quad(m, (vec3){x0, y1, zf}, (vec3){x1, y1, zf}, (vec3){x1, y0, zf}, (vec3){x0, y0, zf}, FRONT, BADGE);
         mesh_quad(m, (vec3){x0, y1, zf}, (vec3){x1, y1, zf}, (vec3){x1, y1, z1}, (vec3){x0, y1, z1},
@@ -116,7 +116,7 @@ void model_1702(mesh *m)
     }
     {
         const decal_rect r = DECAL_1702_MODEL;
-        const float x0 = 0.15f, x1 = 0.31f, ya = -0.222f, yb = -0.256f;
+        const float x0 = 0.18f, x1 = 0.33f, ya = -0.224f, yb = -0.256f;
         mesh_decal_quad(m, (vec3){x0, ya, SLOPE_Z(ya) - 0.001f}, (vec3){x1, ya, SLOPE_Z(ya) - 0.001f},
                         (vec3){x1, yb, SLOPE_Z(yb) - 0.001f}, (vec3){x0, yb, SLOPE_Z(yb) - 0.001f}, slope_n,
                         (float)r.x / DECAL_W, (float)r.y / DECAL_H, (float)(r.x + r.w) / DECAL_W,
@@ -150,6 +150,23 @@ void model_1702(mesh *m)
     for (int i = 0; i < 11; i++)
         mesh_box(m, (vec3){-0.30f, 0.432f, 0.16f + i * 0.056f}, (vec3){0.30f, 0.436f, 0.18f + i * 0.056f},
                  TOP, BOX_BOTTOM);
+    /* The handle insets in both sides: a shadowed recess with slats across. */
+    for (int side = -1; side <= 1; side += 2) {
+        const vec3 n = { (float)side, 0, 0 };
+        const float x = side * 0.4505f, xs = side * 0.4510f, z0 = 0.10f, z1 = 0.36f;
+        m->layer = 1;
+        mesh_quad(m, (vec3){x, 0.24f, z0}, (vec3){x, 0.24f, z1}, (vec3){x, 0.08f, z1}, (vec3){x, 0.08f, z0},
+                  n, 0x857864);
+        m->layer = 2;
+        mesh_quad(m, (vec3){xs, 0.24f, z0}, (vec3){xs, 0.24f, z1}, (vec3){xs, 0.226f, z1},
+                  (vec3){xs, 0.226f, z0}, n, 0x5A5044);                     /* its top edge's shadow */
+        for (int i = 0; i < 5; i++) {
+            float y = 0.094f + i * 0.026f;
+            mesh_quad(m, (vec3){xs, y + 0.011f, z0 + 0.015f}, (vec3){xs, y + 0.011f, z1 - 0.015f},
+                      (vec3){xs, y, z1 - 0.015f}, (vec3){xs, y, z0 + 0.015f}, n, 0xA4977F);
+        }
+        m->layer = 0;
+    }
     /* Two small feet. */
     mesh_box(m, (vec3){-0.40f, -0.37f, 0.04f}, (vec3){-0.32f, -0.35f, 0.14f}, FOOT, BOX_TOP);
     mesh_box(m, (vec3){0.32f, -0.37f, 0.04f}, (vec3){0.40f, -0.35f, 0.14f}, FOOT, BOX_TOP);
