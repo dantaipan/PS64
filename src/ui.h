@@ -39,6 +39,7 @@ enum { UA_NONE, UA_MUTE, UA_PORT, UA_QUIT, UA_CONNECT, UA_RESCAN,
        UA_HOME_VICE,     /* home: the built-in emulator (resumes it if it ran) */
        UA_HOME_STREAM,   /* home: the C64 Ultimate's stream (it's live) */
        UA_HOME_SID,      /* home: the SID player (path: its folder to list) */
+       UA_HOME_VIC20,    /* home: the built-in VIC-20 (resumes it if it ran) */
        UA_SID_LIST,      /* SID player: list folder path of tab category (Local, C64 Ultimate) */
        UA_SID_PLAY,      /* SID player: play entry offset of tab category (SID_TAB_*) */
        UA_SID_SONG,      /* SID player: subtune -1 / +1 (offset) */
@@ -110,7 +111,7 @@ typedef struct {
 #define SID_SCOPE 384
 
 /* Home screen items, focus and the C64 Ultimate stream's state. */
-enum { HOME_VICE, HOME_STREAM, HOME_SID, HOME_ITEMS };
+enum { HOME_VICE, HOME_STREAM, HOME_SID, HOME_VIC20, HOME_ITEMS };   /* a carousel: it wraps round */
 enum { HOME_ON_ITEMS, HOME_ON_POWER, HOME_ON_GEAR };
 enum { HOME_STREAM_SEARCHING,     /* looking for the C64 Ultimate */
        HOME_STREAM_CONNECTING,    /* found: starting its stream */
@@ -125,7 +126,7 @@ typedef struct {
     /* Shown in the menu. */
     int muted, port;
     int volume_db;                /* level of the source playing (UI_VOLUME_MIN..0) */
-    int emulator;                 /* the built-in emulator is the machine (set by main) */
+    int emulator;                 /* a built-in emulator is the machine: 1 C64, 2 VIC-20 (set by main) */
     int disk, disks;              /* emulator: inserted disk (0-based) of a swappable set */
     int joy_keys;                 /* emulator: D-pad/stick/Cross are cursor keys and RETURN */
     char games_dir[256];          /* emulator: the real folder behind "/" (shown when empty) */

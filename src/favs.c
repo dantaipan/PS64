@@ -108,8 +108,9 @@ fav_entry fav_local(const char *path, int is_dir)
 {
     fav_entry e;
     memset(&e, 0, sizeof(e));
-    e.kind = files_emulator() ? (is_dir ? FAV_EMU_FOLDER : FAV_EMU_FILE)
-                              : (is_dir ? FAV_LOCAL_FOLDER : FAV_LOCAL_FILE);
+    e.kind = files_emulator() == 2 ? (is_dir ? FAV_VIC20_FOLDER : FAV_VIC20_FILE)
+           : files_emulator()      ? (is_dir ? FAV_EMU_FOLDER : FAV_EMU_FILE)
+                                   : (is_dir ? FAV_LOCAL_FOLDER : FAV_LOCAL_FILE);
     e.group = is_dir ? FAV_GAMES : fav_group_for_name(path);
     e.action = FA_NONE;
     snprintf(e.path, sizeof(e.path), "%s", path);
@@ -128,17 +129,24 @@ fav_entry fav_local(const char *path, int is_dir)
 int fav_is_path(const fav_entry *e)
 {
     return e->kind == FAV_LOCAL_FILE || e->kind == FAV_LOCAL_FOLDER ||
-           e->kind == FAV_EMU_FILE || e->kind == FAV_EMU_FOLDER;
+           e->kind == FAV_EMU_FILE || e->kind == FAV_EMU_FOLDER ||
+           e->kind == FAV_VIC20_FILE || e->kind == FAV_VIC20_FOLDER;
 }
 
 int fav_is_folder(const fav_entry *e)
 {
-    return e->kind == FAV_LOCAL_FOLDER || e->kind == FAV_EMU_FOLDER;
+    return e->kind == FAV_LOCAL_FOLDER || e->kind == FAV_EMU_FOLDER || e->kind == FAV_VIC20_FOLDER;
 }
 
 int fav_is_emulator(const fav_entry *e)
 {
-    return e->kind == FAV_EMU_FILE || e->kind == FAV_EMU_FOLDER;
+    return fav_machine(e) != 0;
+}
+
+int fav_machine(const fav_entry *e)
+{
+    return e->kind == FAV_VIC20_FILE || e->kind == FAV_VIC20_FOLDER ? 2
+         : e->kind == FAV_EMU_FILE || e->kind == FAV_EMU_FOLDER     ? 1 : 0;
 }
 
 fav_entry fav_a64_file(const char *item_id, int category, int file_id, const char *file_name,
@@ -243,7 +251,7 @@ int fav_load(fav_list *l, const char *file)
         snprintf(e.item_id, sizeof(e.item_id), "%s", field[5]);
         snprintf(e.name, sizeof(e.name), "%s", field[6]);
         snprintf(e.path, sizeof(e.path), "%s", field[7]);
-        if (e.kind < FAV_LOCAL_FILE || e.kind > FAV_EMU_FOLDER || grow(l) != 0)
+        if (e.kind < FAV_LOCAL_FILE || e.kind > FAV_VIC20_FOLDER || grow(l) != 0)
             continue;
         l->e[l->count++] = e;
         if (l->max && l->count >= l->max)

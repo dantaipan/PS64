@@ -7,6 +7,7 @@ Play the Commodore 64 on a jailbroken PS5 (or a Mac), with or without the real h
 - **Vice**: no C64? PS64's **built-in emulator** (VICE) runs one. Copy in games or download
   them from Assembly64.
 - **SID**: a **music player** for C64 tunes, on PS64 itself or on the Ultimate's SID chips.
+- **VIC-20**: the C64's little brother, built in too (VICE). Copy in its games.
 
 Both machines can search the online **Assembly64** database and start what you find straight
 away.
@@ -31,9 +32,10 @@ settings, and **FTP** for the file browser. PS64 finds it on the network by itse
 
 ## The home screen
 
-PS64 starts on a 3D home screen with three objects: **Vice** (the emulator), **Stream** (the
-C64 Ultimate, shown live on the monitor once found) and **SID** (the music player). Left/Right
-choose, Cross starts. **Options > Home** goes back there from a machine.
+PS64 starts on a 3D home screen, a carousel of four objects: **Vice** (the emulator),
+**Stream** (the C64 Ultimate, shown live on the monitor once found), **SID** (the music player)
+and **VIC-20** (the old TV). Left/Right turn it (it goes round), Cross starts the one in the
+middle. **Options > Home** goes back there from a machine.
 
 - **Settings** (Options, or the gear icon): the C64 Ultimates found (pick one, enter an
   address, or give its network password) and the **Home music** volume.
@@ -109,6 +111,20 @@ disks load at full speed. **Options > Home** pauses it; **Vice** carries on wher
 - **Reset C64** resets; **Switch off and on** also removes disks and cartridge games.
 - No ROM files are needed. SID and MOD files play in the SID player, not in Vice.
 
+## VIC-20
+
+The VIC-20 on the home screen is a second built-in emulator (VICE's VIC-20). It works like
+Vice (keyboard, joystick, the menu, browse and search, favourites), with its own folder and
+without Assembly64 (which has C64 software only). Vice and the VIC-20 each wait where they
+were while you use the other.
+
+- **Games folder**: `/data/ps64/vic20` (Mac: `~/Documents/PS64/vic20`), with USB drives at the
+  top. It runs PRG, D64, TAP, T64 and cartridge images (`.crt`, `.20`, `.40`, `.60`, `.a0`,
+  `.b0`).
+- **Memory expansion** is chosen from the program's size. To force one, put it in the file or
+  folder name: `(8k)`, `[16k]`, or a folder called `24k`.
+- One joystick port, so no **Joystick port** in its menu.
+
 ## Cartridges (fast loaders)
 
 **Options > Cartridge: < Off >** puts a cartridge such as **Epyx FastLoad** in the expansion
@@ -161,7 +177,7 @@ useful keys include:
 | `stream-volume`, `emulator-volume`, `sid-volume` | Levels in dB (0 to -30; -12 to start) |
 | `home-music` | Home music volume, 0 (off) to 10 |
 | `search-roots` | Folders the Ultimate's search index covers |
-| `games-dir`, `sids-dir`, `carts-dir` | Other folders for games, tunes, cartridges |
+| `games-dir`, `vic20-dir`, `sids-dir`, `carts-dir` | Other folders for games, VIC-20 games, tunes, cartridges |
 | `dpad` | `keys` makes the D-pad cursor keys in Vice |
 | `button-square` (etc.) | A C64 key for a shortcut button |
 | `usb-prefix` | Where USB drives are mounted (`none` turns them off) |
@@ -179,7 +195,8 @@ builds with:
 
 - [VICE](https://vice-emu.sourceforge.io) (GPL-2.0-or-later), through its
   [libretro core](https://github.com/libretro/vice-libretro) and the
-  [PS5 port](https://github.com/mihawk-99/PS5_VICE); `tools/get_vice.sh` names the exact
+  [PS5 port](https://github.com/mihawk-99/PS5_VICE), for the C64 and the VIC-20 (their ROMs
+  come with VICE); `tools/get_vice.sh` names the exact
   source commit. Binaries that include it are distributed under GPL-3.0 with that source.
 - [libsidplayfp](https://github.com/libsidplayfp/libsidplayfp) 3.1.1 and
   [libresidfp](https://github.com/libsidplayfp/libresidfp) 1.2.3 (GPL-2.0-or-later).

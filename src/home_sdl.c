@@ -24,9 +24,10 @@
 #define ICON 72            /* icon size on the 1920x1080 canvas */
 #define DISC 104           /* the focus highlight behind an icon */
 
-/* Where the objects stand (all three in view, as in the mockup): the chosen one comes
- * forward in its place. */
-static const int SLOT_X[HOME_ITEMS] = { 630, 1140, 1600 };
+/* A carousel: the chosen object stands in the middle, its neighbours either side, and
+ * the others slide out past the edges (shrinking away) as it turns. It wraps round. */
+#define CENTRE_X 980
+#define SPACING  560
 
 static const SDL_Color WHITE = { 255, 255, 255, 255 };
 static const SDL_Color DIM = { 150, 150, 190, 255 };
@@ -35,7 +36,7 @@ static const SDL_Color YELLOW = { 240, 210, 90, 255 };
 
 static struct {
     SDL_Renderer *ren;
-    SDL_Texture  *background, *basic[2], *noise, *label, *icons[2], *disc;
+    SDL_Texture  *background, *basic[2], *vic20[2], *noise, *label, *icons[2], *disc;
     mesh          models[HOME_ITEMS];
     mesh          pins[2];              /* the SID chip's two rows */
     uint32_t      noise_seed, noise_at;
@@ -109,6 +110,14 @@ static void setup(SDL_Renderer *ren)
         }
         free(px);
     }
+    px = malloc((size_t)HOME_VIC20_W * HOME_VIC20_H * 4);
+    if (px) {
+        for (int c = 0; c < 2; c++) {
+            home_vic20_screen(px, c);
+            H.vic20[c] = texture(ren, px, HOME_VIC20_W, HOME_VIC20_H, SDL_TEXTUREACCESS_STATIC);
+        }
+        free(px);
+    }
     uint32_t label[HOME_LABEL_W * HOME_LABEL_H];
     home_chip_label(label);
     H.label = texture(ren, label, HOME_LABEL_W, HOME_LABEL_H, SDL_TEXTUREACCESS_STATIC);
@@ -127,11 +136,13 @@ static void setup(SDL_Renderer *ren)
     model_1702(&H.models[HOME_VICE]);
     model_1084(&H.models[HOME_STREAM]);
     model_sid(&H.models[HOME_SID], &H.pins[0], &H.pins[1]);
+    model_tv(&H.models[HOME_VIC20]);
 }
 
 void home_cleanup(void)
 {
-    SDL_Texture **all[] = { &H.background, &H.basic[0], &H.basic[1], &H.noise, &H.label,
+    SDL_Texture **all[] = { &H.background, &H.basic[0], &H.basic[1], &H.vic20[0], &H.vic20[1],
+                            &H.noise, &H.label,
                             &H.icons[0], &H.icons[1], &H.disc };
     for (size_t i = 0; i < sizeof(all) / sizeof(all[0]); i++)
         if (*all[i]) {
@@ -238,13 +249,15 @@ void home_draw(SDL_Renderer *ren, const ui_state *u, SDL_Texture *live, Uint32 n
     if (H.background)
         SDL_RenderCopy(ren, H.background, NULL, NULL);
 
-    /* Ease the carousel towards the chosen object. */
+    /* Turn the carousel towards the chosen object, the short way round. */
     float dt = H.last ? (now - H.last) / 1000.0f : 0;
     H.last = now;
     float k = dt * 7 > 1 ? 1 : dt * 7;
-    H.pos += (u->home_sel - H.pos) * k;
-    if (fabsf(u->home_sel - H.pos) < 0.001f)
+    float to_go = home_wrap(u->home_sel - H.pos, HOME_ITEMS);
+    H.pos += to_go * k;
+    if (fabsf(to_go) < 0.001f)
         H.pos = (float)u->home_sel;
+    H.pos = fmodf(H.pos + HOME_ITEMS, HOME_ITEMS);
 
     /* TV static on the 1084 while there's no picture. */
     if (u->home_stream != HOME_STREAM_LIVE && H.noise && now - H.noise_at > 50) {
@@ -257,13 +270,21 @@ void home_draw(SDL_Renderer *ren, const ui_state *u, SDL_Texture *live, Uint32 n
         H.basic[(now / 500) & 1],
         u->home_stream == HOME_STREAM_LIVE && live ? live : H.noise,
         H.label,
+        H.vic20[(now / 500) & 1],
     };
 
-    /* Far objects first: the chosen one comes forward and turns almost to face us. */
-    int order[HOME_ITEMS] = { 0, 1, 2 };
-    float d[HOME_ITEMS];
+    /* Each object's place: its offset from the chosen one, round the carousel. */
+    float offs[HOME_ITEMS];
     for (int i = 0; i < HOME_ITEMS; i++)
-        d[i] = fabsf(i - H.pos);
+        offs[i] = home_wrap(i - H.pos, HOME_ITEMS);
+
+    /* Far objects first: the chosen one comes forward and turns almost to face us. */
+    int order[HOME_ITEMS];
+    float d[HOME_ITEMS];
+    for (int i = 0; i < HOME_ITEMS; i++) {
+        order[i] = i;
+        d[i] = fabsf(offs[i]);
+    }
     for (int i = 0; i < HOME_ITEMS; i++)
         for (int j = i + 1; j < HOME_ITEMS; j++)
             if (d[order[j]] > d[order[i]]) {
@@ -274,17 +295,24 @@ void home_draw(SDL_Renderer *ren, const ui_state *u, SDL_Texture *live, Uint32 n
     float t = now / 1000.0f;
     for (int n = 0; n < HOME_ITEMS; n++) {
         int i = order[n];
-        float off = i - H.pos, near = 1 - fminf(1, fabsf(off));
+        float off = offs[i], near = 1 - fminf(1, fabsf(off));
+        float shown = home_shown(off);              /* shrinks away beyond the neighbours */
+        if (shown <= 0)
+            continue;
         float side = off > 0 ? 1.0f : off < 0 ? -1.0f : 0;
         float sway = 0.06f * sinf(t * 0.9f + i * 2.1f);
         pose3 p = {
-            .cx = (float)SLOT_X[i],
+            .cx = CENTRE_X + off * SPACING,
             .cy = OBJ_Y + 7 * sinf(t * 1.3f + i * 1.7f),
-            .scale = 300 + 90 * near,
+            .scale = (300 + 90 * near) * shown,
             .yaw = side * 0.50f * (1 - near) + 0.14f * near + sway,
             .pitch = -0.10f + 0.03f * sinf(t * 0.7f + i),
             .bright = 0.72f + 0.28f * near,
         };
+        if (i == HOME_VIC20) {                  /* the TV is wide and low: a bit bigger, lower */
+            p.scale *= 1.15f;
+            p.cy += 40;
+        }
         if (i == HOME_SID) {                    /* the chip lies down, seen from above */
             p.yaw += 0.55f;
             p.pitch = -0.80f + 0.04f * sinf(t * 0.7f);
@@ -303,15 +331,18 @@ void home_draw(SDL_Renderer *ren, const ui_state *u, SDL_Texture *live, Uint32 n
         }
     }
 
-    static const char *const names[HOME_ITEMS] = { "Vice", "Stream", "SID" };
+    static const char *const names[HOME_ITEMS] = { "Vice", "Stream", "SID", "VIC-20" };
     for (int i = 0; i < HOME_ITEMS; i++) {
-        int cx = SLOT_X[i];
+        if (fabsf(offs[i]) > 1.4f)                  /* (the ones sliding out: no labels) */
+            continue;
+        int cx = (int)(CENTRE_X + offs[i] * SPACING);
         int on = i == u->home_sel && u->home_focus == HOME_ON_ITEMS;
         centred(ren, names[i], cx, LABEL_Y, 5, on ? WHITE : DIM);
         char buf[64];
         SDL_Color c = DIM;
         const char *status = i == HOME_STREAM ? stream_status(u, now, &c, buf, sizeof(buf))
-                           : i == HOME_SID ? "Music player" : "Emulator";
+                           : i == HOME_SID ? "Music player" : i == HOME_VIC20 ? "VIC-20 emulator"
+                           : "Emulator";
         int sw = font_width(status, 3) + 32;
         fill_rect(ren, cx - sw / 2, STATUS_Y - 12, sw, 48, 11, 9, 38, 200);     /* readable over the stripes */
         centred(ren, status, cx, STATUS_Y, 3, c);

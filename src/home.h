@@ -14,6 +14,13 @@
 #define HOME_C64_X 32       /* top left of the 40x25 text area */
 #define HOME_C64_Y 36
 
+/* A VIC-20 screen: 22x23 characters (176x184) inside a border; shown stretched onto a 4:3
+ * screen, which gives it the VIC-20's wide pixels. */
+#define HOME_VIC20_W 224
+#define HOME_VIC20_H 232
+#define HOME_VIC20_X 24     /* top left of the text area */
+#define HOME_VIC20_Y 24
+
 #define HOME_LABEL_W 240    /* the chip's top */
 #define HOME_LABEL_H 80
 
@@ -22,6 +29,15 @@ void home_text(uint32_t *px, int w, int h, int x, int y, const char *text, int s
 
 /* The BASIC start-up screen (HOME_C64_W x HOME_C64_H), with the cursor on or off. */
 void home_basic_screen(uint32_t *px, int cursor);
+
+/* The VIC-20's start-up screen (HOME_VIC20_W x HOME_VIC20_H), with the cursor on or off. */
+void home_vic20_screen(uint32_t *px, int cursor);
+
+/* The carousel: offset d (in objects) wrapped round n objects into (-n/2, n/2], and how
+ * much of an object at offset off is shown: whole up to its neighbours' places (|off| <= 1),
+ * shrinking to nothing at 2. */
+float home_wrap(float d, int n);
+float home_shown(float off);
 
 /* n pixels of grey TV static; *seed carries the random state between calls. */
 void home_noise(uint32_t *px, int n, uint32_t *seed);

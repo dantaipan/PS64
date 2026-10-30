@@ -511,8 +511,9 @@ int emulator_start(const char *dir, int joystick_port)
     cur->api->run();
     cur->running = 1;
     attach_cart();
-    printf("emulator: %ux%u, %.3f fps, audio %.0f Hz\n", cur->av.geometry.base_width,
-           cur->av.geometry.base_height, cur->av.timing.fps, cur->av.timing.sample_rate);
+    printf("emulator: %ux%u (aspect %.3f), %.3f fps, audio %.0f Hz\n", cur->av.geometry.base_width,
+           cur->av.geometry.base_height, cur->av.geometry.aspect_ratio, cur->av.timing.fps,
+           cur->av.timing.sample_rate);
     return 0;
 }
 
@@ -544,6 +545,7 @@ void emulator_run_frame(void)
     cur->api->run();
 }
 
+double emulator_aspect(void)    { return cur->running ? cur->av.geometry.aspect_ratio : 0; }
 double emulator_fps(void)       { return cur->av.timing.fps > 0 ? cur->av.timing.fps : 50.125; }
 int    emulator_sample_rate(void) { return cur->av.timing.sample_rate > 0 ? (int)cur->av.timing.sample_rate : 48000; }
 int    emulator_fast(void)      { return cur->fast; }

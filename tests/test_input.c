@@ -21,6 +21,7 @@
 #include "../src/settings.h"
 #include "../src/sidrandom.h"
 #include "../src/ui.h"
+#include "../src/vic20keys.h"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -1166,6 +1167,13 @@ static void test_emulator_mode(void)
     u.disks = 2;
     ne = ui_menu_items(&u, items);
     CHECK(ne == 17 && items[0] == MI_HOME && items[7] == MI_DISK && items[11] == MI_CART);
+    /* The VIC-20's menu: no Assembly64, cartridge or joystick port. */
+    u.emulator = 2;
+    int nv = ui_menu_items(&u, items), seen = 0;
+    for (int i = 0; i < nv; i++)
+        seen |= items[i] == MI_A64 || items[i] == MI_CART || items[i] == MI_PORT;
+    CHECK(nv == 14 && !seen);
+    u.emulator = 1;
     ui_open_menu(&u);
     u.sel = 7;
     ui_action a = ui_input(&u, IN_LEFT);
@@ -1208,9 +1216,11 @@ static void test_home(void)
     CHECK(ui_menu_items(&u, items) > 0 && items[0] == MI_HOME);
     ui_open_home(&u);
     CHECK(u.screen == UI_HOME && u.home_sel == HOME_VICE && u.home_focus == HOME_ON_ITEMS);
+    /* A carousel: it wraps round both ways; VIC-20 starts the built-in VIC-20. */
     ui_input(&u, IN_LEFT);
-    CHECK(u.home_sel == HOME_VICE);
+    CHECK(u.home_sel == HOME_VIC20 && ui_input(&u, IN_OK).kind == UA_HOME_VIC20);
     ui_input(&u, IN_RIGHT);
+    CHECK(u.home_sel == HOME_VICE);
     ui_input(&u, IN_RIGHT);
     ui_input(&u, IN_RIGHT);
     CHECK(u.home_sel == HOME_SID);
@@ -1250,6 +1260,15 @@ static void test_home(void)
     u.home_music = 1;
     CHECK(ui_input(&u, IN_ALT).kind == UA_HOME_NEXT && u.screen == UI_HOME);
     ui_free(&u);
+
+    /* The carousel: offsets wrap round the four objects; the far one is hidden. */
+    CHECK(home_wrap(3, HOME_ITEMS) == -1 && home_wrap(-3, HOME_ITEMS) == 1 && home_wrap(2, HOME_ITEMS) == 2);
+    CHECK(home_wrap(-2, HOME_ITEMS) == 2 && home_wrap(0.5f, HOME_ITEMS) == 0.5f);
+    CHECK(home_shown(0) == 1 && home_shown(-1) == 1 && home_shown(1.5f) == 0.5f && home_shown(2) == 0);
+    /* The VIC-20's start-up screen: white text area in a cyan border. */
+    static uint32_t vpx[HOME_VIC20_W * HOME_VIC20_H];
+    home_vic20_screen(vpx, 1);
+    CHECK(vpx[0] == 0xFF78D1FFu && vpx[(HOME_VIC20_Y + 100) * HOME_VIC20_W + HOME_VIC20_X + 100] == 0xFFFFFFFFu);
 
     /* 3D: projection, and a cube shows one face head on, three from an angle. */
     pose3 p = { .cx = 960, .cy = 540, .scale = 100, .bright = 1 };
@@ -1554,6 +1573,21 @@ static void test_sidrandom(void)
     CHECK(system(cmd) == 0);
 }
 
+/* The VIC-20's keyboard: every C64 key has its own place in the VIC-20's matrix. */
+static void test_vic20_keys(void)
+{
+    int used[64] = {0}, ok = 1;
+    for (int k = 0; k < 64; k++) {
+        int v = vic20_key(k);
+        ok &= v >= 0 && v < 64 && !used[v];
+        if (v >= 0 && v < 64)
+            used[v] = 1;
+    }
+    CHECK(ok);
+    CHECK(vic20_key(C64K_F7) == 7 * 8 + 7 && vic20_key(C64K_RETURN) == 7 * 8 + 1);
+    CHECK(vic20_key(C64K_SPACE) == 4 && vic20_key(-1) == -1 && vic20_key(64) == -1);
+}
+
 /* The SID player: its list, subfolders, playing and its buttons; the play order. */
 static void test_sid_player(void)
 {
@@ -1728,6 +1762,7 @@ int main(void)
 {
     test_ftp_get();
     test_carts();
+    test_vic20_keys();
     test_sidrandom();
     test_prompts();
     test_home();

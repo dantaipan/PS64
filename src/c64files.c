@@ -33,6 +33,11 @@ int files_type(const char *name, int is_dir)
         return FT_DISK;
     if (!strcasecmp(e, "crt"))
         return FT_CRT;
+    /* VIC-20 cartridge images, named after where they load ($2000, $4000, $6000, $A000,
+     * $B000): the VIC-20 core works out which from the name. */
+    if (files_emulator() == 2 && (!strcasecmp(e, "20") || !strcasecmp(e, "40") || !strcasecmp(e, "60") ||
+                                  !strcasecmp(e, "a0") || !strcasecmp(e, "b0")))
+        return FT_CRT;
     if (!strcasecmp(e, "sid"))
         return FT_SID;
     if (!strcasecmp(e, "mod"))
@@ -44,7 +49,7 @@ int files_type(const char *name, int is_dir)
 
 static int emulator_mode;
 
-void files_set_emulator(int on) { emulator_mode = on; }
+void files_set_emulator(int machine) { emulator_mode = machine; }
 int  files_emulator(void)       { return emulator_mode; }
 
 int files_default_action(int type)

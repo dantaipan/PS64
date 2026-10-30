@@ -10,7 +10,8 @@
 
 /* LOCAL_* are on the C64 Ultimate's storage, EMU_* in the built-in emulator's
  * games folder; Assembly64 entries work on both. */
-enum { FAV_LOCAL_FILE, FAV_LOCAL_FOLDER, FAV_A64_FILE, FAV_A64_ITEM, FAV_EMU_FILE, FAV_EMU_FOLDER };
+enum { FAV_LOCAL_FILE, FAV_LOCAL_FOLDER, FAV_A64_FILE, FAV_A64_ITEM, FAV_EMU_FILE, FAV_EMU_FOLDER,
+       FAV_VIC20_FILE, FAV_VIC20_FOLDER };   /* (VIC20_*: the built-in VIC-20's games folder) */
 enum { FAV_GAMES, FAV_SIDS };
 
 #define RECENTS_MAX 25
@@ -55,6 +56,9 @@ fav_entry fav_local(const char *path, int is_dir);
 int  fav_is_path(const fav_entry *e);
 int  fav_is_folder(const fav_entry *e);
 int  fav_is_emulator(const fav_entry *e);
+/* Which machine a path entry is for, as files_emulator() says it: 0 the C64 Ultimate,
+ * 1 the built-in C64, 2 the built-in VIC-20. */
+int  fav_machine(const fav_entry *e);
 /* Entry for one file of an Assembly64 item. */
 fav_entry fav_a64_file(const char *item_id, int category, int file_id, const char *file_name,
                        const char *item_name);

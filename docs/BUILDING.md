@@ -19,7 +19,7 @@ Fetch the third-party parts once (they aren't kept in the repository):
 | Script | What it gets |
 | --- | --- |
 | `tools/get_sdl2.sh` | The official SDL 2.30.9 macOS framework, into `third_party/` (required) |
-| `tools/get_vice.sh` | The VICE libretro core (pinned commit), built into `third_party/vice`; the Makefile includes the emulator whenever that library is there. It also patches VICE's autostart so it works with Epyx FastLoad in |
+| `tools/get_vice.sh` | The VICE libretro cores (pinned commit), built into `third_party/vice`: the C64's (x64sc) and the VIC-20's (xvic); the Makefile includes the emulator whenever they're there. It also patches VICE's autostart so it works with Epyx FastLoad in |
 | `tools/get_sidplayfp.sh` | libsidplayfp + libresidfp for the SID player (Mac or PS5 build) |
 | `tools/get_songlengths.sh` | HVSC's `Songlengths.md5` (pinned by SHA-256) |
 
@@ -81,6 +81,19 @@ Every config key is also a command-line option (`--key value`); `./ps64 --help` 
 
 `tests/test_input.c` runs small fake FTP (port 21) and REST (port 80) servers where it
 needs them; macOS lets them bind without root.
+
+## Two VICE cores in one program
+
+The C64 and VIC-20 cores come from the same VICE source, so linked together they'd define
+the same thousands of global symbols. The VIC-20 core is built with
+`-include tools/vice_vic20_names.h`, which renames its libretro entry points and the few VICE
+functions PS64 calls to `vic20_*`, and with `-fno-common`. It's then partially linked into one
+object where only the names in `tools/vice_vic20_keep.txt` stay global: `ld -r
+-exported_symbols_list` on the Mac (`tools/get_vice.sh`), `ld.lld -r` plus `llvm-objcopy
+--keep-global-symbols` for the PS5 (`ps5/Makefile`). `src/emulator.c` keeps a table of each
+core's functions and state; a core can only be set up once per process, so both stay alive
+and the chosen one runs. VIC-20 keys go through `src/vic20keys.c` (its own key matrix, made
+from VICE's keymaps). Builds without the VIC-20 library leave out `PS64_VIC20`.
 
 ## Forks: your own Assembly64 client ID
 

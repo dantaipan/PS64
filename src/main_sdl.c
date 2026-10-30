@@ -99,8 +99,9 @@ typedef struct {
     const char *a64_search;   /* debug: search Assembly64 for this at launch */
     const char *a64_latest;   /* debug: show Assembly64's latest releases in this category */
     int         launch_fav;   /* debug: launch this favourite (1-based) at startup */
-    int         use_emulator; /* c64 = emulator: the built-in emulator is the machine */
+    int         use_emulator; /* c64 = emulator / vic20: that built-in machine (1 C64, 2 VIC-20) */
     const char *games_dir;    /* the emulator's games folder (default: "games" next to the config) */
+    const char *vic20_dir;    /* the VIC-20's games folder (default: "vic20" next to the config) */
     const char *usb_prefix;   /* USB drive n is at this + n (the PS5: /mnt/usb), or "none" */
     const char *emu_load;     /* debug: start this file in the emulator at launch */
     int         dpad_keys;    /* emulator: D-pad/stick/Cross as cursor keys and RETURN */
@@ -215,6 +216,7 @@ static int parse_args(int argc, char **argv, options *o)
     o->launch_fav = 0;
     o->use_emulator = 0;
     o->games_dir = NULL;
+    o->vic20_dir = NULL;
 #ifdef PS64_NATIVE
     o->usb_prefix = "/mnt/usb";
 #else
@@ -251,11 +253,12 @@ static int parse_args(int argc, char **argv, options *o)
         if (!strcmp(a, "--port") && next)           { o->port = atoi(next); i++; }
         else if ((!strcmp(a, "--start") || !strcmp(a, "--c64")) && next) {
             o->listen_only = !strcasecmp(next, "none");
-            o->use_emulator = !strcasecmp(next, "emulator");
+            o->use_emulator = !strcasecmp(next, "emulator") ? 1 : !strcasecmp(next, "vic20") ? 2 : 0;
             o->start_host = o->listen_only || o->use_emulator ? NULL : next;
             i++;
         }
         else if (!strcmp(a, "--games-dir") && next) { o->games_dir = next; i++; }
+        else if (!strcmp(a, "--vic20-dir") && next) { o->vic20_dir = next; i++; }
         else if (!strcmp(a, "--usb-prefix") && next) { o->usb_prefix = next; i++; }
         else if (!strcmp(a, "--emu-load") && next)  { o->emu_load = next; i++; }
         else if (!strcmp(a, "--dpad") && next)      { o->dpad_keys = !strcasecmp(next, "keys"); i++; }
@@ -731,6 +734,15 @@ static int session_begin(session *s, const options *o, const char *host, const c
  */
 static char games_dir[600] = "games", emu_dir[600] = "emulator";
 static char emu_index_file[600] = "ps64-emu-index.txt";
+/* Each machine's (EMU_*): games_dir, emu_dir and emu_index_file are the running one's. */
+static char machine_games[EMU_MACHINES][600], machine_emu[EMU_MACHINES][600],
+            machine_index[EMU_MACHINES][600];
+static emugames eg;
+#ifdef PS64_VIC20
+#define MACHINE_VIC20 EMU_VIC20
+#else
+#define MACHINE_VIC20 (-1)                      /* (a build without it: the start fails) */
+#endif
 /* The cartridges folder, and the cartridge kept in the emulator's port ("" none). */
 static char carts_dir[600] = "carts", emu_cart[128];
 static int emu_set_cart(const char *name);
@@ -739,19 +751,26 @@ static void emu_tap(int key, int mods)       { emulator_key_tap(key, mods); }
 static void emu_joy(int port, unsigned bits) { emulator_joystick(port, bits); }
 static void emu_release(void)                { emulator_release_keys(); }
 
-static int session_begin_emulator(session *s, const options *o)
+static int session_begin_emulator(session *s, const options *o, int machine)
 {
+    if (emulator_select(machine) != 0)
+        return -1;
+    snprintf(games_dir, sizeof(games_dir), "%s", machine_games[machine]);
+    snprintf(emu_dir, sizeof(emu_dir), "%s", machine_emu[machine]);
+    snprintf(emu_index_file, sizeof(emu_index_file), "%s", machine_index[machine]);
+    eg_init(&eg, games_dir, emu_dir);
+    files_set_emulator(machine + 1);         /* (what the browser and favourites are for) */
     /* Started before (then left for the home screen): carry on where it was. */
-    if (!emulator_running() && emu_cart[0])
+    if (!emulator_running() && emu_cart[0] && machine == EMU_C64)
         emu_set_cart(emu_cart);              /* (kept for the start) */
     if (emulator_running())
         emulator_joystick(o->joystick_port, 0);
     else if (emulator_start(emu_dir, o->joystick_port) != 0)
         return -1;
     static const remote_sink sink = { emu_tap, emu_joy, emu_release };
-    s->emu = 1;
+    s->emu = machine + 1;                    /* (EMU_* + 1: non-zero for either machine) */
     s->rem = remote_start_local(&sink);
-    files_set_emulator(1);
+    files_set_emulator(s->emu);
     localfs_mkdirs(games_dir);
     s->index = index_new();
     if (s->index && index_load(s->index, emu_index_file, INDEX_LOCAL_HOST) == 0)
@@ -1409,8 +1428,8 @@ int main(int argc, char **argv)
     if (!config && mac_app_resources() && getenv("HOME")) {
         char dir[900];
         snprintf(dir, sizeof(dir), "%s/Documents/PS64", getenv("HOME"));
-        static const char *const filled[] = { "games", "sids", "carts" };   /* there to fill */
-        for (int i = 0; i < 3; i++) {
+        static const char *const filled[] = { "games", "vic20", "sids", "carts" };   /* there to fill */
+        for (int i = 0; i < 4; i++) {
             char sub[1000];
             snprintf(sub, sizeof(sub), "%s/%s", dir, filled[i]);
             localfs_mkdirs(sub);
@@ -1449,20 +1468,40 @@ int main(int argc, char **argv)
             printf("usb: USB%d is %s\n", d, real);
     }
 #ifdef PS64_EMU
-    next_to_config(config, "games", games_dir, sizeof(games_dir));
-    next_to_config(config, "emulator", emu_dir, sizeof(emu_dir));
-    next_to_config(config, "ps64-emu-index.txt", emu_index_file, sizeof(emu_index_file));
+    next_to_config(config, "games", machine_games[EMU_C64], sizeof(machine_games[0]));
+    next_to_config(config, "emulator", machine_emu[EMU_C64], sizeof(machine_emu[0]));
+    next_to_config(config, "ps64-emu-index.txt", machine_index[EMU_C64], sizeof(machine_index[0]));
     if (opt.games_dir)
-        snprintf(games_dir, sizeof(games_dir), "%s", opt.games_dir);
+        snprintf(machine_games[EMU_C64], sizeof(machine_games[0]), "%s", opt.games_dir);
+#ifdef PS64_VIC20
+    next_to_config(config, "vic20", machine_games[EMU_VIC20], sizeof(machine_games[0]));
+    next_to_config(config, "emulator/vic20", machine_emu[EMU_VIC20], sizeof(machine_emu[0]));
+    next_to_config(config, "ps64-vic20-index.txt", machine_index[EMU_VIC20], sizeof(machine_index[0]));
+    if (!config) {                              /* (the current folder, as for the C64's) */
+        snprintf(machine_games[EMU_VIC20], sizeof(machine_games[0]), "vic20");
+        snprintf(machine_emu[EMU_VIC20], sizeof(machine_emu[0]), "emulator/vic20");
+        snprintf(machine_index[EMU_VIC20], sizeof(machine_index[0]), "ps64-vic20-index.txt");
+    }
+    if (opt.vic20_dir)
+        snprintf(machine_games[EMU_VIC20], sizeof(machine_games[0]), "%s", opt.vic20_dir);
+#endif
+    if (!config) {
+        snprintf(machine_games[EMU_C64], sizeof(machine_games[0]), "%s", opt.games_dir ? opt.games_dir : "games");
+        snprintf(machine_emu[EMU_C64], sizeof(machine_emu[0]), "emulator");
+        snprintf(machine_index[EMU_C64], sizeof(machine_index[0]), "ps64-emu-index.txt");
+    }
     /* The folders people fill over FTP: open to everyone (older PS64s made them 0755). */
-    chmod(games_dir, 0777);
+    for (int m = 0; m < EMU_MACHINES; m++)
+        chmod(machine_games[m], 0777);
+    snprintf(games_dir, sizeof(games_dir), "%s", machine_games[EMU_C64]);
+    snprintf(emu_dir, sizeof(emu_dir), "%s", machine_emu[EMU_C64]);
+    snprintf(emu_index_file, sizeof(emu_index_file), "%s", machine_index[EMU_C64]);
     next_to_config(config, "carts", carts_dir, sizeof(carts_dir));
     if (opt.carts_dir)
         snprintf(carts_dir, sizeof(carts_dir), "%s", opt.carts_dir);
     localfs_mkdirs(carts_dir);
     if (opt.emu_cart && strcasecmp(opt.emu_cart, "off"))
         snprintf(emu_cart, sizeof(emu_cart), "%s", opt.emu_cart);
-    static emugames eg;
     eg_init(&eg, games_dir, emu_dir);
 #endif
 
@@ -1622,7 +1661,7 @@ int main(int argc, char **argv)
         want_picker = 0;
     } else if (opt.use_emulator) {
 #ifdef PS64_EMU
-        if (session_begin_emulator(&ses, &opt) == 0) {
+        if (session_begin_emulator(&ses, &opt, opt.use_emulator == 2 ? MACHINE_VIC20 : EMU_C64) == 0) {
             snprintf(msg, sizeof(msg), "Built-in emulator");
         } else {
             session_end(&ses, &opt);
@@ -1849,7 +1888,10 @@ int main(int argc, char **argv)
                         SDL_TEXTUREACCESS_STREAMING, w, h);
                     tex_w = w;
                     tex_h = h;
-                    SDL_RenderSetLogicalSize(ren, tex_w, tex_h);
+                    /* The VIC-20's pixels are wide (the core draws each twice): shown at the
+                     * aspect the core gives. (The C64's are shown square, as they always were.) */
+                    double aspect = ses.emu == 2 ? emulator_aspect() : 0;
+                    SDL_RenderSetLogicalSize(ren, aspect > 0.5 ? (int)(h * aspect + 0.5) : tex_w, tex_h);
                 }
                 SDL_UpdateTexture(tex, NULL, px, w * 4);
                 emu_frames++;
@@ -1985,6 +2027,7 @@ int main(int argc, char **argv)
                 }
                 break;
             case UA_HOME_VICE:
+            case UA_HOME_VIC20:
 #ifdef PS64_SID
                 home_music_stop(&ui);
 #endif
@@ -1992,15 +2035,16 @@ int main(int argc, char **argv)
                 discover_stop(scan);
                 scan = NULL;
                 session_end(&ses, &opt);
-                if (session_begin_emulator(&ses, &opt) != 0) {
+                if (session_begin_emulator(&ses, &opt, a.kind == UA_HOME_VIC20 ? MACHINE_VIC20 : EMU_C64) != 0) {
                     session_end(&ses, &opt);
                     ui_open_home(&ui);
-                    snprintf(ui.home_snack, sizeof(ui.home_snack), "The built-in emulator didn't start");
+                    snprintf(ui.home_snack, sizeof(ui.home_snack), a.kind == UA_HOME_VIC20 && MACHINE_VIC20 < 0
+                             ? "This PS64 build has no VIC-20" : "The built-in emulator didn't start");
                     ui.home_snack_serial++;
                     break;
                 }
                 ui_close(&ui);
-                notify("Built-in emulator");
+                notify(a.kind == UA_HOME_VIC20 ? "Built-in VIC-20" : "Built-in emulator");
 #else
                 snprintf(ui.home_snack, sizeof(ui.home_snack), "This PS64 build has no emulator");
                 ui.home_snack_serial++;
@@ -2294,10 +2338,12 @@ int main(int argc, char **argv)
             case UA_FAV_LAUNCH: {
                 fav_entry *e = &a.fav;
                 int local = fav_is_path(e);
-                if (local && fav_is_emulator(e) != ses.emu) {
-                    controls_banner(&ctl, ses.emu ? "That's on a C64 Ultimate (Options > Home > Stream)"
-                                                  : "That's in the built-in emulator's games folder "
-                                                    "(Options > Home > Vice)");
+                if (local && fav_machine(e) != ses.emu) {
+                    controls_banner(&ctl, !fav_machine(e) ? "That's on a C64 Ultimate (Options > Home > Stream)"
+                                          : fav_machine(e) == 2 ? "That's in the VIC-20's games folder "
+                                                                  "(Options > Home > VIC-20)"
+                                          : "That's in the built-in emulator's games folder "
+                                            "(Options > Home > Vice)");
                     break;
                 }
 #ifdef PS64_EMU
@@ -2382,6 +2428,10 @@ int main(int argc, char **argv)
         ui.index = ses.index;
         snprintf(ui.current_ip, sizeof(ui.current_ip), "%s", ses.host);
         ui.emulator = ses.emu;
+#ifdef PS64_EMU
+        if (ses.emu && strcmp(ui.games_dir, games_dir))
+            snprintf(ui.games_dir, sizeof(ui.games_dir), "%s", games_dir);
+#endif
         ui.joy_keys = ctl.joy_keys;
 #ifdef PS64_EMU
         ui.disks = ses.emu ? emulator_disk_count() : 0;

@@ -28,11 +28,11 @@ enum {
 int  files_type(const char *name, int is_dir);
 
 /*
- * Which machine the actions below are for: the C64 Ultimate (default), or
- * the built-in emulator, which also runs tapes but can't play SID/MOD and
- * has one drive (MOUNT_A is "insert into drive 8").
+ * Which machine the actions below are for: 0 the C64 Ultimate (default), or a
+ * built-in emulator, 1 the C64 or 2 the VIC-20, which also run tapes but can't play
+ * SID/MOD and have one drive (MOUNT_A is "insert into drive 8").
  */
-void files_set_emulator(int on);
+void files_set_emulator(int machine);
 int  files_emulator(void);
 
 int  files_default_action(int type);

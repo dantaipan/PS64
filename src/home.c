@@ -68,6 +68,37 @@ void home_basic_screen(uint32_t *px, int cursor)
         fill(px, w, x0, y0 + 48, x0 + 8, y0 + 56, C64_TEXT);
 }
 
+#define VIC20_BORDER 0xFF78D1FFu        /* (VICE's VIC-20 colours) */
+#define VIC20_SCREEN 0xFFFFFFFFu
+#define VIC20_TEXT   0xFF4F2EA9u
+
+void home_vic20_screen(uint32_t *px, int cursor)
+{
+    const int w = HOME_VIC20_W, h = HOME_VIC20_H, x0 = HOME_VIC20_X, y0 = HOME_VIC20_Y;
+    fill(px, w, 0, 0, w, h, VIC20_BORDER);
+    fill(px, w, x0, y0, x0 + 176, y0 + 184, VIC20_SCREEN);
+    home_text(px, w, h, x0, y0, "**** CBM BASIC V2 ****", 1, VIC20_TEXT);
+    home_text(px, w, h, x0, y0 + 8, "3583 BYTES FREE", 1, VIC20_TEXT);
+    home_text(px, w, h, x0, y0 + 24, "READY.", 1, VIC20_TEXT);
+    if (cursor)
+        fill(px, w, x0, y0 + 32, x0 + 8, y0 + 40, VIC20_TEXT);
+}
+
+float home_wrap(float d, int n)
+{
+    while (d > n / 2.0f)
+        d -= (float)n;
+    while (d <= -n / 2.0f)
+        d += (float)n;
+    return d;
+}
+
+float home_shown(float off)
+{
+    float a = off < 0 ? -off : off;
+    return a <= 1 ? 1 : a >= 2 ? 0 : 2 - a;
+}
+
 void home_noise(uint32_t *px, int n, uint32_t *seed)
 {
     uint32_t s = *seed ? *seed : 0x9E3779B9u;

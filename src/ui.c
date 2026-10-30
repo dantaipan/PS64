@@ -218,9 +218,14 @@ int ui_menu_items(const ui_state *u, int *out)
     int n = u->emulator ? (int)(sizeof(emulator) / sizeof(emulator[0]))
                         : (int)(sizeof(ultimate) / sizeof(ultimate[0]));
     int count = 0;
-    for (int i = 0; i < n; i++)
-        if (src[i] != MI_DISK || u->disks > 1)
-            out[count++] = src[i];
+    for (int i = 0; i < n; i++) {
+        if (src[i] == MI_DISK && u->disks <= 1)
+            continue;
+        /* The VIC-20: no Assembly64 software, no C64 cartridges, one joystick port. */
+        if (u->emulator == 2 && (src[i] == MI_A64 || src[i] == MI_CART || src[i] == MI_PORT))
+            continue;
+        out[count++] = src[i];
+    }
     return count;
 }
 
@@ -1445,8 +1450,8 @@ static ui_action input_home(ui_state *u, int in)
         return none();
     }
     switch (in) {
-    case IN_LEFT:  if (u->home_sel > 0) u->home_sel--; break;
-    case IN_RIGHT: if (u->home_sel < HOME_ITEMS - 1) u->home_sel++; break;
+    case IN_LEFT:  u->home_sel = (u->home_sel + HOME_ITEMS - 1) % HOME_ITEMS; break;
+    case IN_RIGHT: u->home_sel = (u->home_sel + 1) % HOME_ITEMS; break;
     case IN_UP:    u->home_focus = HOME_ON_GEAR; break;
     case IN_TRIANGLE: return act(UA_HOME_MUSIC);
     case IN_ALT:
@@ -1471,6 +1476,8 @@ static ui_action input_home(ui_state *u, int in)
             break;
         case HOME_SID:
             return ui_open_sid(u);
+        case HOME_VIC20:
+            return act(UA_HOME_VIC20);
         }
         break;
     }

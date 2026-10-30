@@ -326,6 +326,20 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
   walk runs off the main thread).
 - Notes so far: `docs/release-notes/01.000.004.md`. Release only when the user says so.
 
+## Unreleased (on main, for 1.0.5)
+
+- **VIC-20** (VICE xvic) next to the C64 core: see docs/BUILDING.md "Two VICE cores in one
+  program" (rename header + `-fno-common` + partial link keeping only `vic20_*` global; checked
+  with nm: no other globals). `emulator.c` has a per-machine state and core table,
+  `emulator_select()`; `ses.emu`/`ui.emulator`/`files_emulator()` = 1 C64, 2 VIC-20. VIC-20
+  folder `vic20/` (`vic20-dir`), emulator files `emulator/vic20/`, index
+  `ps64-vic20-index.txt`, favourites `FAV_VIC20_*`. Memory expansion `auto` (+ filename tags).
+  Its picture uses the core's aspect (1.314; it draws pixels twice); the C64 stays square.
+- **Home carousel**: 4 objects, chosen one in the middle, wraps (`home_wrap`, `home_shown`
+  in home.c); the 4th shrinks away past the edges. The VIC-20 is `model_tv()` (after the
+  user's Zenith reference photos), screen `home_vic20_screen()`.
+- Notes: `docs/release-notes/01.000.005.md`. Release only when the user says so.
+
 ## Diagnosing native crashes
 
 - ShadowMountPlus writes RIP/backtrace to `/data/shadowmount/debug.log`, but only in an app's

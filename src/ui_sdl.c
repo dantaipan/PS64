@@ -111,7 +111,8 @@ static void draw_menu(SDL_Renderer *ren, const ui_state *u)
         row(ren, i, i == u->sel, labels[items[i]], WHITE);
     if (u->emulator || u->current_ip[0]) {
         char line[64];
-        snprintf(line, sizeof(line), u->emulator ? "Built-in emulator (VICE)%.0s" : "C64: %s",
+        snprintf(line, sizeof(line), u->emulator == 2 ? "Built-in VIC-20 (VICE)%.0s"
+                                   : u->emulator ? "Built-in emulator (VICE)%.0s" : "C64: %s",
                  u->current_ip);
         font_draw(ren, line, PX + 16, LIST_Y + (n + 1) * ROW_H, 1, DIM);
     }
@@ -222,11 +223,13 @@ static void draw_browser(SDL_Renderer *ren, const ui_state *u)
         font_draw(ren, u->error, PX + 16, LIST_Y, 1, RED);
     } else if (u->count == 0 && u->emulator && !strcmp(u->path, "/")) {
         char line[300];
-        font_draw(ren, "The games folder is empty. Copy games (D64, PRG, T64, TAP, CRT) into",
+        font_draw(ren, u->emulator == 2 ? "The VIC-20 games folder is empty. Copy games (PRG, D64, TAP, CRT) into"
+                                        : "The games folder is empty. Copy games (D64, PRG, T64, TAP, CRT) into",
                   PX + 16, LIST_Y, 1, WHITE);
         snprintf(line, sizeof(line), "%s", u->games_dir);
         font_draw(ren, line, PX + 16, LIST_Y + ROW_H, 1, CYAN);
-        font_draw(ren, "over FTP, or find games with Search Assembly64.", PX + 16, LIST_Y + 2 * ROW_H, 1, WHITE);
+        font_draw(ren, u->emulator == 2 ? "over FTP." : "over FTP, or find games with Search Assembly64.",
+                  PX + 16, LIST_Y + 2 * ROW_H, 1, WHITE);
     } else if (u->count == 0) {
         font_draw(ren, "(empty folder)", PX + 16, LIST_Y, 1, DIM);
     }
@@ -571,8 +574,8 @@ static void draw_fav_list(SDL_Renderer *ren, const ui_state *u)
         char where[256], name[96], place[64], line[200];
         if (e->kind == FAV_A64_FILE || e->kind == FAV_A64_ITEM) {
             snprintf(where, sizeof(where), "Assembly64");
-        } else if (fav_is_emulator(e) && !files_emulator()) {
-            snprintf(where, sizeof(where), "Emulator");     /* not this machine's */
+        } else if (fav_machine(e) != files_emulator() && fav_machine(e)) {
+            snprintf(where, sizeof(where), fav_machine(e) == 2 ? "VIC-20" : "Emulator");   /* not this machine's */
         } else {
             /* The folder the title lives in, shortened from the left. */
             snprintf(where, sizeof(where), "%s", e->path);

@@ -41,6 +41,8 @@ int  emulator_running(void);
 /* Emulate one frame (1/50 s of C64 time). */
 void   emulator_run_frame(void);
 double emulator_fps(void);
+/* The picture's display aspect (width / height) as the core says, 0 if unknown. */
+double emulator_aspect(void);
 int    emulator_sample_rate(void);
 /* The core asks to run as fast as possible (a disk or tape is loading). */
 int    emulator_fast(void);
