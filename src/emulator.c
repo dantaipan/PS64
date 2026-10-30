@@ -382,8 +382,16 @@ static void set_mods(int mods, int down)
     if (mods & C64MOD_CTRL)  set_key(C64K_CTRL, down);
 }
 
+#define HOLD_DOWN (-1)                  /* a queued key press / release (mods field) */
+#define HOLD_UP   (-2)
+
 static void step_taps(void)
 {
+    /* Presses and releases queued behind taps happen in their turn, at once. */
+    while (ntaps && taps[0].mods < 0 && tap_step == 0) {
+        set_key(taps[0].key, taps[0].mods == HOLD_DOWN);
+        memmove(taps, taps + 1, sizeof(taps[0]) * (size_t)--ntaps);
+    }
     if (!ntaps)
         return;
     int key = taps[0].key, mods = taps[0].mods;
@@ -401,8 +409,19 @@ static void step_taps(void)
 
 void emulator_key(int key, int down)
 {
-    if (cur->running)
+    if (!cur->running)
+        return;
+    if (!ntaps) {
         set_key(key, down);
+        return;
+    }
+    /* Taps still playing (typed symbols): this waits its turn, so "(5" isn't "(%" with
+     * the tap's SHIFT still down. */
+    if (ntaps < TAPQ) {
+        taps[ntaps].key = key;
+        taps[ntaps].mods = down ? HOLD_DOWN : HOLD_UP;
+        ntaps++;
+    }
 }
 
 void emulator_key_tap(int key, int mods)

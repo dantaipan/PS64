@@ -109,6 +109,7 @@ typedef struct {
     int         home_sel;     /* debug: the home screen's chosen object (-1: default) */
     const char *sid_file;     /* debug: play this .sid with the built-in SID player */
     const char *keys;         /* debug: buttons for the UI, one every 1.5 s from 2 s ("down,ok") */
+    const char *press;        /* debug: Mac keyboard input from 4 s: text, \n, {cmd-j}, {up} (held 0.5 s) */
     int         sid_song;     /* debug: its song (0: the start song) */
     const char *sids_dir;     /* the SID player's folder (default: "sids" next to the config) */
     const char *songlengths;  /* HVSC Songlengths.md5 */
@@ -228,6 +229,7 @@ static int parse_args(int argc, char **argv, options *o)
     o->home_sel = -1;
     o->sid_file = NULL;
     o->keys = NULL;
+    o->press = NULL;
     o->sid_song = 0;
     o->sids_dir = NULL;
 #ifdef PS64_NATIVE
@@ -267,6 +269,7 @@ static int parse_args(int argc, char **argv, options *o)
         else if (!strcmp(a, "--home-sel") && next)  { o->home_sel = atoi(next); i++; }
         else if (!strcmp(a, "--sid") && next)       { o->sid_file = next; i++; }
         else if (!strcmp(a, "--keys") && next)      { o->keys = next; i++; }
+        else if (!strcmp(a, "--press") && next)     { o->press = next; i++; }
         else if (!strcmp(a, "--sid-song") && next)  { o->sid_song = atoi(next); i++; }
         else if (!strcmp(a, "--sids-dir") && next)  { o->sids_dir = next; i++; }
         else if (!strcmp(a, "--songlengths") && next) { o->songlengths = next; i++; }
@@ -750,6 +753,7 @@ static int emu_set_cart(const char *name);
 static void emu_tap(int key, int mods)       { emulator_key_tap(key, mods); }
 static void emu_joy(int port, unsigned bits) { emulator_joystick(port, bits); }
 static void emu_release(void)                { emulator_release_keys(); }
+static void emu_key(int key, int down)       { emulator_key(key, down); }
 
 static int session_begin_emulator(session *s, const options *o, int machine)
 {
@@ -767,7 +771,7 @@ static int session_begin_emulator(session *s, const options *o, int machine)
         emulator_joystick(o->joystick_port, 0);
     else if (emulator_start(emu_dir, o->joystick_port) != 0)
         return -1;
-    static const remote_sink sink = { emu_tap, emu_joy, emu_release };
+    static const remote_sink sink = { emu_tap, emu_joy, emu_release, emu_key };
     s->emu = machine + 1;                    /* (EMU_* + 1: non-zero for either machine) */
     s->rem = remote_start_local(&sink);
     files_set_emulator(s->emu);
@@ -1734,6 +1738,7 @@ int main(int argc, char **argv)
     if (opt.emu_load && ses.emu) {
         eg_launch_path(&eg, opt.emu_load, FA_NONE, msg, sizeof(msg));
         printf("%s\n", msg);
+        controls_keyboard_joystick(&ctl, 1, 0);         /* (a game: the keyboard plays it) */
     }
 #endif
     ctl.remote = ses.rem;
@@ -1813,9 +1818,11 @@ int main(int argc, char **argv)
 
             if (ev.type == SDL_QUIT)
                 running = 0;
-            else if (ev.type == SDL_KEYDOWN) {
+            else if (ev.type == SDL_KEYDOWN && (ev.key.keysym.mod & KMOD_GUI)) {
+                /* Cmd+key (letters type on the C64): quit, fullscreen, mute, swap nibbles,
+                 * snapshot. Cmd+O, B, K and J are the controls'. */
                 switch (ev.key.keysym.sym) {
-                case SDLK_ESCAPE: case SDLK_q: running = 0; break;
+                case SDLK_q: running = 0; break;
                 case SDLK_f:
                     fullscreen = !fullscreen;
                     SDL_SetWindowFullscreen(win, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
@@ -1924,6 +1931,57 @@ int main(int argc, char **argv)
 
         Uint32 tick = SDL_GetTicks();
         /* Debug: the --keys buttons, one at a time. */
+        /* Debug: Mac keyboard events, as the keyboard would send them. */
+        static Uint32 press_at;
+        static SDL_Keycode press_up;              /* the key to let go of next */
+        if (opt.press && (*opt.press || press_up) && tick - started > 4000 && SDL_TICKS_PASSED(tick, press_at)) {
+            SDL_Event e;
+            memset(&e, 0, sizeof(e));
+            if (press_up) {
+                e.type = SDL_KEYUP;
+                e.key.keysym.sym = press_up;
+                e.key.keysym.scancode = SDL_GetScancodeFromKey(press_up);
+                SDL_PushEvent(&e);
+                press_up = 0;
+                press_at = tick + 80;
+            } else {
+                SDL_Keycode sym = 0;
+                int gui = 0, hold = 80;
+                char ch = *opt.press++;
+                if (ch == '{') {
+                    char name[16];
+                    size_t n = strcspn(opt.press, "}");
+                    snprintf(name, sizeof(name), "%.*s", (int)n, opt.press);
+                    opt.press += n + (opt.press[n] == '}');
+                    gui = !strncmp(name, "cmd-", 4);
+                    const char *k = gui ? name + 4 : name;
+                    sym = !strcmp(k, "up") ? SDLK_UP : !strcmp(k, "down") ? SDLK_DOWN
+                        : !strcmp(k, "left") ? SDLK_LEFT : !strcmp(k, "right") ? SDLK_RIGHT
+                        : !strcmp(k, "esc") ? SDLK_ESCAPE : !strcmp(k, "space") ? SDLK_SPACE
+                        : (SDL_Keycode)(unsigned char)k[0];
+                    hold = gui ? 80 : 500;
+                } else if (ch == '\n') {
+                    sym = SDLK_RETURN;
+                } else if (isalnum((unsigned char)ch) || ch == ' ') {
+                    sym = (SDL_Keycode)tolower((unsigned char)ch);
+                }
+                if (sym) {
+                    e.type = SDL_KEYDOWN;
+                    e.key.keysym.sym = sym;
+                    e.key.keysym.scancode = SDL_GetScancodeFromKey(sym);
+                    e.key.keysym.mod = gui ? KMOD_LGUI : 0;
+                    SDL_PushEvent(&e);
+                    press_up = sym;
+                }
+                if (ch != '{' && ch != '\n') {          /* and the text it makes */
+                    memset(&e, 0, sizeof(e));
+                    e.type = SDL_TEXTINPUT;
+                    e.text.text[0] = ch;
+                    SDL_PushEvent(&e);
+                }
+                press_at = tick + (Uint32)hold;
+            }
+        }
         if (opt.keys && *opt.keys && tick - started > 2000) {
             static Uint32 key_at;
             if (!key_at || tick - key_at >= 1500) {
@@ -1946,6 +2004,15 @@ int main(int argc, char **argv)
         /* Act on menu, picker and browser choices. */
         ui_action a;
         while (controls_take_action(&ctl, &a)) {
+#ifndef __PROSPERO__
+            /* The Mac keyboard: a game starting makes it the joystick, a reset or another
+             * machine the C64's keyboard again (Cmd+J switches). */
+            if (a.kind == UA_FILE || a.kind == UA_FAV_LAUNCH || a.kind == UA_A64_FILE)
+                controls_keyboard_joystick(&ctl, 1, !controls_have_pad());
+            else if (a.kind == UA_RESET || a.kind == UA_REBOOT || a.kind == UA_HOME_VICE ||
+                     a.kind == UA_HOME_VIC20 || a.kind == UA_HOME_STREAM)
+                controls_keyboard_joystick(&ctl, 0, 0);
+#endif
             switch (a.kind) {
             case UA_QUIT:
                 running = 0;
@@ -2890,6 +2957,9 @@ int main(int argc, char **argv)
             }
         }
 
+#ifdef __APPLE__
+        prompts_set_keyboard(!controls_have_pad());     /* hints as keycaps without a controller */
+#endif
         if (ui.screen == UI_HOME) {
             home_draw(ren, &ui, tex, tick);
         } else if (tex) {

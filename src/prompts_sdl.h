@@ -11,6 +11,9 @@
 int  prompts_draw(SDL_Renderer *ren, const char *text, int x, int y, int scale, SDL_Color c);
 int  prompts_width(SDL_Renderer *ren, const char *text, int scale);
 
+/* Draw the tokens as Mac keyboard keycaps instead (no controller connected). */
+void prompts_set_keyboard(int on);
+
 /* Free the icon textures (call before destroying the renderer). */
 void prompts_cleanup(void);
 

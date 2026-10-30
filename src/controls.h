@@ -13,8 +13,12 @@
  *   L3                   file browser
  *   Options              app menu (audio, joystick port, choose C64, quit)
  *
- * Mac keyboard: O app menu, B file browser, Tab on-screen keyboard; arrows,
- * Return, Esc, Space and PageUp/PageDown drive whichever screen is open.
+ * Mac keyboard: in a machine it is the C64's keyboard (keys held as they're held
+ * on a built-in machine; typed into the Ultimate's buffer), or with Cmd+J a joystick
+ * (arrows, Space or Right Shift fire). PS64's own keys are Cmd+O menu, Cmd+B file
+ * browser, Cmd+K on-screen keyboard, Cmd+J typing/joystick (main: Cmd+F, M, S, N, Q).
+ * In PS64's screens arrows, Return, Esc, Space, PageUp/PageDown, Tab, F and L drive
+ * them.
  */
 #ifndef CONTROLS_H
 #define CONTROLS_H
@@ -53,6 +57,14 @@ typedef struct {
 
     char      banner[96];
     Uint32    banner_until;
+
+    /* The Mac keyboard. */
+    int       kbd_joy;         /* arrows and Space / Right Shift are the joystick */
+    unsigned  key_dirs;        /* joystick directions held on the keyboard */
+    int       key_fire;
+    struct { int sc, key, mods; } held[16];   /* C64 keys held down for Mac keys */
+    int       nheld;
+    int       modrefs[3];      /* held keys needing SHIFT, CBM, CTRL */
 } controls;
 
 /* Name -> button index for config keys ("square", "l2", ...); -1 if unknown. */
@@ -68,5 +80,10 @@ void controls_update(controls *c, Uint32 now);
 int  controls_take_action(controls *c, ui_action *out);
 void controls_draw(controls *c, SDL_Renderer *ren, Uint32 now);
 void controls_banner(controls *c, const char *text);
+/* The Mac keyboard as the joystick (on) or the C64's keyboard (off); announce it with a
+ * banner. A game starting turns it on, a reset off. */
+void controls_keyboard_joystick(controls *c, int on, int announce);
+/* A game controller is connected (hints show its buttons; else keyboard keys). */
+int  controls_have_pad(void);
 
 #endif

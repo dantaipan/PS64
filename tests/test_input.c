@@ -1610,6 +1610,35 @@ static void test_sidrandom(void)
     CHECK(system(cmd) == 0);
 }
 
+/* The Mac keyboard: held keys reach a built-in machine as presses and releases (or as
+ * taps where it can't hold them); hints name the keys when there's no controller. */
+static int sink_taps, sink_downs, sink_ups, sink_last;
+static void sink_tap(int key, int mods) { (void)mods; sink_taps++; sink_last = key; }
+static void sink_joy(int port, unsigned bits) { (void)port; (void)bits; }
+static void sink_release(void) {}
+static void sink_key(int key, int down) { if (down) sink_downs++; else sink_ups++; sink_last = key; }
+
+static void test_mac_keyboard(void)
+{
+    remote_sink held = { sink_tap, sink_joy, sink_release, sink_key };
+    remote *r = remote_start_local(&held);
+    CHECK(remote_local(r));
+    remote_key(r, C64K_SPACE, 1);
+    remote_key(r, C64K_SPACE, 0);
+    CHECK(sink_downs == 1 && sink_ups == 1 && sink_taps == 0 && sink_last == C64K_SPACE);
+    remote_stop(r);
+    remote_sink taps_only = { sink_tap, sink_joy, sink_release, NULL };
+    r = remote_start_local(&taps_only);
+    remote_key(r, C64K_RETURN, 1);
+    remote_key(r, C64K_RETURN, 0);
+    CHECK(sink_taps == 1 && sink_last == C64K_RETURN);
+    remote_stop(r);
+    CHECK(!strcmp(prompts_key_label(PROMPT_CROSS), "Return") && !strcmp(prompts_key_label(PROMPT_CIRCLE), "Esc"));
+    CHECK(!strcmp(prompts_key_label(PROMPT_OPTIONS), "Cmd+O") && !strcmp(prompts_key_label(-1), ""));
+    for (int k = 0; k < PROMPT_COUNT; k++)
+        CHECK(prompts_key_label(k) && prompts_key_label(k)[0]);
+}
+
 /* The VIC-20's keyboard: every C64 key has its own place in the VIC-20's matrix. */
 static void test_vic20_keys(void)
 {
@@ -1800,6 +1829,7 @@ int main(void)
     test_ftp_get();
     test_carts();
     test_vic20_keys();
+    test_mac_keyboard();
     test_sidrandom();
     test_prompts();
     test_home();

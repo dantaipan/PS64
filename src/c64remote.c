@@ -457,6 +457,21 @@ void remote_key_tap(remote *r, int key, int mods)
     pthread_mutex_unlock(&r->lock);
 }
 
+void remote_key(remote *r, int key, int down)
+{
+    if (r->local) {
+        if (r->sink.key)
+            r->sink.key(key, down);
+        else if (down && r->sink.key_tap)
+            r->sink.key_tap(key, 0);
+        return;
+    }
+    if (down && !c64key_is_modifier(key))
+        remote_key_tap(r, key, 0);
+}
+
+int remote_local(remote *r) { return r && r->local; }
+
 void remote_joystick(remote *r, int port, unsigned bits)
 {
     if (r->local) {

@@ -4,6 +4,7 @@
 #include "osk_sdl.h"
 #include "ui_sdl.h"
 
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
@@ -270,9 +271,154 @@ static unsigned dpad_bit(int b)
     return 0;
 }
 
-/* Mac keyboard. Returns 1 if used. */
-static int key_down(controls *c, SDL_Keycode sym)
+/* ---- Mac keyboard --------------------------------------------------------------- */
+
+void controls_keyboard_joystick(controls *c, int on, int announce)
 {
+    if (c->kbd_joy == !!on)
+        return;
+    c->kbd_joy = !!on;
+    c->key_dirs = 0;
+    c->key_fire = 0;
+    if (announce)
+        controls_banner(c, on ? "Keyboard: joystick (arrows, Space fires) - Cmd+J types"
+                              : "Keyboard: typing - Cmd+J for the joystick");
+}
+
+int controls_have_pad(void)
+{
+    for (int i = 0; i < SDL_NumJoysticks(); i++)
+        if (SDL_IsGameController(i))
+            return 1;
+    return 0;
+}
+
+/*
+ * The C64 key a Mac key is, in place, held while it's held, with the modifiers it needs
+ * (F2 is SHIFT+F1, cursor up SHIFT+CRSR_UD); -1 if it's typed as text instead (symbols:
+ * they sit on different keys). Digits with Shift are symbols.
+ */
+static int held_key(SDL_Keycode sym, int shift, int *mods)
+{
+    int key, m;
+    *mods = 0;
+    if ((sym >= SDLK_a && sym <= SDLK_z) || sym == SDLK_SPACE || (!shift && sym >= SDLK_0 && sym <= SDLK_9))
+        return c64key_from_ascii((int)sym, &key, &m) == 0 ? key : -1;
+    switch (sym) {
+    case SDLK_RETURN: case SDLK_KP_ENTER: return C64K_RETURN;
+    case SDLK_BACKSPACE: return C64K_INST_DEL;
+    case SDLK_ESCAPE:    return C64K_RUN_STOP;
+    case SDLK_HOME:      return C64K_CLR_HOME;
+    case SDLK_PAGEUP:    return C64K_RESTORE;
+    case SDLK_RIGHT:     return C64K_CRSR_LR;
+    case SDLK_LEFT:      *mods = C64MOD_SHIFT; return C64K_CRSR_LR;
+    case SDLK_DOWN:      return C64K_CRSR_UD;
+    case SDLK_UP:        *mods = C64MOD_SHIFT; return C64K_CRSR_UD;
+    case SDLK_F1:        return C64K_F1;
+    case SDLK_F2:        *mods = C64MOD_SHIFT; return C64K_F1;
+    case SDLK_F3:        return C64K_F3;
+    case SDLK_F4:        *mods = C64MOD_SHIFT; return C64K_F3;
+    case SDLK_F5:        return C64K_F5;
+    case SDLK_F6:        *mods = C64MOD_SHIFT; return C64K_F5;
+    case SDLK_F7:        return C64K_F7;
+    case SDLK_F8:        *mods = C64MOD_SHIFT; return C64K_F7;
+    }
+    return -1;
+}
+
+static const int mod_keys[3] = { C64K_LSHIFT, C64K_CBM, C64K_CTRL };
+static const int mod_bits[3] = { C64MOD_SHIFT, C64MOD_CBM, C64MOD_CTRL };
+
+static void mods_hold(controls *c, int mods, int down)
+{
+    for (int i = 0; i < 3; i++)
+        if (mods & mod_bits[i]) {
+            if (down && c->modrefs[i]++ == 0)
+                remote_key(c->remote, mod_keys[i], 1);
+            else if (!down && c->modrefs[i] > 0 && --c->modrefs[i] == 0)
+                remote_key(c->remote, mod_keys[i], 0);
+        }
+}
+
+/* A C64 key pressed for Mac key sc: held on a built-in machine, typed on the Ultimate. */
+static void press(controls *c, int sc, int key, int mods)
+{
+    if (!c->remote)
+        return;
+    if (!remote_local(c->remote)) {
+        remote_key_tap(c->remote, key, mods);
+        return;
+    }
+    for (int i = 0; i < c->nheld; i++)
+        if (c->held[i].sc == sc)
+            return;                             /* (already down) */
+    if (c->nheld == (int)(sizeof(c->held) / sizeof(c->held[0])))
+        return;
+    c->held[c->nheld].sc = sc;
+    c->held[c->nheld].key = key;
+    c->held[c->nheld].mods = mods;
+    c->nheld++;
+    mods_hold(c, mods, 1);
+    remote_key(c->remote, key, 1);
+}
+
+static void let_go(controls *c, int sc)
+{
+    for (int i = 0; i < c->nheld; i++)
+        if (c->held[i].sc == sc) {
+            remote_key(c->remote, c->held[i].key, 0);
+            mods_hold(c, c->held[i].mods, 0);
+            c->held[i] = c->held[--c->nheld];
+            return;
+        }
+}
+
+static void let_go_all(controls *c)
+{
+    while (c->nheld)
+        let_go(c, c->held[0].sc);
+    c->key_dirs = 0;
+    c->key_fire = 0;
+}
+
+static unsigned arrow_bit(SDL_Keycode sym)
+{
+    switch (sym) {
+    case SDLK_UP:    return JOY_UP;
+    case SDLK_DOWN:  return JOY_DOWN;
+    case SDLK_LEFT:  return JOY_LEFT;
+    case SDLK_RIGHT: return JOY_RIGHT;
+    }
+    return 0;
+}
+
+/* Cmd+key: PS64's own shortcuts. Returns 1 if used (the rest are main's). */
+static int command_key(controls *c, SDL_Keycode sym)
+{
+    switch (sym) {
+    case SDLK_o: toggle_menu(c); return 1;
+    case SDLK_b:
+        if (!ui_open(c))
+            push_action(c, (ui_action){ .kind = UA_OPEN_BROWSER });
+        return 1;
+    case SDLK_k:
+        if (!ui_open(c))
+            set_osk(c, !c->osk.open);
+        return 1;
+    case SDLK_j: controls_keyboard_joystick(c, !c->kbd_joy, 1); return 1;
+    }
+    return 0;
+}
+
+/* Mac keyboard. Returns 1 if used. */
+static int key_down(controls *c, const SDL_KeyboardEvent *k)
+{
+    SDL_Keycode sym = k->keysym.sym;
+    int kmod = k->keysym.mod;
+    if (kmod & KMOD_GUI) {
+        let_go_all(c);
+        return command_key(c, sym);
+    }
     if (typing(c)) {
         /* Typing a query on a real keyboard: text arrives as SDL_TEXTINPUT,
          * so printable keys don't double as shortcuts here. */
@@ -284,11 +430,8 @@ static int key_down(controls *c, SDL_Keycode sym)
         if (sym >= SDLK_SPACE && sym <= SDLK_z)
             return 1;
     }
-    if (sym == SDLK_o) {
-        toggle_menu(c);
-        return 1;
-    }
     if (ui_open(c)) {
+        let_go_all(c);
         switch (sym) {
         case SDLK_UP:       to_ui(c, IN_UP); break;
         case SDLK_DOWN:     to_ui(c, IN_DOWN); break;
@@ -306,27 +449,67 @@ static int key_down(controls *c, SDL_Keycode sym)
         }
         return 1;
     }
-    if (sym == SDLK_b) {
-        push_action(c, (ui_action){ .kind = UA_OPEN_BROWSER });
+    if (c->osk.open) {
+        switch (sym) {
+        case SDLK_UP:        osk_move(&c->osk, 0, -1); break;
+        case SDLK_DOWN:      osk_move(&c->osk, 0, 1); break;
+        case SDLK_LEFT:      osk_move(&c->osk, -1, 0); break;
+        case SDLK_RIGHT:     osk_move(&c->osk, 1, 0); break;
+        case SDLK_RETURN:    osk_type(c); break;
+        case SDLK_SPACE:     tap(c, C64K_SPACE, 0); break;
+        case SDLK_BACKSPACE: tap(c, C64K_INST_DEL, 0); break;
+        case SDLK_ESCAPE:    set_osk(c, 0); break;
+        }
         return 1;
     }
-    if (sym == SDLK_TAB) {
-        set_osk(c, !c->osk.open);
-        return 1;
+    /* The machine: the joystick keys, else the C64's keyboard. */
+    if (c->kbd_joy) {
+        unsigned bit = arrow_bit(sym);
+        if (bit) {
+            c->key_dirs |= bit;
+            return 1;
+        }
+        if (sym == SDLK_SPACE || sym == SDLK_RSHIFT) {
+            c->key_fire = 1;
+            return 1;
+        }
     }
-    if (!c->osk.open)
-        return 0;
-    switch (sym) {
-    case SDLK_UP:        osk_move(&c->osk, 0, -1); break;
-    case SDLK_DOWN:      osk_move(&c->osk, 0, 1); break;
-    case SDLK_LEFT:      osk_move(&c->osk, -1, 0); break;
-    case SDLK_RIGHT:     osk_move(&c->osk, 1, 0); break;
-    case SDLK_RETURN:    osk_type(c); break;
-    case SDLK_SPACE:     tap(c, C64K_SPACE, 0); break;
-    case SDLK_BACKSPACE: tap(c, C64K_INST_DEL, 0); break;
-    case SDLK_ESCAPE:    set_osk(c, 0); break;
-    }
+    if (k->repeat)
+        return 1;                               /* (the C64 repeats keys itself) */
+    int mods, key = held_key(sym, (kmod & KMOD_SHIFT) != 0, &mods);
+    if (key < 0)
+        return 1;                               /* (typed as text: SDL_TEXTINPUT) */
+    if (kmod & KMOD_SHIFT) mods |= C64MOD_SHIFT;
+    if (kmod & KMOD_ALT)   mods |= C64MOD_CBM;
+    if (kmod & KMOD_CTRL)  mods |= C64MOD_CTRL;
+    press(c, k->keysym.scancode, key, mods);
     return 1;
+}
+
+static int key_up(controls *c, const SDL_KeyboardEvent *k)
+{
+    unsigned bit = arrow_bit(k->keysym.sym);
+    if (bit)
+        c->key_dirs &= ~bit;
+    if (k->keysym.sym == SDLK_SPACE || k->keysym.sym == SDLK_RSHIFT)
+        c->key_fire = 0;
+    let_go(c, k->keysym.scancode);
+    return 1;
+}
+
+/* Text from the keyboard while a machine has it: the symbols (letters, digits and Space
+ * are held keys) typed as the C64 keys that make them. */
+static void key_text(controls *c, const char *text)
+{
+    for (const unsigned char *p = (const unsigned char *)text; *p; p++) {
+        int key, mods;
+        if (*p < 33 || *p > 126 || isalnum(*p))
+            continue;
+        if (c->kbd_joy && *p == ' ')
+            continue;
+        if (c64key_from_ascii(*p, &key, &mods) == 0)
+            tap(c, key, mods);
+    }
 }
 
 int controls_event(controls *c, const SDL_Event *ev)
@@ -361,10 +544,16 @@ int controls_event(controls *c, const SDL_Event *ev)
             stick(c, ev->caxis.axis, ev->caxis.value);
         return 1;
     case SDL_KEYDOWN:
-        return key_down(c, ev->key.keysym.sym);
+        return key_down(c, &ev->key);
+    case SDL_KEYUP:
+        return key_up(c, &ev->key);
     case SDL_TEXTINPUT:
         if (typing(c) || (ui_open(c) && c->ui->screen == UI_SEARCH)) {
             ui_text(c->ui, ev->text.text);
+            return 1;
+        }
+        if (!ui_open(c) && !c->osk.open && !(SDL_GetModState() & KMOD_GUI)) {
+            key_text(c, ev->text.text);
             return 1;
         }
         return 0;
@@ -374,7 +563,9 @@ int controls_event(controls *c, const SDL_Event *ev)
 
 void controls_update(controls *c, Uint32 now)
 {
-    unsigned dirs = c->dpad | c->stick;
+    if ((ui_open(c) || c->osk.open) && (c->nheld || c->key_dirs || c->key_fire))
+        let_go_all(c);                          /* (a screen opened while keys were down) */
+    unsigned dirs = c->dpad | c->stick | c->key_dirs;
     int joystick = !ui_open(c) && !c->osk.open && mode(c) == REMOTE_INPUT;
 
     /* Edge-triggered with auto-repeat for screens, the OSK cursor and cursor keys. */
@@ -392,7 +583,8 @@ void controls_update(controls *c, Uint32 now)
     }
 
     if (c->remote)
-        remote_joystick(c->remote, c->port, joystick ? dirs | (c->fire ? JOY_FIRE : 0) : 0);
+        remote_joystick(c->remote, c->port,
+                        joystick ? dirs | (c->fire || c->key_fire ? JOY_FIRE : 0) : 0);
 }
 
 void controls_draw(controls *c, SDL_Renderer *ren, Uint32 now)

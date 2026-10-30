@@ -59,6 +59,17 @@ size_t prompts_next(const char *text, int *kind)
     return n;
 }
 
+const char *prompts_key_label(int kind)
+{
+    static const char *const labels[PROMPT_COUNT] = {
+        [PROMPT_CROSS] = "Return", [PROMPT_CIRCLE] = "Esc", [PROMPT_SQUARE] = "Space",
+        [PROMPT_TRIANGLE] = "F", [PROMPT_L1] = "PgUp", [PROMPT_R1] = "PgDn", [PROMPT_L2] = "L",
+        [PROMPT_R2] = "Tab", [PROMPT_OPTIONS] = "Cmd+O", [PROMPT_DPAD] = "Arrows",
+        [PROMPT_LR] = "Left/Right", [PROMPT_UD] = "Up/Down", [PROMPT_TOUCH] = "Cmd+K",
+    };
+    return kind >= 0 && kind < PROMPT_COUNT ? labels[kind] : "";
+}
+
 int prompts_rasterize(int kind, uint32_t *px, int size)
 {
     if (kind < 0 || kind >= PROMPT_COUNT)

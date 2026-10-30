@@ -63,6 +63,37 @@ static int icon_w(int kind, int scale)
 }
 static int gap(int scale)    { return 3 * scale; }
 
+static int keyboard;                    /* tokens as keycaps */
+
+void prompts_set_keyboard(int on) { keyboard = on; }
+
+/* A keycap: the key's name in a box as high as an icon. */
+static int cap_w(int kind, int scale)
+{
+    return font_width(prompts_key_label(kind), scale) + 6 * scale;
+}
+
+static void draw_cap(SDL_Renderer *ren, int kind, int x, int y, int scale, SDL_Color c)
+{
+    int w = cap_w(kind, scale), h = ICON_H * scale, t = scale > 1 ? scale / 2 + 1 : 1;
+    SDL_BlendMode bm;
+    SDL_GetRenderDrawBlendMode(ren, &bm);
+    SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(ren, c.r, c.g, c.b, 40);
+    SDL_Rect fill = { x, y, w, h };
+    SDL_RenderFillRect(ren, &fill);
+    SDL_SetRenderDrawColor(ren, c.r, c.g, c.b, 200);
+    SDL_Rect edges[4] = { { x, y, w, t }, { x, y + h - t, w, t }, { x, y, t, h }, { x + w - t, y, t, h } };
+    SDL_RenderFillRects(ren, edges, 4);
+    SDL_SetRenderDrawBlendMode(ren, bm);
+    font_draw(ren, prompts_key_label(kind), x + 3 * scale, y + 3 * scale, scale, c);
+}
+
+static int token_w(int kind, int scale)
+{
+    return keyboard ? cap_w(kind, scale) : icon_w(kind, scale);
+}
+
 int prompts_width(SDL_Renderer *ren, const char *text, int scale)
 {
     load_icons(ren);                        /* (sizes come from the icons) */
@@ -70,7 +101,7 @@ int prompts_width(SDL_Renderer *ren, const char *text, int scale)
     char run[256];
     for (size_t n; (n = prompts_next(text, &kind)) > 0; text += n) {
         if (kind != PROMPT_TEXT) {
-            w += icon_w(kind, scale) + gap(scale);
+            w += token_w(kind, scale) + gap(scale);
         } else {
             snprintf(run, sizeof(run), "%.*s", (int)n, text);
             w += font_width(run, scale);
@@ -87,8 +118,10 @@ int prompts_draw(SDL_Renderer *ren, const char *text, int x, int y, int scale, S
     for (size_t n; (n = prompts_next(text, &kind)) > 0; text += n) {
         if (kind != PROMPT_TEXT) {
             /* Centred on the 8-high text line: 3 above it, 3 below. */
-            SDL_Rect r = { x, y - 3 * scale, icon_w(kind, scale), ICON_H * scale };
-            if (icons[kind])
+            SDL_Rect r = { x, y - 3 * scale, token_w(kind, scale), ICON_H * scale };
+            if (keyboard)
+                draw_cap(ren, kind, r.x, r.y, scale, c);
+            else if (icons[kind])
                 SDL_RenderCopy(ren, icons[kind], &drawn[kind], &r);
             x += r.w + gap(scale);
         } else {

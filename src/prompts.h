@@ -24,6 +24,10 @@ enum { PROMPT_CROSS, PROMPT_CIRCLE, PROMPT_SQUARE, PROMPT_TRIANGLE, PROMPT_L1, P
  */
 size_t prompts_next(const char *text, int *kind);
 
+/* The Mac keyboard key that does what icon kind's button does in PS64's screens, for hints
+ * drawn as keycaps when no controller is connected ("Return", "Esc", "Cmd+O"...). */
+const char *prompts_key_label(int kind);
+
 /* Icon kind as ARGB8888 in a size x size buffer (its own colours). 0, or -1. */
 int prompts_rasterize(int kind, uint32_t *px, int size);
 

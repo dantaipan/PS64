@@ -33,6 +33,7 @@ typedef struct {
     void (*key_tap)(int key, int mods);
     void (*joystick)(int port, unsigned bits);
     void (*release_all)(void);
+    void (*key)(int key, int down);          /* a key held down / let go (may be NULL) */
 } remote_sink;
 remote *remote_start_local(const remote_sink *sink);
 
@@ -40,6 +41,11 @@ void remote_stop(remote *r);               /* releases everything, joins the thr
 int  remote_mode(remote *r);
 
 void remote_key_tap(remote *r, int key, int mods);
+/* A key pressed or let go, held in between: on a machine in this process (remote_local)
+ * really held; on a C64 Ultimate a tap when pressed (its firmware types into the
+ * keyboard buffer), modifier keys on their own doing nothing. */
+void remote_key(remote *r, int key, int down);
+int  remote_local(remote *r);
 void remote_joystick(remote *r, int port, unsigned bits);
 void remote_menu_button(remote *r);
 void remote_release_all(remote *r);

@@ -1197,6 +1197,14 @@ static const char *const about_text[] = {
     "  Options               this menu",
     "  In lists: Triangle adds a favourite, Square shows more actions.",
     "",
+#ifndef __PROSPERO__
+    "Mac keyboard",
+    "  Keys type on the C64 (Esc RUN/STOP, Option C=, F1-F8, PgUp RESTORE).",
+    "  Cmd+J        joystick: arrows, Space or Right Shift fire",
+    "  Cmd+O menu   Cmd+B browser   Cmd+K on-screen keyboard",
+    "  Cmd+F fullscreen   Cmd+M mute   Cmd+Q quit",
+    "",
+#endif
     "On a C64 Ultimate with firmware 1.1.0, keys are typed into the C64's",
     "keyboard buffer: they work in BASIC and menus, but not inside games, and",
     "there is no joystick. The emulator has neither limit.",

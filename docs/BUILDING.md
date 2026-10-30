@@ -47,8 +47,9 @@ REST API:
 ./ps64 --config ps64.cfg                    # options from a file (key = value lines)
 ```
 
-Keys: `F` fullscreen, `M` mute, `S` save BMP snapshot, `N` swap nibble order, `Esc`/`Q`
-quit, `O` menu, `B` file browser, `Tab` on-screen keyboard. The window title shows fps and
+Keys: `Cmd+F` fullscreen, `Cmd+M` mute, `Cmd+S` save BMP snapshot, `Cmd+N` swap nibble
+order, `Cmd+Q` quit, `Cmd+O` menu, `Cmd+B` file browser, `Cmd+K` on-screen keyboard, `Cmd+J`
+keyboard joystick; other keys type on the C64 (README "On the Mac"). The window title shows fps and
 packet-loss counters, plus audio underruns and dropped packets. Only one viewer can listen
 on a port at a time. Audio is 16-bit stereo at ~47983 Hz (PAL), 192 frames per packet,
 buffered ~60 ms. If the picture looks like vertical stripes, press `N` (`--swap-nibbles`).
@@ -60,6 +61,8 @@ Every config key is also a command-line option (`--key value`); `./ps64 --help` 
 - `--type 'print 2+2\n{f1}{run_stop}'` types text and `{key}` names at startup.
 - `--screenshot FILE.bmp` saves the window (overlays included) after `--screenshot-ms`.
 - `--keys "right,ok,square"` presses UI buttons, one every 1.5 s from 2 s.
+- `--press 'PRINT 6*7\n{cmd-j}{up}'` sends Mac keyboard events from 4 s: text, `\n`,
+  `{cmd-x}` shortcuts and held keys (`{up}`, `{space}`... 0.5 s).
 - `--osk`, `--osk-mods N`, `--ui menu|home|sid|about|favourites|recents`, `--browse PATH`,
   `--search TEXT`, `--pick`, `--a64-search TEXT`, `--a64-latest CATEGORY`,
   `--launch-favourite N` open screens or start things at launch.

@@ -64,8 +64,18 @@ Recents, Disk (multi-disk games), Reset C64, Reboot / Switch off and on, D-pad m
 Cartridge, Audio level (Left/Right; Cross mutes), Joystick port, Update search index, About,
 Quit. On screens with lists, the hint line at the bottom shows the buttons.
 
-On the Mac, any SDL-supported controller works, plus the keyboard: **O** menu, **B** file
-browser, **Tab** on-screen keyboard, **F** fullscreen, **M** mute, **Q** quit.
+**On the Mac**, any SDL-supported controller works, and so does the keyboard on its own:
+
+- **Typing**: in a machine the Mac keyboard is the C64's. Keys are held as you hold them in
+  the built-in machines (so they work in games); on a C64 Ultimate they're typed into its
+  keyboard buffer. Esc is RUN/STOP, Option is C=, Control is CTRL, PgUp (fn+Up) is RESTORE,
+  Home (fn+Left) is CLR/HOME, F1-F8 the C64's function keys (fn+F1... on a laptop keyboard).
+- **Joystick**: **Cmd+J** turns the arrows into the joystick, with Space or Right Shift as
+  fire (other keys still type); Cmd+J again for typing. Starting a game turns it on.
+- **PS64's keys**: **Cmd+O** menu (on the home screen: Settings), **Cmd+B** file browser,
+  **Cmd+K** on-screen keyboard, **Cmd+F** fullscreen, **Cmd+M** mute, **Cmd+Q** quit. In PS64's
+  screens: arrows, Return, Esc, Space, PgUp/PgDn, Tab, F (favourite) and L.
+- With no controller connected, the hints show these keys instead of controller buttons.
 
 ## Stream: the C64 Ultimate
 
