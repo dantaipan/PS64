@@ -1282,7 +1282,7 @@ static void test_home(void)
         int decals = 0;
         for (int i = 0; i < ms[0].count; i++)
             decals += ms[0].tris[i].textured == TEX_DECAL;
-        CHECK(decals >= 10);
+        CHECK(decals >= 4);
         for (int k = 0; k < 4; k++) {
             CHECK(ms[k].count > 0 && ms[k].count < 1200);
             mesh_free(&ms[k]);

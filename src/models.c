@@ -63,16 +63,27 @@ void model_1702(mesh *m)
 {
     const uint32_t CASE = 0xB4A68C, TOP = 0xA89B82, VENT = 0x8E8370, BEZEL = 0x2B2522,
                    STEP = 0x231E1B, WALL = 0x1E1E21, GROOVE = 0x6E6454, JACKS = 0xA6987E,
-                   BUTTON = 0x8A6A48, CHROME = 0xC0C3C8, FOOT = 0x8C8476;
-    /* Case without its front; the front is a frame round the bezel and the panel below. */
+                   BUTTON = 0x8A6A48, BADGE = 0x7E6C58, CHROME = 0xC0C3C8, FOOT = 0x8C8476;
+    /* Case without its front. */
     mesh_box(m, (vec3){-0.45f, -0.43f, 0}, (vec3){0.45f, 0.43f, 0.9f}, CASE, BOX_FRONT | BOX_TOP);
     mesh_quad(m, (vec3){-0.45f, 0.43f, 0}, (vec3){0.45f, 0.43f, 0}, (vec3){0.45f, 0.43f, 0.9f},
               (vec3){-0.45f, 0.43f, 0.9f}, (vec3){0, 1, 0}, TOP);
-    const float body[4] = { -0.45f, 0.45f, -0.43f, 0.43f };
-    const float bezel[4] = { -0.42f, 0.42f, -0.17f, 0.41f };
-    const float step[4] = { -0.38f, 0.38f, -0.135f, 0.38f };
-    const float open[4] = { -0.31f, 0.31f, -0.10f, 0.365f };            /* 4:3 */
-    frame(m, body, bezel, 0, CASE);
+    const float bezel[4] = { -0.42f, 0.42f, -0.19f, 0.41f };
+    const float step[4] = { -0.38f, 0.38f, -0.16f, 0.38f };
+    const float open[4] = { -0.31f, 0.31f, -0.12f, 0.365f };            /* 4:3 */
+    /* The front round the bezel: above it and either side, flat. */
+    const float upper[4] = { -0.45f, 0.45f, bezel[2], 0.43f };
+    frame(m, upper, bezel, 0, CASE);
+    /* Below it: a strip angled in (set back under the bezel, coming forward as it goes
+     * down; it faces a little up), then the upright lower strip with the jacks. */
+    const float y_top = bezel[2], y_low = -0.31f, set_back = 0.035f;
+    const vec3 slope_n = { 0, 0.28f, -0.96f };
+    mesh_quad(m, (vec3){-0.45f, y_top, 0}, (vec3){0.45f, y_top, 0}, (vec3){0.45f, y_top, set_back},
+              (vec3){-0.45f, y_top, set_back}, (vec3){0, -1, 0}, CASE);       /* under the bezel */
+    mesh_quad(m, (vec3){-0.45f, y_top, set_back}, (vec3){0.45f, y_top, set_back},
+              (vec3){0.45f, y_low, 0}, (vec3){-0.45f, y_low, 0}, slope_n, CASE);
+    mesh_quad(m, (vec3){-0.45f, y_low, 0}, (vec3){0.45f, y_low, 0}, (vec3){0.45f, -0.43f, 0},
+              (vec3){-0.45f, -0.43f, 0}, FRONT, CASE);
     /* The thick dark bezel, stepped in, the screen set back inside it. */
     m->layer = 1;
     mesh_frustum(m, -0.03f, bezel, 0, bezel, BEZEL, BOX_FRONT | BOX_BACK);
@@ -83,31 +94,56 @@ void model_1702(mesh *m)
     m->layer = 0;
     mesh_textured_quad(m, (vec3){open[0], open[3], 0.05f}, (vec3){open[1], open[3], 0.05f},
                        (vec3){open[1], open[2], 0.05f}, (vec3){open[0], open[2], 0.05f}, FRONT, 8, 6);
-    /* Upper strip: the commodore badge, the model plate, the brown power button. */
+    /* On the slope: the badge standing straight up out of it (a block, upright front),
+     * the model plate printed on it, the small brown power button. */
+#define SLOPE_Z(y) (set_back * ((y) - y_low) / (y_top - y_low))
     m->layer = 1;
-    stud(m, -0.25f, 0.11f, -0.268f, -0.214f, 0, 0.006f, 0xB9BBBE);
-    stud(m, 0.15f, 0.31f, -0.258f, -0.224f, 0, 0.003f, 0xD6CEBE);
-    stud(m, 0.345f, 0.405f, -0.27f, -0.21f, 0, 0.022f, BUTTON);
-    /* The groove across, and the jack panel in the lower strip. */
-    stud(m, -0.45f, 0.45f, -0.318f, -0.308f, 0, 0.001f, GROOVE);
-    stud(m, 0.19f, 0.43f, -0.42f, -0.33f, 0, 0.002f, JACKS);
+    {
+        const float x0 = -0.25f, x1 = 0.11f, y0 = -0.282f, y1 = -0.222f, zf = -0.006f;
+        const float z0 = SLOPE_Z(y0), z1 = SLOPE_Z(y1);
+        mesh_quad(m, (vec3){x0, y1, zf}, (vec3){x1, y1, zf}, (vec3){x1, y0, zf}, (vec3){x0, y0, zf}, FRONT, BADGE);
+        mesh_quad(m, (vec3){x0, y1, zf}, (vec3){x1, y1, zf}, (vec3){x1, y1, z1}, (vec3){x0, y1, z1},
+                  (vec3){0, 1, 0}, BADGE);
+        mesh_quad(m, (vec3){x0, y0, zf}, (vec3){x1, y0, zf}, (vec3){x1, y0, z0}, (vec3){x0, y0, z0},
+                  (vec3){0, -1, 0}, BADGE);
+        for (int side = 0; side < 2; side++) {
+            float x = side ? x1 : x0;
+            mesh_quad(m, (vec3){x, y1, zf}, (vec3){x, y1, z1}, (vec3){x, y0, z0}, (vec3){x, y0, zf},
+                      (vec3){side ? 1.0f : -1.0f, 0, 0}, BADGE);
+        }
+        m->layer = 2;
+        decal(m, DECAL_1702_BADGE, x0, x1, y0, y1, zf - 0.0005f);
+    }
+    {
+        const decal_rect r = DECAL_1702_MODEL;
+        const float x0 = 0.15f, x1 = 0.31f, ya = -0.233f, yb = -0.268f;
+        mesh_decal_quad(m, (vec3){x0, ya, SLOPE_Z(ya) - 0.001f}, (vec3){x1, ya, SLOPE_Z(ya) - 0.001f},
+                        (vec3){x1, yb, SLOPE_Z(yb) - 0.001f}, (vec3){x0, yb, SLOPE_Z(yb) - 0.001f}, slope_n,
+                        (float)r.x / DECAL_W, (float)r.y / DECAL_H, (float)(r.x + r.w) / DECAL_W,
+                        (float)(r.y + r.h) / DECAL_H);
+    }
+    m->layer = 1;
+    {
+        const float yb0 = -0.27f, yb1 = -0.235f;
+        mesh_box(m, (vec3){0.365f, yb0, SLOPE_Z(yb1) - 0.016f}, (vec3){0.40f, yb1, SLOPE_Z(yb0)}, BUTTON,
+                 BOX_BACK);
+    }
+#undef SLOPE_Z
+    /* The groove where the slope meets the lower strip, and the jack panel in it with the
+     * VIDEO (yellow) and AUDIO (white) RCA jacks. */
+    stud(m, -0.45f, 0.45f, y_low - 0.006f, y_low, 0, 0.001f, GROOVE);
+    stud(m, 0.27f, 0.43f, -0.405f, -0.335f, 0, 0.002f, JACKS);
     m->layer = 2;
-    decal(m, DECAL_1702_BADGE, -0.25f, 0.11f, -0.268f, -0.214f, -0.0065f);
-    decal(m, DECAL_1702_MODEL, 0.15f, 0.31f, -0.258f, -0.224f, -0.0035f);
-    decal(m, DECAL_1702_POWER, 0.335f, 0.415f, -0.298f, -0.282f, -0.0005f);
-    /* The two RCA jacks: a metal ring, the coloured insert, the hole. */
-    static const float jx[2] = { 0.255f, 0.355f };
+    static const float jx[2] = { 0.31f, 0.385f };
     static const uint32_t insert[2] = { 0xE8C82A, 0xE6E6E2 };
     for (int i = 0; i < 2; i++)
-        dial(m, jx[i], -0.36f, 0.026f, -0.002f, 0.014f, 10, CHROME, 0x8E9298);
-    decal(m, DECAL_1702_VIDEO, jx[0] - 0.035f, jx[0] + 0.035f, -0.408f, -0.394f, -0.0025f);
-    decal(m, DECAL_1702_AUDIO, jx[1] - 0.035f, jx[1] + 0.035f, -0.408f, -0.394f, -0.0025f);
+        dial(m, jx[i], -0.37f, 0.02f, -0.002f, 0.012f, 10, CHROME, 0x8E9298);
     m->layer = 3;
     for (int i = 0; i < 2; i++)
-        dial(m, jx[i], -0.36f, 0.018f, -0.016f, 0.008f, 10, insert[i], insert[i]);
+        dial(m, jx[i], -0.37f, 0.014f, -0.014f, 0.006f, 10, insert[i], insert[i]);
     m->layer = 4;
     for (int i = 0; i < 2; i++)
-        dial(m, jx[i], -0.36f, 0.007f, -0.024f, 0.002f, 6, 0x1A1A1A, 0x1A1A1A);
+        dial(m, jx[i], -0.37f, 0.005f, -0.020f, 0.002f, 6, 0x1A1A1A, 0x1A1A1A);
     m->layer = 0;
     /* The vents on top: a darker recess with ribs across. */
     mesh_box(m, (vec3){-0.31f, 0.430f, 0.14f}, (vec3){0.31f, 0.432f, 0.78f}, VENT, BOX_BOTTOM);

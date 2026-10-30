@@ -102,27 +102,22 @@ void home_1702_decals(uint32_t *px)
 {
     const int w = DECAL_W;
     fill(px, w, 0, 0, w, DECAL_H, C1702_CASE);
-    /* The badge: silver, the logo and "commodore" in grey, the rainbow, the POWER window. */
+    /* The badge: brown (darker than the case, lighter than the bezel), the logo and
+     * "commodore" in silver, the rainbow, the dark POWER window with its light. */
     const decal_rect b = DECAL_1702_BADGE;
-    fill(px, w, b.x, b.y, b.x + b.w, b.y + b.h, 0xFFB9BBBE);
-    outline(px, w, b.x, b.y, b.x + b.w, b.y + b.h, 0xFF8E9094);
-    cbm_logo(px, w, b.x + 5, b.y + 4, 16, 0xFF55585E);
-    home_text(px, w, DECAL_H, b.x + 24, b.y + 8, "commodore", 1, 0xFF55585E);
+    fill(px, w, b.x, b.y, b.x + b.w, b.y + b.h, 0xFF7E6C58);
+    cbm_logo(px, w, b.x + 5, b.y + 4, 16, 0xFFD2D4D8);
+    home_text(px, w, DECAL_H, b.x + 24, b.y + 8, "commodore", 1, 0xFFD2D4D8);
     static const uint32_t rainbow[5] = { 0xFFE03A2F, 0xFFF08A24, 0xFFF5D02E, 0xFF3FA34D, 0xFF3B7DD8 };
     for (int i = 0; i < 5; i++)
         fill(px, w, b.x + 100, b.y + 3 + i * 4, b.x + 128, b.y + 6 + i * 4, rainbow[i]);
     fill(px, w, b.x + 134, b.y, b.x + b.w, b.y + b.h, 0xFF3A3A3C);
     fill(px, w, b.x + 145, b.y + 5, b.x + 150, b.y + 7, 0xFFD03A2E);       /* the LED */
-    /* The model plate. */
+    /* The model plate: printed on the case, in a thin outline. */
     const decal_rect mp = DECAL_1702_MODEL;
-    fill(px, w, mp.x, mp.y, mp.x + mp.w, mp.y + mp.h, 0xFFD6CEBE);
-    outline(px, w, mp.x, mp.y, mp.x + mp.w, mp.y + mp.h, 0xFF6A6258);
+    outline(px, w, mp.x, mp.y, mp.x + mp.w, mp.y + mp.h, 0xFF5A5248);
     home_text(px, w, DECAL_H, mp.x + 4, mp.y + 3, "VIDEO MONITOR", 1, 0xFF3A342E);
     home_text(px, w, DECAL_H, mp.x + 4, mp.y + 13, "MODEL 1702", 1, 0xFF3A342E);
-    /* The captions. */
-    home_text(px, w, DECAL_H, DECAL_1702_POWER.x, DECAL_1702_POWER.y, "POWER", 1, 0xFF4A4238);
-    home_text(px, w, DECAL_H, DECAL_1702_VIDEO.x, DECAL_1702_VIDEO.y, "VIDEO", 1, 0xFF4A4238);
-    home_text(px, w, DECAL_H, DECAL_1702_AUDIO.x, DECAL_1702_AUDIO.y, "AUDIO", 1, 0xFF4A4238);
 }
 
 void home_1084_decals(uint32_t *px)
