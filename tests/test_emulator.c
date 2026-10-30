@@ -26,17 +26,29 @@ static char dir[] = "/tmp/ps64-emu-test-XXXXXX";
 #define CHECK(cond, ...) do { if (!(cond)) { failures++; printf("FAIL %s:%d: ", __FILE__, __LINE__); \
                               printf(__VA_ARGS__); printf("\n"); } } while (0)
 
+#ifdef PS64_VIC20
+void *vic20_retro_get_memory_data(unsigned id);
+#endif
+static int on_vic20;    /* read the VIC-20's screen ($1E00, 22 x 23 unexpanded) */
+
 /* Screen RAM ($0400) as text, rows joined with '|'. */
 static void screen(char *out, size_t cap)
 {
     const uint8_t *ram = retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM);
+    unsigned base = 0x0400, cols = 40, rows = 25;
+#ifdef PS64_VIC20
+    if (on_vic20) {
+        ram = vic20_retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM);
+        base = 0x1E00, cols = 22, rows = 23;
+    }
+#endif
     size_t n = 0;
     out[0] = 0;
-    for (int r = 0; r < 25 && ram; r++) {
+    for (unsigned r = 0; r < rows && ram; r++) {
         char line[41];
         int len = 0;
-        for (int c = 0; c < 40; c++) {
-            uint8_t b = ram[0x0400 + r * 40 + c] & 0x7f;
+        for (unsigned c = 0; c < cols; c++) {
+            uint8_t b = ram[base + r * cols + c] & 0x7f;
             line[c] = b == 0 ? '@' : b <= 26 ? (char)(b + 64) : (b >= 32 && b < 64) ? (char)b : '.';
             if (line[c] != ' ') len = c + 1;
         }
@@ -106,7 +118,7 @@ static void write_file(const char *path, const void *data, size_t len)
 }
 
 /* BASIC: 10 PRINT"<text>" as a PRG at $0801. */
-static size_t basic_print(const char *text, uint8_t *out)
+static size_t basic_print_at(const char *text, unsigned base, uint8_t *out)
 {
     uint8_t line[64];
     size_t n = 0;
@@ -114,14 +126,19 @@ static size_t basic_print(const char *text, uint8_t *out)
     for (const char *p = text; *p; p++)
         line[n++] = (uint8_t)*p;
     line[n++] = '"'; line[n++] = 0;
-    unsigned next = 0x0801 + 2 + (unsigned)n;
+    unsigned next = base + 2 + (unsigned)n;
     size_t m = 0;
-    out[m++] = 0x01; out[m++] = 0x08;
+    out[m++] = base & 0xFF; out[m++] = base >> 8;
     out[m++] = next & 0xFF; out[m++] = next >> 8;
     memcpy(out + m, line, n);
     m += n;
     out[m++] = 0; out[m++] = 0;
     return m;
+}
+
+static size_t basic_print(const char *text, uint8_t *out)
+{
+    return basic_print_at(text, 0x0801, out);
 }
 
 /* A 35-track D64 holding one PRG named "GAME". */
@@ -305,6 +322,34 @@ int main(void)
     CHECK(run_until("A64 D2 OK", 4000) > 0, "cached Disk2 starts");
     a64_stop(net);
     files_set_emulator(0);
+
+#ifdef PS64_VIC20
+    /* The VIC-20 next to it: boots, types, starts a PRG, and the C64 waits where it was. */
+    type("PRINT 6*6\n");
+    CHECK(run_until(" 36", 300) > 0, "C64 before the VIC-20");
+    char vdir[700];
+    snprintf(vdir, sizeof(vdir), "%s/vic20", dir);
+    CHECK(emulator_select(EMU_VIC20) == 0 && emulator_machine() == EMU_VIC20, "select the VIC-20");
+    on_vic20 = 1;
+    CHECK(emulator_start(vdir, 2) == 0, "VIC-20 starts");
+    CHECK(run_until("READY.", 600) > 0, "VIC-20 boots to READY.");
+    screen(s, sizeof(s));
+    CHECK(strstr(s, "BYTES FREE") != NULL, "VIC-20 start-up screen: %s", s);
+    CHECK(emulator_frame(&w, &h) != NULL && w > 384 && h > 200, "VIC-20 frame %dx%d", w, h);
+    type("PRINT 6*7\n");
+    CHECK(run_until(" 42", 300) > 0, "typing on the VIC-20 (its own key matrix)");
+    uint8_t vprg[64];
+    size_t vn = basic_print_at("VIC OK", 0x1001, vprg);
+    snprintf(path, sizeof(path), "%s/vic.prg", dir);
+    write_file(path, vprg, vn);
+    CHECK(emulator_load(path) == 0, "VIC-20 load");
+    CHECK(run_until("VIC OK", 800) > 0, "a VIC-20 PRG autostarts");
+    on_vic20 = 0;
+    CHECK(emulator_select(EMU_C64) == 0, "back to the C64");
+    run_until(NULL, 5);
+    screen(s, sizeof(s));
+    CHECK(strstr(s, " 36") != NULL, "the C64 kept its screen: %s", s);
+#endif
 
     /* Off and on: back to an empty BASIC. */
     emulator_reset(1);

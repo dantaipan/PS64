@@ -22,6 +22,12 @@ ifneq ($(wildcard $(VICE_LIB)),)
 EMU_CFLAGS := -DPS64_EMU -I$(LRC)/include
 EMU_SRC    := src/emulator.c src/emugames.c
 EMU_LIBS   := lrc.a $(VICE_LIB) -lc++ -lz
+# The VIC-20 core next to it (renamed vic20_*, the rest local; tools/get_vice.sh).
+VIC20_LIB  := $(VICE)/vice_xvic_osx.a
+ifneq ($(wildcard $(VIC20_LIB)),)
+EMU_CFLAGS += -DPS64_VIC20
+EMU_LIBS   := lrc.a $(VICE_LIB) $(VIC20_LIB) -lc++ -lz
+endif
 EMU_DEPS   := lrc.a $(VICE_LIB)
 endif
 
@@ -45,7 +51,7 @@ lrc.a: $(LRC_SRC)
 	rm -rf lrc-obj
 
 CORE_SRC := src/vicstream.c src/audiostream.c src/c64api.c src/c64keys.c src/c64remote.c src/osk.c \
-            src/settings.c src/discover.c src/ftp.c src/c64files.c src/ui.c src/c64index.c src/a64.c src/favs.c src/localfs.c src/sidrandom.c \
+            src/settings.c src/discover.c src/ftp.c src/c64files.c src/ui.c src/c64index.c src/a64.c src/favs.c src/localfs.c src/sidrandom.c src/vic20keys.c \
             src/image.c src/shots.c src/mesh3d.c src/models.c src/home.c src/playlist.c src/prompts.c
 UI_SRC   := src/main_sdl.c src/controls.c src/osk_sdl.c src/font_sdl.c src/ui_sdl.c src/home_sdl.c src/prompts_sdl.c
 HDRS     := $(wildcard src/*.h)

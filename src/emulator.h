@@ -1,8 +1,8 @@
 /*
- * emulator - PS64's built-in C64: the VICE emulator (its libretro core,
- * x64sc, linked statically) run frame by frame from the main loop.
+ * emulator - PS64's built-in C64 and VIC-20: the VICE emulator (its libretro cores,
+ * x64sc and xvic, linked statically) run frame by frame from the main loop.
  *
- * There is one emulated C64 per process (the core keeps global state). All
+ * There is one emulated machine of each kind per process (a core keeps global state). All
  * calls come from the main thread. Built only with PS64_EMU defined.
  */
 #ifndef EMULATOR_H
@@ -11,11 +11,26 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define EMULATOR_MAX_W 384
+#define EMULATOR_MAX_W 448     /* the VIC-20's picture; the C64's is 384 */
 #define EMULATOR_MAX_H 288
 
+/* The machines: the C64, and the VIC-20 in builds with PS64_VIC20. */
+enum { EMU_C64,
+#ifdef PS64_VIC20
+       EMU_VIC20,
+#endif
+       EMU_MACHINES };
+
 /*
- * Boot the C64 to BASIC. dir holds VICE's working files (created if
+ * The machine the calls below apply to (EMU_C64 to start with). A machine started stays
+ * as it is (paused) while the other one is chosen, and carries on when it's chosen again.
+ * 0, or -1 for one this build doesn't have.
+ */
+int  emulator_select(int machine);
+int  emulator_machine(void);
+
+/*
+ * Boot the chosen machine to BASIC. dir holds VICE's working files (created if
  * missing). Returns 0, or -1 if the core wouldn't start. Starting it again
  * switches it off and on (the core can only be set up once per process).
  */

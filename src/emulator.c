@@ -2,6 +2,7 @@
 
 #include "c64keys.h"
 #include "c64remote.h"
+#include "vic20keys.h"
 
 #include "libretro.h"
 
@@ -13,31 +14,120 @@
 #include <strings.h>
 #include <sys/stat.h>
 
-/* VICE internals (the core is linked statically, so these are reachable). */
-void reload_restart(void);
-void keyboard_set_keyarr(int row, int col, int value);
-void keyboard_clear_keymatrix(void);
-void machine_set_restore_key(int v);
-void machine_trigger_reset(unsigned int mode);
-int  file_system_attach_disk(unsigned int unit, unsigned int drive, const char *filename);
-int  cartridge_attach_image(int type, const char *filename);
-void cartridge_detach_image(int type);
+/*
+ * The cores PS64 links, both statically: the C64 (x64sc) and, with PS64_VIC20, the VIC-20
+ * (xvic). The VIC-20 core's entry points and the VICE functions below are renamed vic20_*
+ * (tools/vice_vic20_names.h) and the rest of it is local, so the two sit side by side.
+ */
+#define VICE_API(p) \
+    void p##retro_set_environment(retro_environment_t); \
+    void p##retro_set_video_refresh(retro_video_refresh_t); \
+    void p##retro_set_audio_sample(retro_audio_sample_t); \
+    void p##retro_set_audio_sample_batch(retro_audio_sample_batch_t); \
+    void p##retro_set_input_poll(retro_input_poll_t); \
+    void p##retro_set_input_state(retro_input_state_t); \
+    void p##retro_init(void); \
+    void p##retro_deinit(void); \
+    bool p##retro_load_game(const struct retro_game_info *); \
+    void p##retro_unload_game(void); \
+    void p##retro_run(void); \
+    void p##retro_get_system_av_info(struct retro_system_av_info *); \
+    void p##retro_set_controller_port_device(unsigned, unsigned); \
+    void p##reload_restart(void); \
+    void p##keyboard_set_keyarr(int row, int col, int value); \
+    void p##keyboard_clear_keymatrix(void); \
+    void p##machine_set_restore_key(int v); \
+    void p##machine_trigger_reset(unsigned int mode); \
+    int  p##file_system_attach_disk(unsigned int unit, unsigned int drive, const char *filename); \
+    int  p##cartridge_attach_image(int type, const char *filename); \
+    void p##cartridge_detach_image(int type);
+VICE_API()
+#ifdef PS64_VIC20
+VICE_API(vic20_)
+#endif
+
+typedef struct {
+    void (*set_environment)(retro_environment_t);
+    void (*set_video_refresh)(retro_video_refresh_t);
+    void (*set_audio_sample)(retro_audio_sample_t);
+    void (*set_audio_sample_batch)(retro_audio_sample_batch_t);
+    void (*set_input_poll)(retro_input_poll_t);
+    void (*set_input_state)(retro_input_state_t);
+    void (*init)(void);
+    void (*deinit)(void);
+    bool (*load_game)(const struct retro_game_info *);
+    void (*unload_game)(void);
+    void (*run)(void);
+    void (*get_system_av_info)(struct retro_system_av_info *);
+    void (*set_controller_port_device)(unsigned, unsigned);
+    void (*reload_restart)(void);
+    void (*keyboard_set_keyarr)(int, int, int);
+    void (*keyboard_clear_keymatrix)(void);
+    void (*machine_set_restore_key)(int);
+    void (*machine_trigger_reset)(unsigned int);
+    int  (*file_system_attach_disk)(unsigned int, unsigned int, const char *);
+    int  (*cartridge_attach_image)(int, const char *);
+    void (*cartridge_detach_image)(int);
+} core_api;
+
+#define CORE_API(p) { \
+    p##retro_set_environment, p##retro_set_video_refresh, p##retro_set_audio_sample, \
+    p##retro_set_audio_sample_batch, p##retro_set_input_poll, p##retro_set_input_state, \
+    p##retro_init, p##retro_deinit, p##retro_load_game, p##retro_unload_game, p##retro_run, \
+    p##retro_get_system_av_info, p##retro_set_controller_port_device, p##reload_restart, \
+    p##keyboard_set_keyarr, p##keyboard_clear_keymatrix, p##machine_set_restore_key, \
+    p##machine_trigger_reset, p##file_system_attach_disk, p##cartridge_attach_image, \
+    p##cartridge_detach_image }
+static const core_api cores[EMU_MACHINES] = {
+    CORE_API(),
+#ifdef PS64_VIC20
+    CORE_API(vic20_),
+#endif
+};
+
 #define VICE_CARTRIDGE_CRT 0              /* a .crt file: its header says the type */
 #define VICE_RESET_CPU    0
 #define VICE_POWER_CYCLE  1
 
 /* ---- state ---------------------------------------------------------------------- */
 
-static int running;
-static char sys_dir[512], save_dir[512];
-static enum retro_pixel_format pixfmt = RETRO_PIXEL_FORMAT_0RGB1555;
+/*
+ * Core options. The core declares them (legacy SET_VARIABLES, first value is
+ * the default); PS64 overrides a few.
+ */
+#define MAX_VARS 400
+
+/* Each machine's own: a core keeps running (paused) while the other one is used, since a
+ * core can only be set up once per process. */
+typedef struct {
+    const core_api *api;
+    int running;
+    char sys_dir[512], save_dir[512];
+    enum retro_pixel_format pixfmt;
+    struct retro_system_av_info av;
+    int fast;
+    int joy_port;
+    char cart_path[512];                  /* the cartridge kept in the slot ("" none) */
+    struct retro_disk_control_callback disk_cb;
+    int have_disk_cb;
+    char var_keys[MAX_VARS][48], var_vals[MAX_VARS][48];
+    int nvars, vars_changed;
+} machine;
+
+#ifdef PS64_VIC20
+#define ON_VIC20 (cur_id == EMU_VIC20)
+#else
+#define ON_VIC20 0
+#endif
+
+static machine machines[EMU_MACHINES];
+static int cur_id = EMU_C64;
+static machine *cur = &machines[EMU_C64];  /* the one shown, and the one the callbacks serve */
+
+/* The picture, sound, messages and keys of the machine shown. */
 static uint32_t frame[EMULATOR_MAX_W * EMULATOR_MAX_H];
 static int frame_w, frame_h, have_frame;
-static struct retro_system_av_info av;
-static int fast;
 static unsigned joy_bits;
-static int joy_port = 2;
-static char cart_path[512];               /* the cartridge kept in the slot ("" none) */
 static void attach_cart(void);
 
 /* Audio between frames: a frame is ~960 stereo frames; keep a few. */
@@ -48,17 +138,6 @@ static size_t audio_len;
 #define MSG_MAX 4
 static char messages[MSG_MAX][96];
 static int nmessages;
-
-static struct retro_disk_control_callback disk_cb;
-static int have_disk_cb;
-
-/*
- * Core options. The core declares them (legacy SET_VARIABLES, first value is
- * the default); PS64 overrides a few.
- */
-#define MAX_VARS 400
-static char var_keys[MAX_VARS][48], var_vals[MAX_VARS][48];
-static int nvars, vars_changed;
 
 static const char *const overrides[][2] = {
     { "vice_autoloadwarp", "enabled" },          /* load disks and tapes at full speed */
@@ -72,19 +151,19 @@ static const char *const overrides[][2] = {
 
 static void set_var(const char *key, const char *value)
 {
-    for (int i = 0; i < nvars; i++)
-        if (!strcmp(var_keys[i], key)) {
-            if (strcmp(var_vals[i], value)) {
-                snprintf(var_vals[i], sizeof(var_vals[0]), "%s", value);
-                vars_changed = 1;
+    for (int i = 0; i < cur->nvars; i++)
+        if (!strcmp(cur->var_keys[i], key)) {
+            if (strcmp(cur->var_vals[i], value)) {
+                snprintf(cur->var_vals[i], sizeof(cur->var_vals[0]), "%s", value);
+                cur->vars_changed = 1;
             }
             return;
         }
-    if (nvars < MAX_VARS) {
-        snprintf(var_keys[nvars], sizeof(var_keys[0]), "%s", key);
-        snprintf(var_vals[nvars], sizeof(var_vals[0]), "%s", value);
-        nvars++;
-        vars_changed = 1;
+    if (cur->nvars < MAX_VARS) {
+        snprintf(cur->var_keys[cur->nvars], sizeof(cur->var_keys[0]), "%s", key);
+        snprintf(cur->var_vals[cur->nvars], sizeof(cur->var_vals[0]), "%s", value);
+        cur->nvars++;
+        cur->vars_changed = 1;
     }
 }
 
@@ -120,17 +199,17 @@ static bool environment(unsigned cmd, void *data)
 {
     switch (cmd) {
     case RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY:
-        *(const char **)data = sys_dir;
+        *(const char **)data = cur->sys_dir;
         return true;
     case RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY:
-        *(const char **)data = save_dir;
+        *(const char **)data = cur->save_dir;
         return true;
     case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: {
         enum retro_pixel_format f = *(const enum retro_pixel_format *)data;
         if (f != RETRO_PIXEL_FORMAT_XRGB8888 && f != RETRO_PIXEL_FORMAT_RGB565 &&
             f != RETRO_PIXEL_FORMAT_0RGB1555)
             return false;
-        pixfmt = f;
+        cur->pixfmt = f;
         return true;
     }
     case RETRO_ENVIRONMENT_GET_LOG_INTERFACE:
@@ -158,21 +237,24 @@ static bool environment(unsigned cmd, void *data)
         }
         for (size_t i = 0; i < sizeof(overrides) / sizeof(overrides[0]); i++)
             set_var(overrides[i][0], overrides[i][1]);
-        set_var("vice_joyport", joy_port == 1 ? "1" : "2");
+        if (ON_VIC20)                            /* RAM expansion from the program's size and */
+            set_var("vice_vic20_memory_expansions", "auto");   /* (8k)-style filename tags */
+        else
+            set_var("vice_joyport", cur->joy_port == 1 ? "1" : "2");   /* (the VIC-20 has one) */
         return true;
     case RETRO_ENVIRONMENT_GET_VARIABLE: {
         struct retro_variable *v = data;
         v->value = NULL;
-        for (int i = 0; i < nvars; i++)
-            if (!strcmp(var_keys[i], v->key)) {
-                v->value = var_vals[i];
+        for (int i = 0; i < cur->nvars; i++)
+            if (!strcmp(cur->var_keys[i], v->key)) {
+                v->value = cur->var_vals[i];
                 return true;
             }
         return false;
     }
     case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
-        *(bool *)data = vars_changed;
-        vars_changed = 0;
+        *(bool *)data = cur->vars_changed;
+        cur->vars_changed = 0;
         return true;
     case RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK:
         return true;                             /* keys go into the matrix directly */
@@ -180,21 +262,21 @@ static bool environment(unsigned cmd, void *data)
         *(unsigned *)data = 0;                   /* the basic interface is enough */
         return true;
     case RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE:
-        disk_cb = *(const struct retro_disk_control_callback *)data;
-        have_disk_cb = 1;
+        cur->disk_cb = *(const struct retro_disk_control_callback *)data;
+        cur->have_disk_cb = 1;
         return true;
     case RETRO_ENVIRONMENT_SET_FASTFORWARDING_OVERRIDE:
         if (data)
-            fast = ((const struct retro_fastforwarding_override *)data)->fastforward;
+            cur->fast = ((const struct retro_fastforwarding_override *)data)->fastforward;
         return true;
     case RETRO_ENVIRONMENT_GET_FASTFORWARDING:
         *(bool *)data = false;
         return true;
     case RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO:
-        av = *(const struct retro_system_av_info *)data;
+        cur->av = *(const struct retro_system_av_info *)data;
         return true;
     case RETRO_ENVIRONMENT_SET_GEOMETRY:
-        av.geometry = *(const struct retro_game_geometry *)data;
+        cur->av.geometry = *(const struct retro_game_geometry *)data;
         return true;
     case RETRO_ENVIRONMENT_SET_MESSAGE: {
         const struct retro_message *m = data;
@@ -216,7 +298,7 @@ static void video_refresh(const void *data, unsigned w, unsigned h, size_t pitch
     for (unsigned y = 0; y < h; y++) {
         const uint8_t *row = (const uint8_t *)data + y * pitch;
         uint32_t *out = frame + y * w;
-        if (pixfmt == RETRO_PIXEL_FORMAT_XRGB8888) {
+        if (cur->pixfmt == RETRO_PIXEL_FORMAT_XRGB8888) {
             const uint32_t *p = (const uint32_t *)row;
             for (unsigned x = 0; x < w; x++)
                 out[x] = 0xFF000000u | (p[x] & 0xFFFFFF);
@@ -224,7 +306,7 @@ static void video_refresh(const void *data, unsigned w, unsigned h, size_t pitch
             const uint16_t *p = (const uint16_t *)row;
             for (unsigned x = 0; x < w; x++) {
                 unsigned r, g, b, v = p[x];
-                if (pixfmt == RETRO_PIXEL_FORMAT_RGB565) {
+                if (cur->pixfmt == RETRO_PIXEL_FORMAT_RGB565) {
                     r = (v >> 11) & 31; g = (v >> 5) & 63; b = v & 31;
                     r = r << 3 | r >> 2; g = g << 2 | g >> 4; b = b << 3 | b >> 2;
                 } else {
@@ -286,9 +368,11 @@ static int ntaps, tap_step;
 static void set_key(int key, int down)
 {
     if (key == C64K_RESTORE)
-        machine_set_restore_key(down);
-    else if (key >= 0 && key < 64)
-        keyboard_set_keyarr(key >> 3, key & 7, down);
+        cur->api->machine_set_restore_key(down);
+    else if (key >= 0 && key < 64) {
+        int k = ON_VIC20 ? vic20_key(key) : key;     /* (its own matrix) */
+        cur->api->keyboard_set_keyarr(k >> 3, k & 7, down);
+    }
 }
 
 static void set_mods(int mods, int down)
@@ -317,13 +401,13 @@ static void step_taps(void)
 
 void emulator_key(int key, int down)
 {
-    if (running)
+    if (cur->running)
         set_key(key, down);
 }
 
 void emulator_key_tap(int key, int mods)
 {
-    if (running && ntaps < TAPQ) {
+    if (cur->running && ntaps < TAPQ) {
         taps[ntaps].key = key;
         taps[ntaps].mods = mods;
         ntaps++;
@@ -334,16 +418,16 @@ void emulator_release_keys(void)
 {
     ntaps = tap_step = 0;
     joy_bits = 0;
-    if (running) {
-        keyboard_clear_keymatrix();
-        machine_set_restore_key(0);
+    if (cur->running) {
+        cur->api->keyboard_clear_keymatrix();
+        cur->api->machine_set_restore_key(0);
     }
 }
 
 void emulator_joystick(int port, unsigned bits)
 {
-    if (port != joy_port && (port == 1 || port == 2)) {
-        joy_port = port;
+    if (cur_id == EMU_C64 && port != cur->joy_port && (port == 1 || port == 2)) {
+        cur->joy_port = port;
         set_var("vice_joyport", port == 1 ? "1" : "2");
     }
     joy_bits = bits;
@@ -364,74 +448,105 @@ static void make_dir(const char *path)
     mkdir(p, 0755);
 }
 
+static const char *const machine_names[EMU_MACHINES] = {
+    "C64",
+#ifdef PS64_VIC20
+    "VIC-20",
+#endif
+};
+
+int emulator_select(int which)
+{
+    if (which < 0 || which >= EMU_MACHINES)
+        return -1;
+    if (which == cur_id)
+        return 0;
+    emulator_release_keys();                 /* (nothing held down while it waits) */
+    cur_id = which;
+    cur = &machines[which];
+    have_frame = 0;                          /* the other machine's picture and sound go */
+    audio_len = 0;
+    nmessages = 0;
+    printf("emulator: %s\n", machine_names[which]);
+    return 0;
+}
+
+int emulator_machine(void) { return cur_id; }
+
 int emulator_start(const char *dir, int joystick_port)
 {
+    cur->api = &cores[cur_id];
     /* The core can't be set up twice in one process: starting again is a
      * fresh power-on of the same machine. */
-    if (running) {
+    if (cur->running) {
         emulator_joystick(joystick_port, 0);
         emulator_reset(1);
         return 0;
     }
-    snprintf(sys_dir, sizeof(sys_dir), "%s/system", dir);
-    snprintf(save_dir, sizeof(save_dir), "%s/saves", dir);
-    make_dir(sys_dir);
-    make_dir(save_dir);
-    joy_port = joystick_port == 1 ? 1 : 2;
-    nvars = 0;
+    snprintf(cur->sys_dir, sizeof(cur->sys_dir), "%s/system", dir);
+    snprintf(cur->save_dir, sizeof(cur->save_dir), "%s/saves", dir);
+    make_dir(cur->sys_dir);
+    make_dir(cur->save_dir);
+    cur->joy_port = joystick_port == 1 ? 1 : 2;
+    cur->nvars = 0;
 
-    retro_set_environment(environment);
-    retro_set_video_refresh(video_refresh);
-    retro_set_audio_sample(audio_sample);
-    retro_set_audio_sample_batch(audio_batch);
-    retro_set_input_poll(input_poll);
-    retro_set_input_state(input_state);
-    printf("emulator: starting the core\n");
-    retro_init();
+    cur->api->set_environment(environment);
+    cur->api->set_video_refresh(video_refresh);
+    cur->api->set_audio_sample(audio_sample);
+    cur->api->set_audio_sample_batch(audio_batch);
+    cur->api->set_input_poll(input_poll);
+    cur->api->set_input_state(input_state);
+    printf("emulator: starting the %s core\n", machine_names[cur_id]);
+    cur->api->init();
     printf("emulator: booting\n");
-    if (!retro_load_game(NULL)) {
-        retro_deinit();
+    if (!cur->api->load_game(NULL)) {
+        cur->api->deinit();
         return -1;
     }
-    retro_set_controller_port_device(0, RETRO_DEVICE_JOYPAD);
-    retro_get_system_av_info(&av);
+    cur->api->set_controller_port_device(0, RETRO_DEVICE_JOYPAD);
+    cur->api->get_system_av_info(&cur->av);
     /* The core finishes setting up in its first frame; loading before that
      * would set it up a second time (and crash). */
     printf("emulator: first frame\n");
-    retro_run();
-    running = 1;
+    cur->api->run();
+    cur->running = 1;
     attach_cart();
-    printf("emulator: %ux%u, %.3f fps, audio %.0f Hz\n", av.geometry.base_width,
-           av.geometry.base_height, av.timing.fps, av.timing.sample_rate);
+    printf("emulator: %ux%u, %.3f fps, audio %.0f Hz\n", cur->av.geometry.base_width,
+           cur->av.geometry.base_height, cur->av.timing.fps, cur->av.timing.sample_rate);
     return 0;
 }
 
 void emulator_stop(void)
 {
-    if (!running)
-        return;
-    retro_unload_game();
-    retro_deinit();
-    running = 0;
+    int shown = cur_id;
+    for (int m = 0; m < EMU_MACHINES; m++) {     /* every machine started */
+        if (!machines[m].running)
+            continue;
+        emulator_select(m);
+        cur->api->unload_game();
+        cur->api->deinit();
+        cur->running = 0;
+        cur->have_disk_cb = 0;
+    }
+    emulator_select(shown);
     have_frame = 0;
     audio_len = 0;
     ntaps = tap_step = 0;
-    have_disk_cb = 0;
 }
 
-int emulator_running(void) { return running; }
+int emulator_running(void) { return cur->running; }
 
 void emulator_run_frame(void)
 {
-    if (!running)
+    if (!cur->running)
         return;
     step_taps();
-    retro_run();
+    cur->api->run();
 }
 
-double emulator_fps(void)       { return av.timing.fps > 0 ? av.timing.fps : 50.125; }
-int    emulator_sample_rate(void) { return av.timing.sample_rate > 0 ? (int)av.timing.sample_rate : 48000; }
-int    emulator_fast(void)      { return fast; }
+double emulator_fps(void)       { return cur->av.timing.fps > 0 ? cur->av.timing.fps : 50.125; }
+int    emulator_sample_rate(void) { return cur->av.timing.sample_rate > 0 ? (int)cur->av.timing.sample_rate : 48000; }
+int    emulator_fast(void)      { return cur->fast; }
 
 const uint32_t *emulator_frame(int *w, int *h)
 {
@@ -466,8 +581,8 @@ int emulator_take_message(char *out, size_t cap)
  * switches the C64 off and on around a cartridge change. */
 static void attach_cart(void)
 {
-    if (cart_path[0] && cartridge_attach_image(VICE_CARTRIDGE_CRT, cart_path) != 0)
-        fprintf(stderr, "emulator: can't attach the cartridge %s\n", cart_path);
+    if (cur->cart_path[0] && cur->api->cartridge_attach_image(VICE_CARTRIDGE_CRT, cur->cart_path) != 0)
+        fprintf(stderr, "emulator: can't attach the cartridge %s\n", cur->cart_path);
 }
 
 static int is_crt(const char *path)
@@ -478,19 +593,19 @@ static int is_crt(const char *path)
 
 int emulator_set_cartridge(const char *path)
 {
-    snprintf(cart_path, sizeof(cart_path), "%s", path ? path : "");
-    if (!running)
+    snprintf(cur->cart_path, sizeof(cur->cart_path), "%s", path ? path : "");
+    if (!cur->running)
         return 0;
     emulator_release_keys();
-    cartridge_detach_image(-1);
-    if (!cart_path[0]) {
-        machine_trigger_reset(VICE_POWER_CYCLE);
+    cur->api->cartridge_detach_image(-1);
+    if (!cur->cart_path[0]) {
+        cur->api->machine_trigger_reset(VICE_POWER_CYCLE);
         return 0;
     }
-    if (cartridge_attach_image(VICE_CARTRIDGE_CRT, cart_path) != 0) {
-        fprintf(stderr, "emulator: can't attach the cartridge %s\n", cart_path);
-        cart_path[0] = 0;
-        machine_trigger_reset(VICE_POWER_CYCLE);
+    if (cur->api->cartridge_attach_image(VICE_CARTRIDGE_CRT, cur->cart_path) != 0) {
+        fprintf(stderr, "emulator: can't attach the cartridge %s\n", cur->cart_path);
+        cur->cart_path[0] = 0;
+        cur->api->machine_trigger_reset(VICE_POWER_CYCLE);
         return -1;
     }
     return 0;
@@ -498,16 +613,16 @@ int emulator_set_cartridge(const char *path)
 
 int emulator_load(const char *path)
 {
-    if (!running)
+    if (!cur->running)
         return -1;
     emulator_release_keys();
-    retro_unload_game();
+    cur->api->unload_game();
     struct retro_game_info g = { path, NULL, 0, NULL };
-    if (!retro_load_game(&g))
+    if (!cur->api->load_game(&g))
         return -1;
-    /* A load into a running core is otherwise only a plain reset; this
+    /* A load into a cur->running core is otherwise only a plain reset; this
      * rebuilds the autostart command line and starts the file. */
-    reload_restart();
+    cur->api->reload_restart();
     if (!is_crt(path))
         attach_cart();                       /* (a cartridge game takes the slot) */
     return 0;
@@ -515,39 +630,39 @@ int emulator_load(const char *path)
 
 int emulator_insert_disk(const char *path)
 {
-    if (!running)
+    if (!cur->running)
         return -1;
-    return file_system_attach_disk(8, 0, path) == 0 ? 0 : -1;
+    return cur->api->file_system_attach_disk(8, 0, path) == 0 ? 0 : -1;
 }
 
 void emulator_reset(int power_cycle)
 {
-    if (!running)
+    if (!cur->running)
         return;
     emulator_release_keys();
     if (power_cycle) {
-        retro_unload_game();                 /* detach disks, tapes and cartridges */
+        cur->api->unload_game();                 /* detach disks, tapes and cartridges */
         attach_cart();                       /* ...but the chosen cartridge stays in */
     }
-    machine_trigger_reset(power_cycle ? VICE_POWER_CYCLE : VICE_RESET_CPU);
+    cur->api->machine_trigger_reset(power_cycle ? VICE_POWER_CYCLE : VICE_RESET_CPU);
 }
 
 int emulator_disk_count(void)
 {
-    return running && have_disk_cb && disk_cb.get_num_images ? (int)disk_cb.get_num_images() : 0;
+    return cur->running && cur->have_disk_cb && cur->disk_cb.get_num_images ? (int)cur->disk_cb.get_num_images() : 0;
 }
 
 int emulator_disk_index(void)
 {
-    return running && have_disk_cb && disk_cb.get_image_index ? (int)disk_cb.get_image_index() : 0;
+    return cur->running && cur->have_disk_cb && cur->disk_cb.get_image_index ? (int)cur->disk_cb.get_image_index() : 0;
 }
 
 int emulator_disk_insert(int index)
 {
     if (index < 0 || index >= emulator_disk_count())
         return -1;
-    disk_cb.set_eject_state(true);
-    bool ok = disk_cb.set_image_index((unsigned)index);
-    disk_cb.set_eject_state(false);
+    cur->disk_cb.set_eject_state(true);
+    bool ok = cur->disk_cb.set_image_index((unsigned)index);
+    cur->disk_cb.set_eject_state(false);
     return ok ? 0 : -1;
 }

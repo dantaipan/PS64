@@ -11,6 +11,9 @@ SRC      := ../src
 # Built-in emulator: the VICE libretro core (fetched by tools/get_vice.sh) as a static library.
 VICE     := ../third_party/vice
 VICE_LIB := $(VICE)/vice_x64sc_libretro_ps5.a
+# The VIC-20 core (xvic): its entry points renamed vic20_* (tools/vice_vic20_names.h) and
+# everything else made local, so it links next to the C64 core.
+VIC20_LIB := $(VICE)/vice_xvic_ps5.a
 LRC      := $(VICE)/libretro-common
 LRC_SRC  := $(addprefix $(LRC)/, compat/compat_strl.c compat/compat_strcasestr.c compat/fopen_utf8.c \
               encodings/encoding_utf.c file/file_path.c file/file_path_io.c file/retro_dirent.c \
@@ -18,12 +21,12 @@ LRC_SRC  := $(addprefix $(LRC)/, compat/compat_strl.c compat/compat_strcasestr.c
               time/rtime.c vfs/vfs_implementation.c)
 LRC_LIB  := out/lrc.a
 
-CFLAGS  := -O2 -Wall -Wextra -std=gnu11 -I$(SDL_ROOT)/include -DPS64_EMU -I$(LRC)/include
+CFLAGS  := -O2 -Wall -Wextra -std=gnu11 -I$(SDL_ROOT)/include -DPS64_EMU -DPS64_VIC20 -I$(LRC)/include
 # Assembly64 client ID for a build distributed under another name (see src/a64.h).
 ifdef A64_CLIENT
 CFLAGS  += -DPS64_A64_CLIENT=$(A64_CLIENT)
 endif
-LDLIBS  := $(LRC_LIB) $(VICE_LIB) -lc++ -lc++abi -lunwind \
+LDLIBS  := $(LRC_LIB) $(VICE_LIB) $(VIC20_LIB) -lc++ -lc++abi -lunwind \
            -L$(SDL_ROOT)/lib -lSDL2main -lSDL2 \
            -lSceSystemService -lSceUserService -lScePad -lSceAudioOut \
            -lSceVideoOut -lSceKeyboard -lSceImeDialog -lSceNotification -lSceNet -lkernel_sys
@@ -35,11 +38,11 @@ all: $(OUT)/eboot.elf $(OUT)/ps64.cfg $(OUT)/sce_sys/icon0.png $(OUT)/INSTALL.tx
 SOURCES := $(addprefix $(SRC)/, main_sdl.c controls.c osk_sdl.c font_sdl.c ui_sdl.c \
                                  vicstream.c audiostream.c c64api.c c64keys.c c64remote.c \
                                  osk.c settings.c discover.c ftp.c c64files.c ui.c c64index.c a64.c favs.c \
-                                 localfs.c sidrandom.c emulator.c emugames.c image.c shots.c \
+                                 localfs.c sidrandom.c vic20keys.c emulator.c emugames.c image.c shots.c \
                                  mesh3d.c models.c home.c home_sdl.c playlist.c \
                                  prompts.c prompts_sdl.c)
 
-$(OUT)/eboot.elf: $(SOURCES) $(wildcard $(SRC)/*.h) $(VICE_LIB) $(LRC_LIB)
+$(OUT)/eboot.elf: $(SOURCES) $(wildcard $(SRC)/*.h) $(VICE_LIB) $(VIC20_LIB) $(LRC_LIB)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -o $@ $(SOURCES) $(LDLIBS)
 
@@ -48,6 +51,15 @@ $(VICE_LIB):
 	$(MAKE) -C $(VICE) -j$$(nproc) platform=ps5 EMUTYPE=x64sc STATIC_LINKING=1 \
 	        CC=$(PS5_PAYLOAD_SDK)/bin/prospero-clang CXX=$(PS5_PAYLOAD_SDK)/bin/prospero-clang++ \
 	        AR=$(PS5_PAYLOAD_SDK)/bin/prospero-ar OBJDIR=build-ps5 TARGET=vice_x64sc_libretro_ps5.a
+
+$(VIC20_LIB): ../tools/vice_vic20_names.h ../tools/vice_vic20_keep.txt
+	CFLAGS="-fno-common -include $(abspath ../tools/vice_vic20_names.h)" \
+	$(MAKE) -C $(VICE) -j$$(nproc) platform=ps5 EMUTYPE=xvic STATIC_LINKING=1 \
+	        CC=$(PS5_PAYLOAD_SDK)/bin/prospero-clang CXX=$(PS5_PAYLOAD_SDK)/bin/prospero-clang++ \
+	        AR=$(PS5_PAYLOAD_SDK)/bin/prospero-ar OBJDIR=build-ps5-xvic TARGET=vice_xvic_libretro_ps5.a
+	$(PS5_PAYLOAD_SDK)/bin/ld.lld -r --whole-archive $(VICE)/vice_xvic_libretro_ps5.a -o $(VICE)/vice_xvic_ps5.o
+	$(PS5_PAYLOAD_SDK)/bin/llvm-objcopy --keep-global-symbols=../tools/vice_vic20_keep.txt $(VICE)/vice_xvic_ps5.o
+	rm -f $@ && $(PS5_PAYLOAD_SDK)/bin/prospero-ar rcs $@ $(VICE)/vice_xvic_ps5.o
 
 $(LRC_LIB): $(LRC_SRC)
 	@mkdir -p out/lrc-obj

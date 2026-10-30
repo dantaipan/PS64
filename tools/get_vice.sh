@@ -2,7 +2,11 @@
 # Fetch the VICE C64 emulator (libretro core, x64sc) into third_party/vice and
 # build it as a static library for PS64's built-in emulator mode.
 #
-#   tools/get_vice.sh          fetch + build for the Mac (third_party/vice/vice_x64sc_libretro_osx.a)
+#   tools/get_vice.sh          fetch + build for the Mac: the C64 core
+#                              (third_party/vice/vice_x64sc_libretro_osx.a) and the VIC-20 core
+#                              (vice_xvic_osx.a: entry points renamed vic20_* by
+#                              tools/vice_vic20_names.h, everything else made local, so the two
+#                              link into one program)
 #   tools/get_vice.sh fetch    fetch only (ps5/build.sh builds the PS5 library in Docker)
 #
 # Source: mihawk-99/PS5_VICE, a fork of libretro/vice-libretro (VICE 3.10) with a
@@ -33,7 +37,7 @@ if ! grep -q "PS64: a cartridge" "$DIR/vice/src/autostart.c"; then
     perl -0pi -e 's/(static CHECKYESNO check\(const char \*s, unsigned int blink_mode\)\n\{\n)    return check2\(s, blink_mode, 0, AUTOSTART_CHECK_FIRST_COLUMN\);\n/$1    CHECKYESNO r = check2(s, blink_mode, 0, AUTOSTART_CHECK_FIRST_COLUMN);\n    \/\* PS64: a cartridge may print a line under READY. (Epyx FastLoad: "FASTLOAD") \*\/\n    if (r == NO \&\& blink_mode == AUTOSTART_WAIT_BLINK \&\&\n        check2(s, blink_mode, -1, AUTOSTART_CHECK_FIRST_COLUMN) == YES)\n        return YES;\n    return r;\n/' \
         "$DIR/vice/src/autostart.c"
     grep -q "PS64: a cartridge" "$DIR/vice/src/autostart.c" || { echo "get_vice: autostart patch didn't apply" >&2; exit 1; }
-    rm -f "$DIR"/vice_x64sc_libretro_*.a        # rebuild with it
+    rm -f "$DIR"/vice_*.a                       # rebuild with it
 fi
 
 [ "$1" = fetch ] && exit 0
@@ -42,3 +46,21 @@ JOBS=$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
 make -C "$DIR" -j"$JOBS" platform=osx EMUTYPE=x64sc STATIC_LINKING=1 \
      OBJDIR=build-osx TARGET=vice_x64sc_libretro_osx.a
 echo "VICE built: $DIR/vice_x64sc_libretro_osx.a"
+
+# The VIC-20 core. -fno-common makes its uninitialised globals real definitions, so the
+# partial link can make them local too.
+if [ ! -f "$DIR/vice_xvic_osx.a" ]; then
+    CFLAGS="-fno-common -include $PWD/tools/vice_vic20_names.h" \
+    make -C "$DIR" -j"$JOBS" platform=osx EMUTYPE=xvic STATIC_LINKING=1 \
+         OBJDIR=build-osx-xvic TARGET=vice_xvic_libretro_osx.a
+    sed 's/^/_/' tools/vice_vic20_keep.txt > "$DIR/vic20-keep-macho.txt"
+    ld -r -arch arm64 -platform_version macos 11.0 11.0 -all_load "$DIR/vice_xvic_libretro_osx.a" \
+       -exported_symbols_list "$DIR/vic20-keep-macho.txt" -o "$DIR/vice_xvic_osx.o" 2>/dev/null
+    rm -f "$DIR/vice_xvic_osx.a"
+    ar rcs "$DIR/vice_xvic_osx.a" "$DIR/vice_xvic_osx.o"
+    if nm -g "$DIR/vice_xvic_osx.o" | grep -v " U " | awk '{print $3}' | grep -qv '^_vic20_'; then
+        echo "get_vice: the VIC-20 core still has other global symbols" >&2
+        exit 1
+    fi
+fi
+echo "VICE built: $DIR/vice_xvic_osx.a"

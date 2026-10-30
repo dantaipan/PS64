@@ -17,7 +17,7 @@ B=third_party/ps5-native-app-boilerplate
 STAGE=$B/ps64                      # the boilerplate only builds from inside its own tree
 
 # 1. VICE and the libretro-common helpers (the same libraries as the payload build).
-make -C ps5 -s ../third_party/vice/vice_x64sc_libretro_ps5.a out/lrc.a
+make -C ps5 -s ../third_party/vice/vice_x64sc_libretro_ps5.a ../third_party/vice/vice_xvic_ps5.a out/lrc.a
 
 # 1b. The SID player's engine (libresidfp + libsidplayfp) and PS64's wrapper around it,
 #     with exceptions and RTTI like VICE (the boilerplate's own C++ rule turns them off).
@@ -62,6 +62,7 @@ cp third_party/dlmalloc/dlmalloc.c "$STAGE/include/"
 cp -r third_party/vice/libretro-common/include/* "$STAGE/include-lrc/"
 cp third_party/sdl-native-build/libSDL2.a "$STAGE/lib/"
 cp third_party/vice/vice_x64sc_libretro_ps5.a "$STAGE/lib/vice.a"
+cp third_party/vice/vice_xvic_ps5.a "$STAGE/lib/vice_vic20.a"
 cp ps5/out/lrc.a "$STAGE/lib/lrc.a"
 cp "$SIDP/libsidplay.a" "$SIDP/lib/libsidplayfp.a" "$SIDP/lib/libresidfp.a" "$STAGE/lib/"
 # (renamed: the boilerplate accepts only [A-Za-z0-9_.-] in archive names)
@@ -74,9 +75,9 @@ WRAP="malloc free calloc realloc posix_memalign memalign aligned_alloc fcntl get
       sceKeyboardInit sceKeyboardOpen sceKeyboardClose sceKeyboardReadState
       sceImeDialogInit sceImeDialogGetStatus sceImeDialogGetResult sceImeDialogTerm"
 ARGS=(APP_SOURCE_DIR=ps64/src APP_SCE_SYS=ps64/sce_sys APP_PARAM=ps64/sce_sys/param.json APP_ASSETS=ps64/assets
-      "APP_DEFINITIONS=PS64_NATIVE PS64_EMU PS64_SID$([ $DEV = 1 ] && echo ' PS64_DEV')${A64_CLIENT:+ PS64_A64_CLIENT=$A64_CLIENT}"
+      "APP_DEFINITIONS=PS64_NATIVE PS64_EMU PS64_VIC20 PS64_SID$([ $DEV = 1 ] && echo ' PS64_DEV')${A64_CLIENT:+ PS64_A64_CLIENT=$A64_CLIENT}"
       "APP_INCLUDE_PATHS=ps64/include ps64/include-lrc"
-      "APP_STATIC_ARCHIVES=ps64/lib/lrc.a ps64/lib/vice.a ps64/lib/libsidplay.a ps64/lib/libsidplayfp.a ps64/lib/libresidfp.a ps64/lib/libSDL2.a ps64/lib/libcxx.a ps64/lib/libcxxabi.a ps64/lib/libunwind.a"
+      "APP_STATIC_ARCHIVES=ps64/lib/lrc.a ps64/lib/vice.a ps64/lib/vice_vic20.a ps64/lib/libsidplay.a ps64/lib/libsidplayfp.a ps64/lib/libresidfp.a ps64/lib/libSDL2.a ps64/lib/libcxx.a ps64/lib/libcxxabi.a ps64/lib/libunwind.a"
       "APP_WRAP_SYMBOLS=$(echo $WRAP)")
 make -C "$B" "${ARGS[@]}"
 
