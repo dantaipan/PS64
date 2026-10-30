@@ -1961,6 +1961,7 @@ int main(int argc, char **argv)
                     sym = !strcmp(k, "up") ? SDLK_UP : !strcmp(k, "down") ? SDLK_DOWN
                         : !strcmp(k, "left") ? SDLK_LEFT : !strcmp(k, "right") ? SDLK_RIGHT
                         : !strcmp(k, "esc") ? SDLK_ESCAPE : !strcmp(k, "space") ? SDLK_SPACE
+                        : !strcmp(k, "tab") ? SDLK_TAB
                         : (SDL_Keycode)(unsigned char)k[0];
                     hold = gui ? 80 : 500;
                     if (!strcmp(name, "hold-esc")) {           /* held long enough to quit */

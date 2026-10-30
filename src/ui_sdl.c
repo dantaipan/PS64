@@ -365,9 +365,12 @@ static void draw_search(SDL_Renderer *ren, const ui_state *u, Uint32 now)
     }
 
     if (u->search_focus == 0) {
-        prompts_draw(ren, "{cross} type {square} del {triangle} space {r2} results {l1} shift {circle} close",
+        prompts_draw(ren, prompts_keyboard()
+                              ? "type to search   {cross} results   {circle} close"
+                              : "{cross} type {square} del {triangle} space {r2} results {l1} shift {circle} close",
                      PX + 16, ry + UI_SEARCH_PAGE * ROW_H + 4, 1, DIM);
-        osk_draw(ren, &u->kbd, 0);     /* (the screen's hint line covers it) */
+        if (!prompts_keyboard())       /* (a Mac keyboard types instead) */
+            osk_draw(ren, &u->kbd, 0);     /* (the screen's hint line covers it) */
     } else {
         footer(ren, "{cross} run  {square} more  {triangle} favourite  > show folder  {circle} back to typing");
     }
@@ -498,10 +501,13 @@ static void draw_a64(SDL_Renderer *ren, const ui_state *u, Uint32 now)
     }
 
     if (u->a64_focus == 0) {
-        prompts_draw(ren, "{cross} type {square} del {triangle} space {r2} search {r1} latest "
-                          "{l2} category {l1} shift {circle} close",
+        prompts_draw(ren, prompts_keyboard()
+                              ? "type to search   {cross} search   Cmd+L latest   {r2} category   {circle} close"
+                              : "{cross} type {square} del {triangle} space {r2} search {r1} latest "
+                                "{l2} category {l1} shift {circle} close",
                      PX + 16, ry + UI_SEARCH_PAGE * ROW_H + 4, 1, DIM);
-        osk_draw(ren, &u->kbd, 0);     /* (the screen's hint line covers it) */
+        if (!prompts_keyboard())       /* (a Mac keyboard types instead) */
+            osk_draw(ren, &u->kbd, 0);     /* (the screen's hint line covers it) */
     } else {
         footer(ren, "{cross} open   {triangle} favourite   {circle} back to typing   {l1}{r1} page");
     }

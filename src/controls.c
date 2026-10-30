@@ -406,6 +406,12 @@ static int command_key(controls *c, SDL_Keycode sym)
             set_osk(c, !c->osk.open);
         return 1;
     case SDLK_j: controls_keyboard_joystick(c, !c->kbd_joy, 1); return 1;
+    case SDLK_l:                                /* Assembly64's latest, while typing */
+        if (typing(c) && c->ui->screen == UI_A64) {
+            to_ui(c, IN_R1);
+            return 1;
+        }
+        break;
     }
     return 0;
 }
@@ -421,11 +427,15 @@ static int key_down(controls *c, const SDL_KeyboardEvent *k)
     }
     if (typing(c)) {
         /* Typing a query on a real keyboard: text arrives as SDL_TEXTINPUT,
-         * so printable keys don't double as shortcuts here. */
+         * so printable keys don't double as shortcuts here (Assembly64's latest
+         * is Cmd+L, its category Tab). */
         switch (sym) {
         case SDLK_RETURN:    to_ui(c, IN_R2); return 1;      /* to the results */
         case SDLK_BACKSPACE: to_ui(c, IN_ALT); return 1;     /* delete */
         case SDLK_ESCAPE:    to_ui(c, IN_BACK); return 1;
+        case SDLK_TAB:
+            to_ui(c, c->ui->screen == UI_A64 ? IN_L2 : IN_R2);
+            return 1;
         }
         if (sym >= SDLK_SPACE && sym <= SDLK_z)
             return 1;

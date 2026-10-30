@@ -18,7 +18,8 @@
  * (arrows, Space or Right Shift fire). PS64's own keys are Cmd+O menu, Cmd+B file
  * browser, Cmd+K on-screen keyboard, Cmd+J typing/joystick (main: Cmd+F, M, S, N, Q).
  * In PS64's screens arrows, Return, Esc, Space, PageUp/PageDown, Tab, F and L drive
- * them.
+ * them; while typing a search, letters type: Return searches, Tab is Assembly64's
+ * category and Cmd+L its latest.
  */
 #ifndef CONTROLS_H
 #define CONTROLS_H
