@@ -111,7 +111,9 @@ typedef struct {
 #define SID_SCOPE 384
 
 /* Home screen items, focus and the C64 Ultimate stream's state. */
-enum { HOME_VICE, HOME_STREAM, HOME_SID, HOME_VIC20, HOME_ITEMS };   /* a carousel: it wraps round */
+/* A carousel, in its order round (it wraps): with VICE C64 in the middle, SID is on its
+ * left, Stream on its right, and the VIC-20 waits out of sight behind. */
+enum { HOME_VICE, HOME_STREAM, HOME_VIC20, HOME_SID, HOME_ITEMS };
 enum { HOME_ON_ITEMS, HOME_ON_POWER, HOME_ON_GEAR };
 enum { HOME_STREAM_SEARCHING,     /* looking for the C64 Ultimate */
        HOME_STREAM_CONNECTING,    /* found: starting its stream */

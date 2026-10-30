@@ -266,10 +266,10 @@ void home_draw(SDL_Renderer *ren, const ui_state *u, SDL_Texture *live, Uint32 n
         H.noise_at = now;
     }
     SDL_Texture *screens[HOME_ITEMS] = {
-        H.basic[(now / 500) & 1],
-        u->home_stream == HOME_STREAM_LIVE && live ? live : H.noise,
-        H.label,
-        H.vic20,
+        [HOME_VICE] = H.basic[(now / 500) & 1],
+        [HOME_STREAM] = u->home_stream == HOME_STREAM_LIVE && live ? live : H.noise,
+        [HOME_SID] = H.label,
+        [HOME_VIC20] = H.vic20,
     };
 
     /* Each object's place: its offset from the chosen one, round the carousel. */
@@ -338,18 +338,19 @@ void home_draw(SDL_Renderer *ren, const ui_state *u, SDL_Texture *live, Uint32 n
         }
     }
 
-    static const char *const names[HOME_ITEMS] = { "Vice", "Stream", "SID", "VIC-20" };
+    static const char *const names[HOME_ITEMS] = {
+        [HOME_VICE] = "VICE C64", [HOME_STREAM] = "Stream", [HOME_SID] = "SID", [HOME_VIC20] = "VICE VIC20",
+    };
     for (int i = 0; i < HOME_ITEMS; i++) {
         if (fabsf(offs[i]) > 1.4f)                  /* (the ones sliding out: no labels) */
             continue;
         int cx = (int)(CENTRE_X + offs[i] * SPACING);
         int on = i == u->home_sel && u->home_focus == HOME_ON_ITEMS;
-        centred(ren, names[i], cx, LABEL_Y, 5, on ? WHITE : DIM);
+        centred(ren, names[i], cx, LABEL_Y, 4, on ? WHITE : DIM);
         char buf[64];
         SDL_Color c = DIM;
         const char *status = i == HOME_STREAM ? stream_status(u, now, &c, buf, sizeof(buf))
-                           : i == HOME_SID ? "Music player" : i == HOME_VIC20 ? "VIC-20 emulator"
-                           : "Emulator";
+                           : i == HOME_SID ? "Music player" : "Built-in emulator";
         int sw = font_width(status, 3) + 32;
         fill_rect(ren, cx - sw / 2, STATUS_Y - 12, sw, 48, 11, 9, 38, 200);     /* readable over the stripes */
         centred(ren, status, cx, STATUS_Y, 3, c);

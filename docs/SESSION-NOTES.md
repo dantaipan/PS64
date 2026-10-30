@@ -336,7 +336,8 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
   `ps64-vic20-index.txt`, favourites `FAV_VIC20_*`. Memory expansion `auto` (+ filename tags).
   Both machines' pictures use the core's aspect (VIC-20 1.314, it draws pixels twice;
   C64 1.322, was shown square, ~6% too wide).
-- **Home carousel**: 4 objects, chosen one in the middle, wraps (`home_wrap`, `home_shown`
+- **Home carousel** (order round: VICE C64, Stream, VICE VIC20, SID; default view SID |
+  VICE C64 | Stream, the VIC-20 hidden behind; titles at scale 4): 4 objects, chosen one in the middle, wraps (`home_wrap`, `home_shown`
   in home.c); the 4th shrinks away past the edges. The VIC-20 is `model_tv()` (after the
   user's Zenith reference photos), screen `home_vic20_screen()` shown through `home_rf()`:
   RF reception (line wobble, ghost, colour bleed, snow; a 0.6 s burst of tearing and a

@@ -4,15 +4,15 @@ Play the Commodore 64 on a jailbroken PS5 (or a Mac), with or without the real h
 
 - **Stream**: show a **Commodore 64 Ultimate**'s picture and sound and drive it from the
   DualSense: on-screen keyboard, file browser, search, favourites.
-- **Vice**: no C64? PS64's **built-in emulator** (VICE) runs one. Copy in games or download
+- **VICE C64**: no C64? PS64's **built-in emulator** (VICE) runs one. Copy in games or download
   them from Assembly64.
 - **SID**: a **music player** for C64 tunes, on PS64 itself or on the Ultimate's SID chips.
-- **VIC-20**: the C64's little brother, built in too (VICE). Copy in its games.
+- **VICE VIC20**: the C64's little brother, built in too. Copy in its games.
 
 Both machines can search the online **Assembly64** database and start what you find straight
 away.
 
-*Vice in PS64 is a deliberately simple C64-only emulator. For something more feature-rich,
+*The emulators in PS64 are deliberately simple. For something more feature-rich,
 use a dedicated emulator.*
 
 ## Install
@@ -32,10 +32,10 @@ settings, and **FTP** for the file browser. PS64 finds it on the network by itse
 
 ## The home screen
 
-PS64 starts on a 3D home screen, a carousel of four objects: **Vice** (the emulator),
-**Stream** (the C64 Ultimate, shown live on the monitor once found), **SID** (the music player)
-and **VIC-20** (the old TV). Left/Right turn it (it goes round), Cross starts the one in the
-middle. **Options > Home** goes back there from a machine.
+PS64 starts on a 3D home screen, a carousel: **SID** (the music player), **VICE C64** (the
+emulator, in the middle) and **Stream** (the C64 Ultimate, shown live on the monitor once
+found), with **VICE VIC20** (the old TV) waiting behind. Left/Right turn it (it goes round),
+Cross starts the one in the middle. **Options > Home** goes back there from a machine.
 
 - **Settings** (Options, or the gear icon): the C64 Ultimates found (pick one, enter an
   address, or give its network password) and the **Home music** volume.
@@ -60,7 +60,7 @@ R2 RETURN, L1 Shift (twice locks), R1 C=, L2 CTRL. Keys show what they'll type w
 current modifiers. The shortcut buttons can be changed (`button-square = f2`, etc.).
 
 **The menu (Options)**: Home, Resume, browse and search files, Search Assembly64, Favourites,
-Recents, Disk (multi-disk games), Reset C64, Reboot / Switch off and on, D-pad mode (Vice),
+Recents, Disk (multi-disk games), Reset C64, Reboot / Switch off and on, D-pad mode (emulators),
 Cartridge, Audio level (Left/Right; Cross mutes), Joystick port, Update search index, About,
 Quit. On screens with lists, the hint line at the bottom shows the buttons.
 
@@ -103,10 +103,10 @@ It remembers the C64 you chose.
   directly, and there's no joystick. Real key presses and the joystick come with firmware
   that has the Ultimate's input command; PS64 uses it automatically when it's there.
 
-## Vice: the built-in emulator
+## VICE C64: the built-in emulator
 
 A C64 inside PS64: keyboard and joystick work in games, multi-disk games swap disks, and
-disks load at full speed. **Options > Home** pauses it; **Vice** carries on where it was.
+disks load at full speed. **Options > Home** pauses it; **VICE C64** carries on where it was.
 
 - **Games folder**: `/data/ps64/games` (Mac: `~/Documents/PS64/games`). Copy in D64, G64,
   D71, D81, PRG, T64, TAP and CRT files, in folders if you like. **Browse games folder** and
@@ -119,14 +119,14 @@ disks load at full speed. **Options > Home** pauses it; **Vice** carries on wher
 - **D-pad**: joystick by default (port 2; **Joystick port** in the menu). **Options > D-pad**
   switches it to cursor keys and RETURN for BASIC and menus.
 - **Reset C64** resets; **Switch off and on** also removes disks and cartridge games.
-- No ROM files are needed. SID and MOD files play in the SID player, not in Vice.
+- No ROM files are needed. SID and MOD files play in the SID player, not in the emulator.
 
-## VIC-20
+## VICE VIC20
 
-The VIC-20 on the home screen is a second built-in emulator (VICE's VIC-20). It works like
-Vice (keyboard, joystick, the menu, browse and search, favourites), with its own folder and
-without Assembly64 (which has C64 software only). Vice and the VIC-20 each wait where they
-were while you use the other.
+**VICE VIC20** on the home screen (turn the carousel to the TV) is a second built-in emulator,
+VICE's VIC-20. It works like VICE C64 (keyboard, joystick, the menu, browse and search,
+favourites), with its own folder and without Assembly64 (which has C64 software only). The two
+each wait where they were while you use the other.
 
 - **Games folder**: `/data/ps64/vic20` (Mac: `~/Documents/PS64/vic20`), with USB drives at the
   top. It runs PRG, D64, TAP, T64 and cartridge images (`.crt`, `.20`, `.40`, `.60`, `.a0`,
@@ -141,7 +141,7 @@ were while you use the other.
 port and leaves it there; Left/Right choose, and the C64 restarts with it. PS64 doesn't
 include any (cartridge ROMs are copyrighted): bring your own `.crt` files.
 
-- **Vice**: copy them into `/data/ps64/carts` (Mac: `~/Documents/PS64/carts`). The choice is
+- **VICE C64**: copy them into `/data/ps64/carts` (Mac: `~/Documents/PS64/carts`). The choice is
   saved and stays through loads; a cartridge game (CRT) takes its place while it runs.
 - **C64 Ultimate**: copy them into the Ultimate's `/flash/carts` folder. PS64 sets its
   Cartridge setting and reboots it. That isn't saved to the Ultimate's flash, so switching
@@ -188,7 +188,7 @@ useful keys include:
 | `home-music` | Home music volume, 0 (off) to 10 |
 | `search-roots` | Folders the Ultimate's search index covers |
 | `games-dir`, `vic20-dir`, `sids-dir`, `carts-dir` | Other folders for games, VIC-20 games, tunes, cartridges |
-| `dpad` | `keys` makes the D-pad cursor keys in Vice |
+| `dpad` | `keys` makes the D-pad cursor keys in the emulators |
 | `button-square` (etc.) | A C64 key for a shortcut button |
 | `usb-prefix` | Where USB drives are mounted (`none` turns them off) |
 

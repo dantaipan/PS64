@@ -1216,19 +1216,18 @@ static void test_home(void)
     CHECK(ui_menu_items(&u, items) > 0 && items[0] == MI_HOME);
     ui_open_home(&u);
     CHECK(u.screen == UI_HOME && u.home_sel == HOME_VICE && u.home_focus == HOME_ON_ITEMS);
-    /* A carousel: it wraps round both ways; VIC-20 starts the built-in VIC-20. */
+    /* A carousel, wrapping round: SID on VICE C64's left, Stream on its right, then the
+     * VIC-20 (behind), then SID again. */
     ui_input(&u, IN_LEFT);
-    CHECK(u.home_sel == HOME_VIC20 && ui_input(&u, IN_OK).kind == UA_HOME_VIC20);
-    ui_input(&u, IN_RIGHT);
-    CHECK(u.home_sel == HOME_VICE);
-    ui_input(&u, IN_RIGHT);
-    ui_input(&u, IN_RIGHT);
     CHECK(u.home_sel == HOME_SID);
     /* SID: opens the player, which lists its folder; Circle stops it and comes home. */
     ui_action sa = ui_input(&u, IN_OK);
     CHECK(sa.kind == UA_SID_LIST && u.screen == UI_SID && !strcmp(sa.path, "/"));
     CHECK(ui_input(&u, IN_BACK).kind == UA_SID_STOP && u.screen == UI_HOME && u.home_sel == HOME_SID);
     ui_input(&u, IN_LEFT);
+    CHECK(u.home_sel == HOME_VIC20 && ui_input(&u, IN_OK).kind == UA_HOME_VIC20);
+    ui_input(&u, IN_LEFT);
+    CHECK(u.home_sel == HOME_STREAM);
     u.home_stream = HOME_STREAM_NONE;
     CHECK(ui_input(&u, IN_OK).kind == UA_NONE &&
           !strcmp(u.home_snack, "No stream found. Check settings."));

@@ -2111,7 +2111,7 @@ int main(int argc, char **argv)
                     break;
                 }
                 ui_close(&ui);
-                notify(a.kind == UA_HOME_VIC20 ? "Built-in VIC-20" : "Built-in emulator");
+                notify(a.kind == UA_HOME_VIC20 ? "VICE VIC20" : "VICE C64");
 #else
                 snprintf(ui.home_snack, sizeof(ui.home_snack), "This PS64 build has no emulator");
                 ui.home_snack_serial++;
@@ -2408,9 +2408,9 @@ int main(int argc, char **argv)
                 if (local && fav_machine(e) != ses.emu) {
                     controls_banner(&ctl, !fav_machine(e) ? "That's on a C64 Ultimate (Options > Home > Stream)"
                                           : fav_machine(e) == 2 ? "That's in the VIC-20's games folder "
-                                                                  "(Options > Home > VIC-20)"
+                                                                  "(Options > Home > VICE VIC20)"
                                           : "That's in the built-in emulator's games folder "
-                                            "(Options > Home > Vice)");
+                                            "(Options > Home > VICE C64)");
                     break;
                 }
 #ifdef PS64_EMU
