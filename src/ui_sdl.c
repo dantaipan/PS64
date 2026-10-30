@@ -96,7 +96,7 @@ static void draw_menu(SDL_Renderer *ren, const ui_state *u)
         [MI_SEARCH] = u->emulator ? "Search games folder..." : "Search files...",
         [MI_A64] = "Search Assembly64...",
         [MI_FAVS] = "Favourites...", [MI_RECENTS] = "Recents...",
-        [MI_RESET] = "Reset C64",
+        [MI_RESET] = u->emulator == 2 ? "Reset VIC20" : "Reset C64",
         [MI_REBOOT] = u->emulator ? "Switch off and on (removes disks)" : "Reboot C64 (clears cartridge)",
         [MI_AUDIO] = audio,
         [MI_PORT] = port,
@@ -111,8 +111,8 @@ static void draw_menu(SDL_Renderer *ren, const ui_state *u)
         row(ren, i, i == u->sel, labels[items[i]], WHITE);
     if (u->emulator || u->current_ip[0]) {
         char line[64];
-        snprintf(line, sizeof(line), u->emulator == 2 ? "Built-in VIC-20 (VICE)%.0s"
-                                   : u->emulator ? "Built-in emulator (VICE)%.0s" : "C64: %s",
+        snprintf(line, sizeof(line), u->emulator == 2 ? "VICE VIC20 (built-in emulator)%.0s"
+                                   : u->emulator ? "VICE C64 (built-in emulator)%.0s" : "C64: %s",
                  u->current_ip);
         font_draw(ren, line, PX + 16, LIST_Y + (n + 1) * ROW_H, 1, DIM);
     }

@@ -188,7 +188,7 @@ useful keys include:
 | `home-music` | Home music volume, 0 (off) to 10 |
 | `search-roots` | Folders the Ultimate's search index covers |
 | `games-dir`, `vic20-dir`, `sids-dir`, `carts-dir` | Other folders for games, VIC-20 games, tunes, cartridges |
-| `dpad` | `keys` makes the D-pad cursor keys in the emulators |
+| `dpad`, `vic20-dpad` | `keys` makes the D-pad cursor keys in VICE C64 (and the stream) or VICE VIC20 |
 | `button-square` (etc.) | A C64 key for a shortcut button |
 | `usb-prefix` | Where USB drives are mounted (`none` turns them off) |
 

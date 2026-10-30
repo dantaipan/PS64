@@ -105,6 +105,7 @@ typedef struct {
     const char *usb_prefix;   /* USB drive n is at this + n (the PS5: /mnt/usb), or "none" */
     const char *emu_load;     /* debug: start this file in the emulator at launch */
     int         dpad_keys;    /* emulator: D-pad/stick/Cross as cursor keys and RETURN */
+    int         vic20_dpad_keys;  /* the same for the VIC-20 (its own: its games want the joystick) */
     int         no_home;      /* start straight away (debug flags imply it) instead of on the home screen */
     int         home_sel;     /* debug: the home screen's chosen object (-1: default) */
     const char *sid_file;     /* debug: play this .sid with the built-in SID player */
@@ -225,6 +226,7 @@ static int parse_args(int argc, char **argv, options *o)
 #endif
     o->emu_load = NULL;
     o->dpad_keys = 0;
+    o->vic20_dpad_keys = 0;
     o->no_home = 0;
     o->home_sel = -1;
     o->sid_file = NULL;
@@ -264,6 +266,7 @@ static int parse_args(int argc, char **argv, options *o)
         else if (!strcmp(a, "--usb-prefix") && next) { o->usb_prefix = next; i++; }
         else if (!strcmp(a, "--emu-load") && next)  { o->emu_load = next; i++; }
         else if (!strcmp(a, "--dpad") && next)      { o->dpad_keys = !strcasecmp(next, "keys"); i++; }
+        else if (!strcmp(a, "--vic20-dpad") && next) { o->vic20_dpad_keys = !strcasecmp(next, "keys"); i++; }
         else if (!strcmp(a, "--pick"))              { o->pick = 1; }
         else if (!strcmp(a, "--no-home"))           { o->no_home = 1; }
         else if (!strcmp(a, "--home-sel") && next)  { o->home_sel = atoi(next); i++; }
@@ -2277,9 +2280,11 @@ int main(int argc, char **argv)
             }
 #endif
             case UA_CONTROLLER:
+                /* Each machine keeps its own (the C64's also applies to the stream). */
                 ctl.joy_keys = !ctl.joy_keys;
+                *(ses.emu == 2 ? &opt.vic20_dpad_keys : &opt.dpad_keys) = ctl.joy_keys;
                 if (config)
-                    config_set(config, "dpad", ctl.joy_keys ? "keys" : "joystick", NULL);
+                    config_set(config, ses.emu == 2 ? "vic20-dpad" : "dpad", ctl.joy_keys ? "keys" : "joystick", NULL);
                 controls_banner(&ctl, ctl.joy_keys ? "D-pad: cursor keys, Cross: RETURN"
                                                    : "D-pad: joystick, Cross: fire");
                 break;
@@ -2289,7 +2294,10 @@ int main(int argc, char **argv)
                 if (ses.emu) {
                     eg_a64_cancel(&eg);
                     emulator_reset(a.kind == UA_REBOOT);
-                    controls_banner(&ctl, a.kind == UA_RESET ? "C64 reset" : "C64 switched off and on");
+                    if (ses.emu == 2)
+                        controls_banner(&ctl, a.kind == UA_RESET ? "VIC20 reset" : "VIC20 switched off and on");
+                    else
+                        controls_banner(&ctl, a.kind == UA_RESET ? "C64 reset" : "C64 switched off and on");
                     break;
                 }
 #endif
@@ -2499,6 +2507,11 @@ int main(int argc, char **argv)
         if (ses.emu && strcmp(ui.games_dir, games_dir))
             snprintf(ui.games_dir, sizeof(ui.games_dir), "%s", games_dir);
 #endif
+        static int dpad_for = -1;                   /* the machine whose D-pad setting is in use */
+        if (ses.emu != dpad_for) {
+            dpad_for = ses.emu;
+            ctl.joy_keys = ses.emu == 2 ? opt.vic20_dpad_keys : opt.dpad_keys;
+        }
         ui.joy_keys = ctl.joy_keys;
 #ifdef PS64_EMU
         ui.disks = ses.emu ? emulator_disk_count() : 0;
