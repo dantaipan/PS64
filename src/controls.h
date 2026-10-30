@@ -65,6 +65,8 @@ typedef struct {
     struct { int sc, key, mods; } held[16];   /* C64 keys held down for Mac keys */
     int       nheld;
     int       modrefs[3];      /* held keys needing SHIFT, CBM, CTRL */
+
+    int       quit_held;       /* Circle / Esc pressed on the home screen and still down */
 } controls;
 
 /* Name -> button index for config keys ("square", "l2", ...); -1 if unknown. */

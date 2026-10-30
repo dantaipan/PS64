@@ -1963,6 +1963,10 @@ int main(int argc, char **argv)
                         : !strcmp(k, "esc") ? SDLK_ESCAPE : !strcmp(k, "space") ? SDLK_SPACE
                         : (SDL_Keycode)(unsigned char)k[0];
                     hold = gui ? 80 : 500;
+                    if (!strcmp(name, "hold-esc")) {           /* held long enough to quit */
+                        sym = SDLK_ESCAPE;
+                        hold = 1500;
+                    }
                 } else if (ch == '\n') {
                     sym = SDLK_RETURN;
                 } else if (isalnum((unsigned char)ch) || ch == ' ') {

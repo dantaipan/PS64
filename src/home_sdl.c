@@ -2,11 +2,11 @@
 
 #include "font_sdl.h"
 #include "home.h"
-#include "home_icons.h"
 #include "home_logo.h"
 #include "image.h"
 #include "mesh3d.h"
 #include "models.h"
+#include "prompts.h"
 #include "prompts_sdl.h"
 
 #include <math.h>
@@ -21,8 +21,6 @@
 #define NOISE_W 128
 #define NOISE_H 90
 #define MAX_TRIS 1200
-#define ICON 72            /* icon size on the 1920x1080 canvas */
-#define DISC 104           /* the focus highlight behind an icon */
 
 /* A carousel: the chosen object stands in the middle, its neighbours either side, and
  * the others slide out past the edges (shrinking away) as it turns. It wraps round. */
@@ -36,7 +34,8 @@ static const SDL_Color YELLOW = { 240, 210, 90, 255 };
 
 static struct {
     SDL_Renderer *ren;
-    SDL_Texture  *background, *basic[2], *vic20, *noise, *label, *icons[2], *disc;
+    SDL_Texture  *background, *basic[2], *vic20, *noise, *label;
+    float         quit_shown;           /* the quit ring as drawn (eases back when let go) */
     SDL_Texture  *decals[HOME_ITEMS];   /* the monitors' printed labels */
     uint32_t      vic20_clean[2][HOME_VIC20_W * HOME_VIC20_H];   /* cursor off, on */
     uint32_t      vic20_seed, vic20_at;                          /* its RF reception */
@@ -122,17 +121,6 @@ static void setup(SDL_Renderer *ren)
     home_chip_label(label);
     H.label = texture(ren, label, HOME_LABEL_W, HOME_LABEL_H, SDL_TEXTUREACCESS_STATIC);
     H.noise = texture(ren, NULL, NOISE_W, NOISE_H, SDL_TEXTUREACCESS_STREAMING);
-    /* Power and settings icons from SVG, and the soft disc that marks the focused one. */
-    static uint32_t icon[ICON * ICON], disc[DISC * DISC];
-    const char *svgs[2] = { home_icon_power, home_icon_settings };
-    for (int i = 0; i < 2; i++)
-        if (home_icon(icon, ICON, svgs[i]) == 0) {
-            H.icons[i] = texture(ren, icon, ICON, ICON, SDL_TEXTUREACCESS_STATIC);
-            SDL_SetTextureBlendMode(H.icons[i], SDL_BLENDMODE_BLEND);
-        }
-    home_disc(disc, DISC);
-    H.disc = texture(ren, disc, DISC, DISC, SDL_TEXTUREACCESS_STATIC);
-    SDL_SetTextureBlendMode(H.disc, SDL_BLENDMODE_BLEND);
     model_1702(&H.models[HOME_VICE]);
     model_1084(&H.models[HOME_STREAM]);
     model_sid(&H.models[HOME_SID], &H.pins[0], &H.pins[1]);
@@ -151,7 +139,7 @@ void home_cleanup(void)
 {
     SDL_Texture **all[] = { &H.background, &H.basic[0], &H.basic[1], &H.vic20,
                             &H.decals[HOME_VICE], &H.decals[HOME_STREAM], &H.noise, &H.label,
-                            &H.icons[0], &H.icons[1], &H.disc };
+                          };
     for (size_t i = 0; i < sizeof(all) / sizeof(all[0]); i++)
         if (*all[i]) {
             SDL_DestroyTexture(*all[i]);
@@ -191,23 +179,38 @@ static void draw_mesh(SDL_Renderer *ren, const mesh *m, const pose3 *p, SDL_Text
     }
 }
 
-static void draw_icons(SDL_Renderer *ren, const ui_state *u)
+/* Circle held to quit: a ring filling clockwise round the Circle button in the hint line
+ * (on the Mac without a controller: the Esc keycap filling from the left). */
+static void draw_quit_hold(SDL_Renderer *ren, const char *hint, int x, int y, float progress)
 {
-    const int xs[2] = { 1696, 1802 }, y = 96;
-    for (int i = 0; i < 2; i++) {
-        int focused = u->home_focus == (i ? HOME_ON_GEAR : HOME_ON_POWER);
-        if (focused && H.disc) {
-            SDL_SetTextureAlphaMod(H.disc, 56);
-            SDL_Rect d = { xs[i] - DISC / 2, y - DISC / 2, DISC, DISC };
-            SDL_RenderCopy(ren, H.disc, NULL, &d);
-        }
-        if (H.icons[i]) {
-            SDL_Color c = focused ? WHITE : DIM;
-            SDL_SetTextureColorMod(H.icons[i], c.r, c.g, c.b);
-            SDL_Rect r = { xs[i] - ICON / 2, y - ICON / 2, ICON, ICON };
-            SDL_RenderCopy(ren, H.icons[i], NULL, &r);
-        }
+    SDL_Rect r;
+    if (progress <= 0.01f || prompts_token_rect(ren, hint, x, y, 2, PROMPT_CIRCLE, &r) != 0)
+        return;
+    SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+    if (prompts_keyboard()) {
+        SDL_SetRenderDrawColor(ren, 255, 255, 255, 110);
+        SDL_Rect f = { r.x, r.y, (int)(r.w * progress), r.h };
+        SDL_RenderFillRect(ren, &f);
+        return;
     }
+    enum { SEGS = 48 };
+    float cx = r.x + r.w / 2.0f, cy = r.y + r.h / 2.0f;
+    float r1 = (r.w > r.h ? r.w : r.h) / 2.0f + 4, r0 = r1 - 5;
+    int n = (int)(SEGS * progress + 0.5f);
+    SDL_Vertex v[SEGS * 6];
+    int nv = 0;
+    SDL_Color c = { 255, 255, 255, 235 };
+    for (int i = 0; i < n; i++) {
+        float a0 = -1.5707963f + 6.2831853f * i / SEGS, a1 = -1.5707963f + 6.2831853f * (i + 1) / SEGS;
+        SDL_FPoint p[4] = {
+            { cx + r0 * cosf(a0), cy + r0 * sinf(a0) }, { cx + r1 * cosf(a0), cy + r1 * sinf(a0) },
+            { cx + r1 * cosf(a1), cy + r1 * sinf(a1) }, { cx + r0 * cosf(a1), cy + r0 * sinf(a1) },
+        };
+        static const int quad[6] = { 0, 1, 2, 0, 2, 3 };
+        for (int k = 0; k < 6; k++)
+            v[nv++] = (SDL_Vertex){ p[quad[k]], c, { 0, 0 } };
+    }
+    SDL_RenderGeometry(ren, NULL, v, nv, NULL, 0);
 }
 
 static void centred(SDL_Renderer *ren, const char *text, int cx, int y, int scale, SDL_Color c)
@@ -356,7 +359,7 @@ void home_draw(SDL_Renderer *ren, const ui_state *u, SDL_Texture *live, Uint32 n
         if (fabsf(offs[i]) > 1.4f)                  /* (the ones sliding out: no labels) */
             continue;
         int cx = (int)(CENTRE_X + offs[i] * SPACING);
-        int on = i == u->home_sel && u->home_focus == HOME_ON_ITEMS;
+        int on = i == u->home_sel;
         centred(ren, names[i], cx, LABEL_Y, 4, on ? WHITE : DIM);
         char buf[64];
         SDL_Color c = DIM;
@@ -366,11 +369,15 @@ void home_draw(SDL_Renderer *ren, const ui_state *u, SDL_Texture *live, Uint32 n
         fill_rect(ren, cx - sw / 2, STATUS_Y - 12, sw, 48, 11, 9, 38, 200);     /* readable over the stripes */
         centred(ren, status, cx, STATUS_Y, 3, c);
     }
-    draw_icons(ren, u);
-    const char *hint = u->home_focus != HOME_ON_ITEMS ? "{cross} select     {lr} choose     {ud} back"
-                     : !u->home_music ? "{cross} start    {lr} choose    {options} settings    {ud} power    {triangle} music on"
-                     : "{cross} start    {lr} choose    {options} settings    {ud} power    {triangle} music off    {square} next tune";
-    prompts_draw(ren, hint, (HW - prompts_width(ren, hint, 2)) / 2, 1032, 2, DIM);
+    const char *hint = !u->home_music
+        ? "{cross} start    {lr} choose    {options} settings    {circle} hold to quit    {triangle} music on"
+        : "{cross} start    {lr} choose    {options} settings    {circle} hold to quit    {triangle} music off    {square} next tune";
+    int hint_x = (HW - prompts_width(ren, hint, 2)) / 2;
+    prompts_draw(ren, hint, hint_x, 1032, 2, DIM);
+    /* The quit ring: follows the hold, and sinks back quickly when it's let go. */
+    float drop = H.quit_shown - dt * 5;
+    H.quit_shown = u->home_quit > drop ? u->home_quit : drop > 0 ? drop : 0;
+    draw_quit_hold(ren, hint, hint_x, 1032, H.quit_shown);
     if (u->home_music && u->home_tune[0]) {      /* the tune playing, above the hints */
         char line[160];
         snprintf(line, sizeof(line), "Playing: %.120s", u->home_tune);

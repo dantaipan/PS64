@@ -114,7 +114,6 @@ typedef struct {
 /* A carousel, in its order round (it wraps): with VICE C64 in the middle, SID is on its
  * left, Stream on its right, and the VIC-20 waits out of sight behind. */
 enum { HOME_VICE, HOME_STREAM, HOME_VIC20, HOME_SID, HOME_ITEMS };
-enum { HOME_ON_ITEMS, HOME_ON_POWER, HOME_ON_GEAR };
 enum { HOME_STREAM_SEARCHING,     /* looking for the C64 Ultimate */
        HOME_STREAM_CONNECTING,    /* found: starting its stream */
        HOME_STREAM_LIVE,          /* pictures arriving */
@@ -141,7 +140,9 @@ typedef struct {
     /* Home screen. */
     int  home_sel;                /* HOME_VICE, HOME_STREAM, HOME_SID */
     int  home_last;               /* the object chosen last (-1 none): another clears the search */
-    int  home_focus;              /* HOME_ON_ITEMS, or one of the icons at the top */
+    float home_quit;              /* Circle held to quit: 0..1 of the way (set by ui_home_hold) */
+    int  home_holding;
+    unsigned home_hold_since;
     char home_snack[64];          /* snackbar text; home_snack_serial rises for each new one */
     unsigned home_snack_serial;
     int  home_stream;             /* HOME_STREAM_* (set by main) */
@@ -247,6 +248,11 @@ void ui_open_picker(ui_state *u, const char *message);
  * the C64 Ultimate to stream from and the home music; returns the search to start. */
 void ui_open_home(ui_state *u);
 ui_action ui_open_home_settings(ui_state *u);
+/* Circle held on the home screen quits after UI_QUIT_HOLD_MS (a tap does nothing). Call
+ * every frame with whether it's held (since a press made on the home screen); returns
+ * UA_QUIT once it's been held long enough, and sets home_quit to the progress. */
+#define UI_QUIT_HOLD_MS 1200
+ui_action ui_home_hold(ui_state *u, int held, unsigned now_ms);
 
 /* The SID player (returns the UA_SID_LIST for its folder), a folder listing of a tab
  * (takes entries; keeps folders and .sid files) and a failed listing. */

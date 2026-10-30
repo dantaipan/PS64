@@ -519,6 +519,8 @@ int controls_event(controls *c, const SDL_Event *ev)
         SDL_GameControllerOpen(ev->cdevice.which);
         return 1;
     case SDL_CONTROLLERBUTTONDOWN: {
+        if (ev->cbutton.button == SDL_CONTROLLER_BUTTON_B && c->ui && c->ui->screen == UI_HOME)
+            c->quit_held = 1;                   /* held, it quits (ui_home_hold) */
         unsigned bit = dpad_bit(ev->cbutton.button);
         if (bit)
             c->dpad |= bit;
@@ -527,6 +529,8 @@ int controls_event(controls *c, const SDL_Event *ev)
         return 1;
     }
     case SDL_CONTROLLERBUTTONUP: {
+        if (ev->cbutton.button == SDL_CONTROLLER_BUTTON_B)
+            c->quit_held = 0;
         unsigned bit = dpad_bit(ev->cbutton.button);
         if (bit)
             c->dpad &= ~bit;
@@ -544,8 +548,12 @@ int controls_event(controls *c, const SDL_Event *ev)
             stick(c, ev->caxis.axis, ev->caxis.value);
         return 1;
     case SDL_KEYDOWN:
+        if (ev->key.keysym.sym == SDLK_ESCAPE && !ev->key.repeat && c->ui && c->ui->screen == UI_HOME)
+            c->quit_held = 1;                   /* (the Mac's Circle) */
         return key_down(c, &ev->key);
     case SDL_KEYUP:
+        if (ev->key.keysym.sym == SDLK_ESCAPE)
+            c->quit_held = 0;
         return key_up(c, &ev->key);
     case SDL_TEXTINPUT:
         if (typing(c) || (ui_open(c) && c->ui->screen == UI_SEARCH)) {
@@ -563,6 +571,12 @@ int controls_event(controls *c, const SDL_Event *ev)
 
 void controls_update(controls *c, Uint32 now)
 {
+    /* Circle held on the home screen: quit once it's been held long enough. */
+    if (c->ui) {
+        if (c->ui->screen != UI_HOME)
+            c->quit_held = 0;
+        push_action(c, ui_home_hold(c->ui, c->quit_held, now));
+    }
     if ((ui_open(c) || c->osk.open) && (c->nheld || c->key_dirs || c->key_fire))
         let_go_all(c);                          /* (a screen opened while keys were down) */
     unsigned dirs = c->dpad | c->stick | c->key_dirs;

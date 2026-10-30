@@ -9,7 +9,6 @@
 #include "../src/favs.h"
 #include "../src/ftp.h"
 #include "../src/home.h"
-#include "../src/home_icons.h"
 #include "../src/image.h"
 #include "../src/mesh3d.h"
 #include "../src/models.h"
@@ -1215,7 +1214,7 @@ static void test_home(void)
     int items[MI_COUNT];
     CHECK(ui_menu_items(&u, items) > 0 && items[0] == MI_HOME);
     ui_open_home(&u);
-    CHECK(u.screen == UI_HOME && u.home_sel == HOME_VICE && u.home_focus == HOME_ON_ITEMS);
+    CHECK(u.screen == UI_HOME && u.home_sel == HOME_VICE);
     /* A carousel, wrapping round: SID on VICE C64's left, Stream on its right, then the
      * VIC-20 (behind), then SID again. */
     ui_input(&u, IN_LEFT);
@@ -1238,20 +1237,22 @@ static void test_home(void)
     CHECK(ui_input(&u, IN_OK).kind == UA_HOME_STREAM);
     ui_input(&u, IN_LEFT);
     CHECK(ui_input(&u, IN_OK).kind == UA_HOME_VICE);
-    /* Up to the icons: power quits, the gear opens the settings, Back returns home. */
-    ui_input(&u, IN_UP);
-    CHECK(u.home_focus == HOME_ON_GEAR);
-    ui_input(&u, IN_LEFT);
-    CHECK(u.home_focus == HOME_ON_POWER && ui_input(&u, IN_OK).kind == UA_QUIT);
-    ui_input(&u, IN_RIGHT);
-    CHECK(ui_input(&u, IN_OK).kind == UA_RESCAN && u.screen == UI_PICKER && u.picker_from_home);
-    ui_input(&u, IN_BACK);
+    /* Up and Down do nothing; Options opens the settings, Back returns home. */
+    CHECK(ui_input(&u, IN_UP).kind == UA_NONE && ui_input(&u, IN_DOWN).kind == UA_NONE &&
+          u.screen == UI_HOME && u.home_sel == HOME_VICE);
     CHECK(ui_open_home_settings(&u).kind == UA_RESCAN && u.screen == UI_PICKER && u.picker_from_home);
     ui_input(&u, IN_BACK);
-    CHECK(u.screen == UI_HOME && u.home_focus == HOME_ON_ITEMS && u.home_sel == HOME_VICE);
-    ui_input(&u, IN_UP);
-    ui_input(&u, IN_DOWN);
-    CHECK(u.home_focus == HOME_ON_ITEMS);
+    CHECK(u.screen == UI_HOME && u.home_sel == HOME_VICE);
+    /* Circle held quits after UI_QUIT_HOLD_MS; a tap, or letting go early, doesn't. */
+    CHECK(ui_home_hold(&u, 1, 1000).kind == UA_NONE && u.home_quit == 0);
+    CHECK(ui_home_hold(&u, 1, 1600).kind == UA_NONE && u.home_quit > 0.45f && u.home_quit < 0.55f);
+    CHECK(ui_home_hold(&u, 0, 1700).kind == UA_NONE && u.home_quit == 0);
+    CHECK(ui_home_hold(&u, 1, 2000).kind == UA_NONE);                  /* (starts again) */
+    CHECK(ui_home_hold(&u, 1, 2000 + UI_QUIT_HOLD_MS - 1).kind == UA_NONE);
+    CHECK(ui_home_hold(&u, 1, 2000 + UI_QUIT_HOLD_MS).kind == UA_QUIT && u.home_quit == 1);
+    u.screen = UI_MENU;
+    CHECK(ui_home_hold(&u, 1, 9000).kind == UA_NONE && u.home_quit == 0);   /* home screen only */
+    ui_open_home(&u);
     /* The home music: Triangle turns it on or off, Square plays another (only while it's on). */
     CHECK(ui_input(&u, IN_TRIANGLE).kind == UA_HOME_MUSIC);
     u.home_music = 0;
@@ -1386,17 +1387,6 @@ static void test_home(void)
     home_noise(a, 16, &s1);
     home_noise(b, 16, &s2);
     CHECK(!memcmp(a, b, sizeof(a)) && s1 == s2 && a[0] != a[1]);
-
-    /* Icons from SVG: the power symbol's ring has ink, the corners and the ring's middle don't. */
-    static uint32_t icon[72 * 72];
-    CHECK(home_icon(icon, 72, home_icon_power) == 0 && home_icon(icon, 72, home_icon_settings) == 0);
-    home_icon(icon, 72, home_icon_power);
-    int opaque = 0;
-    for (int i = 0; i < 72 * 72; i++)
-        opaque += (icon[i] >> 24) > 200;
-    CHECK(opaque > 300 && (icon[0] >> 24) == 0 && (icon[36 * 72 + 20] >> 24) == 0 &&
-          (icon[36 * 72 + 12] >> 24) > 200);
-    CHECK(home_icon(icon, 72, "not svg") == -1);
 }
 
 /* A tiny FTP server on port 21 for ftp_get: one session, RETR /SD/tune.sid only. */

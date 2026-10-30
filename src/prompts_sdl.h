@@ -11,6 +11,13 @@
 int  prompts_draw(SDL_Renderer *ren, const char *text, int x, int y, int scale, SDL_Color c);
 int  prompts_width(SDL_Renderer *ren, const char *text, int scale);
 
+/* Where prompts_draw (same text, x, y, scale) puts the first {token} of kind: its rect,
+ * 0; -1 if the text has none. */
+int  prompts_token_rect(SDL_Renderer *ren, const char *text, int x, int y, int scale, int kind,
+                        SDL_Rect *out);
+/* Whether tokens are drawn as keycaps right now. */
+int  prompts_keyboard(void);
+
 /* Draw the tokens as Mac keyboard keycaps instead (no controller connected). */
 void prompts_set_keyboard(int on);
 

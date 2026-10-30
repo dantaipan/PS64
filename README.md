@@ -37,7 +37,8 @@ emulator, in the middle) and **Stream** (the C64 Ultimate, shown live on the mon
 found), with **VICE VIC20** (the old TV) waiting behind. Left/Right turn it (it goes round),
 Cross starts the one in the middle. **Options > Home** goes back there from a machine.
 
-- **Settings** (Options, or the gear icon): the C64 Ultimates found (pick one, enter an
+- **Quit**: hold Circle (a ring fills round it; on the Mac, hold Esc or press Cmd+Q).
+- **Settings** (Options): the C64 Ultimates found (pick one, enter an
   address, or give its network password) and the **Home music** volume.
 - **Home music**: a random tune from your SID folder plays on the home screen (one of
   Assembly64's latest if the folder is empty). Square plays another, Triangle turns it off
@@ -217,9 +218,7 @@ builds with:
   (GPL-3.0-or-later), with dlmalloc by Doug Lea (public domain / MIT-0 style).
 - Screenshots of CSDb releases from [CSDb](https://csdb.dk), decoded with
   [stb_image](https://github.com/nothings/stb) (public domain / MIT).
-- Home screen icons: [Material Icons](https://github.com/google/material-design-icons) by
-  Google (Apache 2.0), rasterised with [nanosvg](https://github.com/memononen/nanosvg) (zlib).
 - Controller button icons: Kenney's [Input Prompts](https://kenney.nl/assets/input-prompts)
-  1.5 (CC0).
+  1.5 (CC0), rasterised with [nanosvg](https://github.com/memononen/nanosvg) (zlib).
 - The overlay font includes `font8x8_basic` (public domain).
 - Searching uses [Assembly64](https://hackerswithstyle.se) (PS64 sends its own client ID).

@@ -3,6 +3,7 @@
 #include "font_sdl.h"
 #include "prompts.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #define ICON_PX 48                      /* rasterised size (drawn smaller, smoothly) */
@@ -66,6 +67,7 @@ static int gap(int scale)    { return 3 * scale; }
 static int keyboard;                    /* tokens as keycaps */
 
 void prompts_set_keyboard(int on) { keyboard = on; }
+int  prompts_keyboard(void)       { return keyboard; }
 
 /* A keycap: the key's name in a box as high as an icon. */
 static int cap_w(int kind, int scale)
@@ -108,6 +110,27 @@ int prompts_width(SDL_Renderer *ren, const char *text, int scale)
         }
     }
     return w;
+}
+
+int prompts_token_rect(SDL_Renderer *ren, const char *text, int x, int y, int scale, int want,
+                       SDL_Rect *out)
+{
+    load_icons(ren);
+    int kind;
+    char run[256];
+    for (size_t n; (n = prompts_next(text, &kind)) > 0; text += n) {
+        if (kind != PROMPT_TEXT) {
+            if (kind == want) {
+                *out = (SDL_Rect){ x, y - 3 * scale, token_w(kind, scale), ICON_H * scale };
+                return 0;
+            }
+            x += token_w(kind, scale) + gap(scale);
+        } else {
+            snprintf(run, sizeof(run), "%.*s", (int)n, text);
+            x += font_width(run, scale);
+        }
+    }
+    return -1;
 }
 
 int prompts_draw(SDL_Renderer *ren, const char *text, int x, int y, int scale, SDL_Color c)

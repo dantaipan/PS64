@@ -72,7 +72,6 @@ void ui_close(ui_state *u)      { u->screen = UI_CLOSED; }
 void ui_open_home(ui_state *u)
 {
     u->screen = UI_HOME;
-    u->home_focus = HOME_ON_ITEMS;
     u->picker_from_home = 0;
 }
 
@@ -1215,7 +1214,6 @@ static const char *const about_text[] = {
     "  Assembly64 - the Assembly64 team at hackerswithstyle.se, for the",
     "  database of C64 software and its API.",
     "  CSDb (csdb.dk), the C64 Scene Database, for the release screenshots.",
-    "  Icons: Material Icons by Google (Apache 2.0), drawn with nanosvg.",
     "  Button prompts: Kenney's Input Prompts (CC0, kenney.nl).",
     "  SID player: libsidplayfp and reSIDfp (GPL-2.0+), song lengths from",
     "  the High Voltage SID Collection (hvsc.c64.org).",
@@ -1441,26 +1439,32 @@ static void home_snack(ui_state *u, const char *text)
     u->home_snack_serial++;
 }
 
-/* Home: left/right choose an object, up/down move between the objects and the
- * power and settings icons at the top. */
-static ui_action input_home(ui_state *u, int in)
+ui_action ui_home_hold(ui_state *u, int held, unsigned now_ms)
 {
-    if (u->home_focus != HOME_ON_ITEMS) {
-        switch (in) {
-        case IN_LEFT:  u->home_focus = HOME_ON_POWER; break;
-        case IN_RIGHT: u->home_focus = HOME_ON_GEAR; break;
-        case IN_DOWN: case IN_BACK: u->home_focus = HOME_ON_ITEMS; break;
-        case IN_OK:
-            if (u->home_focus == HOME_ON_POWER)
-                return act(UA_QUIT);
-            return ui_open_home_settings(u);
-        }
+    if (!held || u->screen != UI_HOME) {
+        u->home_holding = 0;
+        u->home_quit = 0;
         return none();
     }
+    if (!u->home_holding) {
+        u->home_holding = 1;
+        u->home_hold_since = now_ms;
+    }
+    unsigned ms = now_ms - u->home_hold_since;
+    u->home_quit = ms >= UI_QUIT_HOLD_MS ? 1.0f : (float)ms / UI_QUIT_HOLD_MS;
+    if (ms < UI_QUIT_HOLD_MS)
+        return none();
+    u->home_holding = 0;
+    return act(UA_QUIT);
+}
+
+/* Home: left/right choose an object (Options opens the settings, Circle held quits:
+ * see ui_home_hold). */
+static ui_action input_home(ui_state *u, int in)
+{
     switch (in) {
     case IN_LEFT:  u->home_sel = (u->home_sel + HOME_ITEMS - 1) % HOME_ITEMS; break;
     case IN_RIGHT: u->home_sel = (u->home_sel + 1) % HOME_ITEMS; break;
-    case IN_UP:    u->home_focus = HOME_ON_GEAR; break;
     case IN_TRIANGLE: return act(UA_HOME_MUSIC);
     case IN_ALT:
         if (u->home_music)
