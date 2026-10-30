@@ -1260,6 +1260,37 @@ static void test_home(void)
     CHECK(ui_input(&u, IN_ALT).kind == UA_HOME_NEXT && u.screen == UI_HOME);
     ui_free(&u);
 
+    /* The monitors' labels: the 1702 badge's rainbow, the 1084's blue logo; and every home
+     * object fits the home screen's triangle budget (1200). */
+    {
+        static uint32_t dpx[DECAL_W * DECAL_H];
+        home_1702_decals(dpx);
+        int red = 0;
+        for (int i = 0; i < DECAL_1702_BADGE.w; i++)
+            red |= dpx[(DECAL_1702_BADGE.y + 4) * DECAL_W + DECAL_1702_BADGE.x + i] == 0xFFE03A2Fu;
+        CHECK(red);
+        home_1084_decals(dpx);
+        int blue = 0;
+        for (int i = 0; i < DECAL_W * DECAL_1084_LOGO.h; i++)
+            blue += dpx[DECAL_1084_LOGO.y * DECAL_W + i] == 0xFF2A4F9Eu;
+        CHECK(blue > 40);
+        mesh ms[4] = {{0}}, pa = {0}, pb = {0};
+        model_1702(&ms[0]);
+        model_1084(&ms[1]);
+        model_tv(&ms[2]);
+        model_sid(&ms[3], &pa, &pb);
+        int decals = 0;
+        for (int i = 0; i < ms[0].count; i++)
+            decals += ms[0].tris[i].textured == TEX_DECAL;
+        CHECK(decals >= 10);
+        for (int k = 0; k < 4; k++) {
+            CHECK(ms[k].count > 0 && ms[k].count < 1200);
+            mesh_free(&ms[k]);
+        }
+        mesh_free(&pa);
+        mesh_free(&pb);
+    }
+
     /* The carousel: offsets wrap round the four objects; the far one is hidden. */
     CHECK(home_wrap(3, HOME_ITEMS) == -1 && home_wrap(-3, HOME_ITEMS) == 1 && home_wrap(2, HOME_ITEMS) == 2);
     CHECK(home_wrap(-2, HOME_ITEMS) == 2 && home_wrap(0.5f, HOME_ITEMS) == 0.5f);

@@ -1,6 +1,7 @@
 #include "home.h"
 
 #include "font8x8.h"
+#include "models.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -66,6 +67,87 @@ void home_basic_screen(uint32_t *px, int cursor)
     home_text(px, w, h, x0, y0 + 40, "READY.", 1, C64_TEXT);
     if (cursor)
         fill(px, w, x0, y0 + 48, x0 + 8, y0 + 56, C64_TEXT);
+}
+
+/* The Commodore logo in a size x size square at x, y: the C (a ring open to the right)
+ * and the flag's two bars. */
+static void cbm_logo(uint32_t *px, int w, int x, int y, int size, uint32_t argb)
+{
+    float r = size / 2.0f, cx = x + r, cy = y + r;
+    for (int j = 0; j < size; j++)
+        for (int i = 0; i < size; i++) {
+            float dx = i + 0.5f - r, dy = j + 0.5f - r, d = sqrtf(dx * dx + dy * dy);
+            int ring = d <= r && d >= r * 0.52f && !(dx > 0 && fabsf(dy) < dx * 0.75f);
+            int flag = dx >= r * 0.08f && dx <= r * 0.95f &&
+                       ((dy >= -r * 0.46f && dy <= -r * 0.08f) || (dy >= r * 0.08f && dy <= r * 0.46f &&
+                                                                    dx <= r * 0.08f + (r * 0.46f - dy)));
+            if (ring || flag)
+                px[(int)(cy - r + j) * w + (int)(cx - r + i)] = argb;
+        }
+}
+
+static void outline(uint32_t *px, int w, int x0, int y0, int x1, int y1, uint32_t argb)
+{
+    fill(px, w, x0, y0, x1, y0 + 1, argb);
+    fill(px, w, x0, y1 - 1, x1, y1, argb);
+    fill(px, w, x0, y0, x0 + 1, y1, argb);
+    fill(px, w, x1 - 1, y0, x1, y1, argb);
+}
+
+/* The 1702's case colour: the captions sit on it. */
+#define C1702_CASE  0xFFB4A68Cu
+#define C1084_CASE  0xFFE0DCD1u
+
+void home_1702_decals(uint32_t *px)
+{
+    const int w = DECAL_W;
+    fill(px, w, 0, 0, w, DECAL_H, C1702_CASE);
+    /* The badge: silver, the logo and "commodore" in grey, the rainbow, the POWER window. */
+    const decal_rect b = DECAL_1702_BADGE;
+    fill(px, w, b.x, b.y, b.x + b.w, b.y + b.h, 0xFFB9BBBE);
+    outline(px, w, b.x, b.y, b.x + b.w, b.y + b.h, 0xFF8E9094);
+    cbm_logo(px, w, b.x + 5, b.y + 4, 16, 0xFF55585E);
+    home_text(px, w, DECAL_H, b.x + 24, b.y + 8, "commodore", 1, 0xFF55585E);
+    static const uint32_t rainbow[5] = { 0xFFE03A2F, 0xFFF08A24, 0xFFF5D02E, 0xFF3FA34D, 0xFF3B7DD8 };
+    for (int i = 0; i < 5; i++)
+        fill(px, w, b.x + 100, b.y + 3 + i * 4, b.x + 128, b.y + 6 + i * 4, rainbow[i]);
+    fill(px, w, b.x + 134, b.y, b.x + b.w, b.y + b.h, 0xFF3A3A3C);
+    fill(px, w, b.x + 145, b.y + 5, b.x + 150, b.y + 7, 0xFFD03A2E);       /* the LED */
+    /* The model plate. */
+    const decal_rect mp = DECAL_1702_MODEL;
+    fill(px, w, mp.x, mp.y, mp.x + mp.w, mp.y + mp.h, 0xFFD6CEBE);
+    outline(px, w, mp.x, mp.y, mp.x + mp.w, mp.y + mp.h, 0xFF6A6258);
+    home_text(px, w, DECAL_H, mp.x + 4, mp.y + 3, "VIDEO MONITOR", 1, 0xFF3A342E);
+    home_text(px, w, DECAL_H, mp.x + 4, mp.y + 13, "MODEL 1702", 1, 0xFF3A342E);
+    /* The captions. */
+    home_text(px, w, DECAL_H, DECAL_1702_POWER.x, DECAL_1702_POWER.y, "POWER", 1, 0xFF4A4238);
+    home_text(px, w, DECAL_H, DECAL_1702_VIDEO.x, DECAL_1702_VIDEO.y, "VIDEO", 1, 0xFF4A4238);
+    home_text(px, w, DECAL_H, DECAL_1702_AUDIO.x, DECAL_1702_AUDIO.y, "AUDIO", 1, 0xFF4A4238);
+}
+
+void home_1084_decals(uint32_t *px)
+{
+    const int w = DECAL_W;
+    const uint32_t blue = 0xFF2A4F9Eu, ink = 0xFF55585E;
+    fill(px, w, 0, 0, w, DECAL_H, C1084_CASE);
+    /* "1084" in its thin box. */
+    const decal_rect l = DECAL_1084_LABEL;
+    outline(px, w, l.x + 1, l.y + 2, l.x + l.w - 1, l.y + l.h - 2, 0xFF9A968C);
+    home_text(px, w, DECAL_H, l.x + (l.w - 32) / 2, l.y + 6, "1084", 1, blue);
+    /* The logo. */
+    const decal_rect g = DECAL_1084_LOGO;
+    cbm_logo(px, w, g.x + 4, g.y + 2, 12, blue);
+    home_text(px, w, DECAL_H, g.x + 20, g.y + 4, "Commodore", 1, blue);
+    /* The power button: POWER and the power sign (a ring open at the top, a bar into it). */
+    const decal_rect p = DECAL_1084_POWER;
+    fill(px, w, p.x, p.y, p.x + p.w, p.y + p.h, 0xFFE8E4DA);
+    home_text(px, w, DECAL_H, p.x, p.y + 1, "POWER", 1, ink);
+    for (int j = 0; j < 8; j++)
+        for (int i = 0; i < 8; i++) {
+            float dx = i - 3.5f, dy = j - 3.5f, d = sqrtf(dx * dx + dy * dy);
+            if ((d <= 4 && d >= 2.6f && !(dy < 0 && fabsf(dx) < 1.6f)) || (fabsf(dx) < 0.8f && dy < 0.5f))
+                px[(p.y + 11 + j) * w + p.x + 16 + i] = ink;
+        }
 }
 
 #define VIC20_BORDER 0xFF78D1FFu        /* (VICE's VIC-20 colours) */

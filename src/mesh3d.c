@@ -76,9 +76,18 @@ void mesh_textured_quad(mesh *m, vec3 a, vec3 b, vec3 c, vec3 d, vec3 n, int nx,
             vec3 p11 = lerp2(a, b, c, d, s1, t1), p01 = lerp2(a, b, c, d, s0, t1);
             float u1[3] = { s0, s1, s1 }, v1[3] = { t0, t0, t1 };
             float u2[3] = { s0, s1, s0 }, v2[3] = { t0, t1, t1 };
-            put(m, p00, p10, p11, n, 0xFFFFFF, 1, u1, v1);
-            put(m, p00, p11, p01, n, 0xFFFFFF, 1, u2, v2);
+            put(m, p00, p10, p11, n, 0xFFFFFF, TEX_SCREEN, u1, v1);
+            put(m, p00, p11, p01, n, 0xFFFFFF, TEX_SCREEN, u2, v2);
         }
+}
+
+void mesh_decal_quad(mesh *m, vec3 a, vec3 b, vec3 c, vec3 d, vec3 n,
+                     float u0, float v0, float u1, float v1)
+{
+    float ua[3] = { u0, u1, u1 }, va[3] = { v0, v0, v1 };
+    float ub[3] = { u0, u1, u0 }, vb[3] = { v0, v1, v1 };
+    put(m, a, b, c, n, 0xFFFFFF, TEX_DECAL, ua, va);
+    put(m, a, c, d, n, 0xFFFFFF, TEX_DECAL, ub, vb);
 }
 
 void mesh_box(mesh *m, vec3 lo, vec3 hi, uint32_t rgb, unsigned skip)
@@ -193,7 +202,7 @@ int mesh_prepare(const mesh *m, const pose3 *p, tri2 *out, int cap)
          * keep details in front of what they're mounted on. */
         o->depth = depth / 3 - 0.12f * t->layer;
         o->textured = t->textured;
-        o->rgb = t->textured ? 0xFFFFFF : shade(t->rgb, k * p->bright);
+        o->rgb = t->textured == TEX_SCREEN ? 0xFFFFFF : shade(t->rgb, k * p->bright);
         for (int j = 0; j < 3; j++) {
             o->u[j] = t->u[j];
             o->v[j] = t->v[j];

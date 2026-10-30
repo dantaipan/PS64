@@ -37,6 +37,7 @@ static const SDL_Color YELLOW = { 240, 210, 90, 255 };
 static struct {
     SDL_Renderer *ren;
     SDL_Texture  *background, *basic[2], *vic20, *noise, *label, *icons[2], *disc;
+    SDL_Texture  *decals[HOME_ITEMS];   /* the monitors' printed labels */
     uint32_t      vic20_clean[2][HOME_VIC20_W * HOME_VIC20_H];   /* cursor off, on */
     uint32_t      vic20_seed, vic20_at;                          /* its RF reception */
     mesh          models[HOME_ITEMS];
@@ -136,12 +137,20 @@ static void setup(SDL_Renderer *ren)
     model_1084(&H.models[HOME_STREAM]);
     model_sid(&H.models[HOME_SID], &H.pins[0], &H.pins[1]);
     model_tv(&H.models[HOME_VIC20]);
+    px = malloc((size_t)DECAL_W * DECAL_H * 4);
+    if (px) {
+        home_1702_decals(px);
+        H.decals[HOME_VICE] = texture(ren, px, DECAL_W, DECAL_H, SDL_TEXTUREACCESS_STATIC);
+        home_1084_decals(px);
+        H.decals[HOME_STREAM] = texture(ren, px, DECAL_W, DECAL_H, SDL_TEXTUREACCESS_STATIC);
+        free(px);
+    }
 }
 
 void home_cleanup(void)
 {
     SDL_Texture **all[] = { &H.background, &H.basic[0], &H.basic[1], &H.vic20,
-                            &H.noise, &H.label,
+                            &H.decals[HOME_VICE], &H.decals[HOME_STREAM], &H.noise, &H.label,
                             &H.icons[0], &H.icons[1], &H.disc };
     for (size_t i = 0; i < sizeof(all) / sizeof(all[0]); i++)
         if (*all[i]) {
@@ -156,15 +165,17 @@ void home_cleanup(void)
 }
 
 /* A mesh's projected triangles, in batches of the same texture. */
-static void draw_mesh(SDL_Renderer *ren, const mesh *m, const pose3 *p, SDL_Texture *tex)
+static void draw_mesh(SDL_Renderer *ren, const mesh *m, const pose3 *p, SDL_Texture *tex,
+                      SDL_Texture *decal)
 {
     static tri2 tris[MAX_TRIS];
     static SDL_Vertex verts[MAX_TRIS * 3];
+    SDL_Texture *slots[TEX_SLOTS] = { NULL, tex, decal };
     int n = mesh_prepare(m, p, tris, MAX_TRIS), nv = 0, batch_textured = -1;
     for (int i = 0; i <= n; i++) {
-        int textured = i < n ? tris[i].textured && tex : -1;
+        int textured = i < n ? (slots[tris[i].textured] ? tris[i].textured : TEX_NONE) : -1;
         if (textured != batch_textured && nv) {
-            SDL_RenderGeometry(ren, batch_textured ? tex : NULL, verts, nv, NULL, 0);
+            SDL_RenderGeometry(ren, slots[batch_textured], verts, nv, NULL, 0);
             nv = 0;
         }
         if (i == n)
@@ -330,11 +341,11 @@ void home_draw(SDL_Renderer *ren, const ui_state *u, SDL_Texture *live, Uint32 n
             mesh_project(&p, (vec3){0, 0, -0.25f}, &x, &y, &near_d);
             mesh_project(&p, (vec3){0, 0, 0.25f}, &x, &y, &far_d);
             int back = near_d > far_d ? 0 : 1;
-            draw_mesh(ren, &H.pins[back], &p, NULL);
-            draw_mesh(ren, &H.models[i], &p, screens[i]);
-            draw_mesh(ren, &H.pins[!back], &p, NULL);
+            draw_mesh(ren, &H.pins[back], &p, NULL, NULL);
+            draw_mesh(ren, &H.models[i], &p, screens[i], NULL);
+            draw_mesh(ren, &H.pins[!back], &p, NULL, NULL);
         } else {
-            draw_mesh(ren, &H.models[i], &p, screens[i]);
+            draw_mesh(ren, &H.models[i], &p, screens[i], H.decals[i]);
         }
     }
 

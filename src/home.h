@@ -30,6 +30,11 @@ void home_text(uint32_t *px, int w, int h, int x, int y, const char *text, int s
 /* The BASIC start-up screen (HOME_C64_W x HOME_C64_H), with the cursor on or off. */
 void home_basic_screen(uint32_t *px, int cursor);
 
+/* The monitors' printed labels (DECAL_W x DECAL_H, rectangles in models.h): the 1702's
+ * badge, model plate and captions; the 1084's "1084" box, logo and power button. */
+void home_1702_decals(uint32_t *px);
+void home_1084_decals(uint32_t *px);
+
 /* The VIC-20's start-up screen (HOME_VIC20_W x HOME_VIC20_H), with the cursor on or off. */
 void home_vic20_screen(uint32_t *px, int cursor);
 

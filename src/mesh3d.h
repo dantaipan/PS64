@@ -19,9 +19,13 @@ typedef struct {
     vec3     p[3];
     float    u[3], v[3];    /* texture coordinates (0..1) when textured */
     uint32_t rgb;           /* 0xRRGGBB base colour */
-    uint8_t  textured;      /* drawn with the object's texture (a screen, a label) */
+    uint8_t  textured;      /* 0, or which of the object's textures: TEX_SCREEN, TEX_DECAL */
     uint8_t  layer;         /* parts on top of others (knobs on a panel) draw after them */
 } tri3;
+
+/* An object's textures: its screen (shown as it is: it glows) and its printed labels
+ * (lit like the case). */
+enum { TEX_NONE, TEX_SCREEN, TEX_DECAL, TEX_SLOTS };
 
 typedef struct {
     tri3 *tris;
@@ -47,6 +51,10 @@ void mesh_quad(mesh *m, vec3 a, vec3 b, vec3 c, vec3 d, vec3 n, uint32_t rgb);
 /* The same quad, textured (a top-left, b top-right, c bottom-right, d bottom-left of the
  * texture), split into nx x ny cells so affine texturing doesn't bend it visibly. */
 void mesh_textured_quad(mesh *m, vec3 a, vec3 b, vec3 c, vec3 d, vec3 n, int nx, int ny);
+/* A quad showing the rectangle u0,v0 - u1,v1 of the object's decal texture (a label),
+ * a b c d as in mesh_textured_quad. */
+void mesh_decal_quad(mesh *m, vec3 a, vec3 b, vec3 c, vec3 d, vec3 n,
+                     float u0, float v0, float u1, float v1);
 
 /* Faces of a box, for mesh_box's skip mask. */
 enum { BOX_FRONT = 1, BOX_BACK = 2, BOX_LEFT = 4, BOX_RIGHT = 8, BOX_TOP = 16, BOX_BOTTOM = 32 };
