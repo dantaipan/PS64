@@ -439,7 +439,7 @@ static void draw_shot(SDL_Renderer *ren, const ui_state *u, int y, Uint32 now)
 
 static void draw_a64(SDL_Renderer *ren, const ui_state *u, Uint32 now)
 {
-    panel(ren, u->a64_for_sid ? "Search Assembly64: SID music" : "Search Assembly64");
+    panel(ren, u->a64_for_sid ? "Search Assembly64: SID title or musician" : "Search Assembly64");
     text_field(ren, PY + 38, u->a64_query, u->a64_focus == 0, now);
 
     char status[200], cat[64];

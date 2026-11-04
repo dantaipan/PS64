@@ -579,6 +579,7 @@ static void a64_clear(ui_state *u)
     free(u->a64_items);
     u->a64_items = NULL;
     u->a64_count = u->a64_more = u->a64_sel = u->a64_top = u->a64_latest = u->a64_loading = 0;
+    u->a64_next = 0;
     u->a64_query[0] = u->a64_status[0] = u->a64_search_cat[0] = 0;
 }
 
@@ -596,12 +597,10 @@ void ui_open_a64(ui_state *u)
     kbd_open(u);
 }
 
-#define SID_FILTER "type:sid"   /* the SID player searches .sid files (mostly HVSC) */
-
 static const char *a64_cat_key(const ui_state *u)
 {
     if (u->a64_for_sid)
-        return SID_FILTER;
+        return A64_SID_FILTER;
     return u->a64_cat >= 0 && u->a64_cat < u->a64_cats.count ? u->a64_cats.keys[u->a64_cat] : "";
 }
 
@@ -627,7 +626,7 @@ static ui_action a64_latest_action(ui_state *u)
     int chosen = u->a64_cat >= 0 && u->a64_cat < u->a64_cats.count;
     ui_action a = act(UA_A64_LATEST);
     snprintf(a.category_key, sizeof(a.category_key), "%s",
-             u->a64_for_sid ? SID_FILTER : chosen ? u->a64_cats.keys[u->a64_cat] : "games");
+             u->a64_for_sid ? A64_SID_FILTER : chosen ? u->a64_cats.keys[u->a64_cat] : "games");
     snprintf(u->a64_search_cat, sizeof(u->a64_search_cat), "%s",
              u->a64_for_sid ? "" : chosen ? u->a64_cats.names[u->a64_cat] : "Games");
     u->a64_loading = 1;
@@ -675,25 +674,21 @@ void ui_a64_results(ui_state *u, a64_result *r)
             u->a64_count = r->count;
             u->a64_sel = u->a64_top = 0;
         } else {
-            a64_item *all = realloc(u->a64_items, sizeof(*all) * (size_t)(u->a64_count + r->count));
-            if (all) {
-                memcpy(all + u->a64_count, r->items, sizeof(*all) * (size_t)r->count);
-                u->a64_items = all;
-                u->a64_sel = u->a64_count;          /* first new result */
-                u->a64_count += r->count;
-            }
+            u->a64_sel = u->a64_count;              /* first new result (or "More") */
+            a64_merge_items(&u->a64_items, &u->a64_count, r->items, r->count);
             free(r->items);
         }
         r->items = NULL;
         u->a64_latest = r->latest;
-        u->a64_more = !r->latest && r->count == A64_PAGE;
+        u->a64_more = !r->latest && r->more;
+        u->a64_next = r->next;
         if (r->latest)
             snprintf(u->a64_status, sizeof(u->a64_status), u->a64_count
                      ? "Latest %d releases: %s" : "No recent releases in %.0d%s",
                      u->a64_count, u->a64_search_cat);
         else
             snprintf(u->a64_status, sizeof(u->a64_status), u->a64_count ? "%d result%s%s"
-                     : "No results%.0d%.0s%.0s", u->a64_count, u->a64_count == 1 ? "" : "s",
+                     : "No results%.0d%.0s%s", u->a64_count, u->a64_count == 1 ? "" : "s",
                      u->a64_more ? " so far" : "");
         if (u->screen == UI_A64 && u->a64_count)
             u->a64_focus = 1;
@@ -781,7 +776,7 @@ static ui_action input_a64(ui_state *u, int in)
         if (u->a64_loading)
             break;
         if (u->a64_sel == u->a64_count && u->a64_more)
-            return a64_search_action(u, u->a64_count);       /* More results... */
+            return a64_search_action(u, u->a64_next);        /* More results... */
         if (u->a64_sel < u->a64_count && u->a64_for_sid) {
             /* The SID player plays these results, from the one chosen. */
             free(u->sid_a64);

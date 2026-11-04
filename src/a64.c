@@ -253,7 +253,8 @@ const char *a64_category_name(const a64_categories *c, int id)
     return NULL;
 }
 
-void a64_build_query(const char *text, const char *category_key, char *out, size_t cap)
+void a64_build_field_query(const char *field, const char *text, const char *category_key,
+                           char *out, size_t cap)
 {
     char esc[256];
     size_t n = 0;
@@ -264,11 +265,88 @@ void a64_build_query(const char *text, const char *category_key, char *out, size
     }
     esc[n] = 0;
     if (category_key && strchr(category_key, ':'))         /* a whole filter: "type:sid" */
-        snprintf(out, cap, "(name:\"%s\") & (%s)", esc, category_key);
+        snprintf(out, cap, "(%s:\"%s\") & (%s)", field, esc, category_key);
     else if (category_key && *category_key)
-        snprintf(out, cap, "(name:\"%s\") & (category:%s)", esc, category_key);
+        snprintf(out, cap, "(%s:\"%s\") & (category:%s)", field, esc, category_key);
     else
-        snprintf(out, cap, "(name:\"%s\")", esc);
+        snprintf(out, cap, "(%s:\"%s\")", field, esc);
+}
+
+void a64_build_query(const char *text, const char *category_key, char *out, size_t cap)
+{
+    a64_build_field_query("name", text, category_key, out, cap);
+}
+
+#define WORD_GAP " _\t"
+
+int a64_word_count(const char *text)
+{
+    int n = 0;
+    for (const char *p = text + strspn(text, WORD_GAP); *p; p += strspn(p, WORD_GAP)) {
+        n++;
+        p += strcspn(p, WORD_GAP);
+    }
+    return n;
+}
+
+void a64_pick_word(const char *text, int last, char *out, size_t cap)
+{
+    const char *word = text;
+    size_t len = 0;
+    for (const char *p = text + strspn(text, WORD_GAP); *p; p += strspn(p, WORD_GAP)) {
+        if (len && !last)
+            break;
+        word = p;
+        len = strcspn(p, WORD_GAP);
+        p += len;
+    }
+    snprintf(out, cap, "%.*s", (int)len, word);
+}
+
+/* s in lower case, '_' as a space. */
+static void fold(const char *s, char *out, size_t cap)
+{
+    size_t n = 0;
+    for (; *s && n + 1 < cap; s++)
+        out[n++] = *s == '_' ? ' ' : (char)tolower((unsigned char)*s);
+    out[n] = 0;
+}
+
+int a64_has_words(const a64_item *it, const char *text)
+{
+    char name[sizeof(it->name)], group[sizeof(it->group)], word[128];
+    fold(it->name, name, sizeof(name));
+    fold(it->group, group, sizeof(group));
+    for (const char *p = text + strspn(text, WORD_GAP); *p; p += strspn(p, WORD_GAP)) {
+        size_t len = strcspn(p, WORD_GAP);
+        char raw[128];
+        snprintf(raw, sizeof(raw), "%.*s", (int)len, p);
+        fold(raw, word, sizeof(word));
+        if (!strstr(name, word) && !strstr(group, word))
+            return 0;
+        p += len;
+    }
+    return 1;
+}
+
+int a64_merge_items(a64_item **items, int *n, const a64_item *add, int m)
+{
+    if (m <= 0)
+        return 0;
+    a64_item *all = realloc(*items, sizeof(*all) * (size_t)(*n + m));
+    if (!all)
+        return -1;
+    int count = *n;
+    for (int i = 0; i < m; i++) {
+        int dup = 0;
+        for (int j = 0; j < count && !dup; j++)
+            dup = !strcmp(all[j].id, add[i].id);
+        if (!dup)
+            all[count++] = add[i];
+    }
+    *items = all;
+    *n = count;
+    return 0;
 }
 
 void a64_build_latest_query(const char *window, const char *category_key, char *out, size_t cap)
@@ -374,15 +452,42 @@ static void do_request(a64 *a, int req, a64_result *res)
     int status;
     switch (req) {
     case REQ_SEARCH: {
-        char q[400], enc[1000];
-        a64_build_query(a->req_text, a->req_cat, q, sizeof(q));
-        c64api_url_encode(q, enc, sizeof(enc));
-        snprintf(path, sizeof(path), "/search/aql/%d/%d?query=%s", a->req_offset, A64_PAGE, enc);
-        status = get(a, path, &body, &len, NULL, 0);
+        /* A SID search asks for titles, then musicians, a page of each (see a64.h). */
+        static const char *const fields[] = { "name", "group" };
+        int sid = !strcmp(a->req_cat, A64_SID_FILTER);
+        int words = sid ? a64_word_count(a->req_text) : 1;
+        status = 0;
+        for (int f = 0; f < (sid ? 2 : 1); f++) {
+            char word[128], q[400], enc[1000];
+            if (words > 1)
+                a64_pick_word(a->req_text, f == 1, word, sizeof(word));
+            else
+                snprintf(word, sizeof(word), "%s", a->req_text);
+            a64_build_field_query(fields[f], word, a->req_cat, q, sizeof(q));
+            c64api_url_encode(q, enc, sizeof(enc));
+            snprintf(path, sizeof(path), "/search/aql/%d/%d?query=%s", a->req_offset, A64_PAGE, enc);
+            free(body);
+            body = NULL;
+            status = get(a, path, &body, &len, NULL, 0);
+            if (status != 200)
+                break;
+            a64_item *page = NULL;
+            int n = a64_parse_items(body, len, &page), kept = 0;
+            res->more |= n == A64_PAGE;
+            for (int i = 0; i < n; i++)
+                if (words < 2 || a64_has_words(&page[i], a->req_text))
+                    page[kept++] = page[i];
+            a64_merge_items(&res->items, &res->count, page, kept);
+            free(page);
+        }
         if (status == 200) {
             res->kind = A64R_SEARCH;
             res->offset = a->req_offset;
-            res->count = a64_parse_items(body, len, &res->items);
+            res->next = a->req_offset + A64_PAGE;
+        } else {
+            free(res->items);
+            res->items = NULL;
+            res->count = 0;
         }
         break;
     }

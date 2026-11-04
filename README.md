@@ -155,7 +155,8 @@ switched with Left/Right:
 
 - **Local**: the SID folder, `/data/ps64/sids` (Mac: `~/Documents/PS64/sids`), with USB
   drives at the top.
-- **Assembly64**: search for tunes (R1 shows the latest); the results become the playlist.
+- **Assembly64**: search for tunes by title or musician (R1 shows the latest); the results
+  become the playlist.
 - **C64 Ultimate** (while connected): the Ultimate's storage.
 
 Cross plays, L1/R1 change the subtune, L2/R2 the tune, Square pauses, Triangle cycles in

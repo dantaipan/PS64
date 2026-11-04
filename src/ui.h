@@ -209,6 +209,7 @@ typedef struct {
     a64_categories a64_cats;
     a64_item      *a64_items;       /* owned */
     int            a64_count, a64_more, a64_loading, a64_sel, a64_top;
+    int            a64_next;        /* server offset of "More results" (not a64_count: merged) */
     char           a64_status[160];
     a64_item       a64_cur;         /* item whose files are shown */
     a64_file      *a64_files;       /* owned */

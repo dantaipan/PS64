@@ -586,6 +586,31 @@ static void test_a64(void)
     CHECK(!strcmp(q, "(latest:1month) & (type:sid) & (sort:year) & (order:desc)"));
     a64_build_query("say \"hi\"", NULL, q, sizeof(q));
     CHECK(!strcmp(q, "(name:\"say \\\"hi\\\"\")"));
+    a64_build_field_query("group", "hubbard", A64_SID_FILTER, q, sizeof(q));   /* the musician */
+    CHECK(!strcmp(q, "(group:\"hubbard\") & (type:sid)"));
+
+    /* SID searches of several words: one word asked for, the rest checked here. */
+    char w[64];
+    CHECK(a64_word_count("hubbard") == 1 && a64_word_count("  rob   hubbard ") == 2 &&
+          a64_word_count("last_ninja") == 2 && a64_word_count("") == 0 && a64_word_count(" ") == 0);
+    a64_pick_word("  rob hubbard ", 0, w, sizeof(w));
+    CHECK(!strcmp(w, "rob"));
+    a64_pick_word("  rob hubbard ", 1, w, sizeof(w));
+    CHECK(!strcmp(w, "hubbard"));
+    a64_pick_word("galway", 1, w, sizeof(w));
+    CHECK(!strcmp(w, "galway"));
+    a64_item tune = { .id = "1", .name = "Last_Ninja", .group = "Daglish_Ben" };
+    CHECK(a64_has_words(&tune, "last ninja") && a64_has_words(&tune, "Ben DAGLISH") &&
+          a64_has_words(&tune, "ninja daglish") && !a64_has_words(&tune, "last hubbard"));
+
+    /* Merging: titles first, then the musician's tunes not already there. */
+    a64_item *list = NULL;
+    int nlist = 0;
+    a64_item titles[2] = { { .id = "a" }, { .id = "b" } }, by[3] = { { .id = "b" }, { .id = "c" }, { .id = "a" } };
+    CHECK(a64_merge_items(&list, &nlist, titles, 2) == 0 && a64_merge_items(&list, &nlist, by, 3) == 0);
+    CHECK(nlist == 3 && !strcmp(list[0].id, "a") && !strcmp(list[1].id, "b") && !strcmp(list[2].id, "c"));
+    CHECK(a64_merge_items(&list, &nlist, NULL, 0) == 0 && nlist == 3);
+    free(list);
 
     char host[64], base[64];
     int port;
@@ -663,7 +688,11 @@ static void test_a64(void)
     memset(&r, 0, sizeof(r));
     r.kind = A64R_SEARCH;
     r.count = A64_PAGE;                                          /* a full page: more to come */
+    r.more = 1;
+    r.next = A64_PAGE;
     r.items = calloc(A64_PAGE, sizeof(a64_item));
+    for (int i = 0; i < A64_PAGE; i++)
+        snprintf(r.items[i].id, sizeof(r.items[i].id), "id%d", i);
     strcpy(r.items[0].id, "abc123");
     r.items[0].category = 2;
     strcpy(r.items[0].name, "Boulder Dash");
@@ -672,6 +701,24 @@ static void test_a64(void)
     u.a64_sel = A64_PAGE;                                        /* "More results..." */
     a = ui_input(&u, IN_OK);
     CHECK(a.kind == UA_A64_SEARCH && a.offset == A64_PAGE);
+
+    /* The next page: what's already listed isn't added again; the server offset goes on
+     * from the page asked for, not the rows shown (a SID search merges two lists). */
+    memset(&r, 0, sizeof(r));
+    r.kind = A64R_SEARCH;
+    r.offset = A64_PAGE;
+    r.next = 2 * A64_PAGE;
+    r.more = 1;
+    r.count = 2;
+    r.items = calloc(2, sizeof(a64_item));
+    strcpy(r.items[0].id, "id7");                                /* already listed */
+    strcpy(r.items[1].id, "new1");
+    ui_a64_results(&u, &r);
+    CHECK(u.a64_count == A64_PAGE + 1 && !strcmp(u.a64_items[A64_PAGE].id, "new1") &&
+          u.a64_sel == A64_PAGE && u.a64_more);
+    u.a64_sel = u.a64_count;
+    a = ui_input(&u, IN_OK);
+    CHECK(a.kind == UA_A64_SEARCH && a.offset == 2 * A64_PAGE);
     u.a64_loading = 0;
     u.a64_sel = 0;
     a = ui_input(&u, IN_OK);
@@ -954,6 +1001,7 @@ static void test_a64_latest(void)
     memset(&r, 0, sizeof(r));
     r.kind = A64R_SEARCH;
     r.count = A64_PAGE;
+    r.more = 1;
     r.items = calloc(A64_PAGE, sizeof(a64_item));
     ui_a64_results(&u, &r);
     CHECK(!u.a64_latest && u.a64_more);

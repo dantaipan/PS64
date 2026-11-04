@@ -70,6 +70,7 @@ typedef struct {
     /* A64R_SEARCH (items malloc'd; caller frees) */
     a64_item *items;
     int       count, offset;
+    int       more, next;             /* another page may follow, at server offset next */
     int       latest;                 /* the "latest releases" list (no more pages) */
 
     /* A64R_ENTRIES (files malloc'd; caller frees) */
@@ -89,6 +90,10 @@ typedef struct {
 } a64_result;
 
 typedef struct a64 a64;
+
+/* The SID player's filter: .sid files (mostly HVSC). A search with it matches titles or
+ * musicians: AQL has no "or", so it asks for each and merges them, titles first. */
+#define A64_SID_FILTER "type:sid"
 
 a64 *a64_start(const char *base_url);
 void a64_stop(a64 *a);
@@ -113,6 +118,19 @@ void a64_result_free(a64_result *res);
 /* AQL for a name search: (name:"text") [& (category:key)], quotes escaped. A key with a
  * colon is a whole filter: "type:sid" gives (name:"text") & (type:sid). */
 void a64_build_query(const char *text, const char *category_key, char *out, size_t cap);
+/* The same for another field: "group" gives (group:"text") [& ...], the musician. */
+void a64_build_field_query(const char *field, const char *text, const char *category_key,
+                           char *out, size_t cap);
+/* The server only matches names starting with the text, and HVSC writes spaces as '_'
+ * ("Last_Ninja", "Hubbard_Rob"). So a SID search of several words asks for one word (the
+ * title's first; the musician's last, as HVSC puts the surname first) and keeps the
+ * results whose title or musician holds every word, ignoring case, '_' as a space. */
+int  a64_word_count(const char *text);
+void a64_pick_word(const char *text, int last, char *out, size_t cap);
+int  a64_has_words(const a64_item *it, const char *text);
+/* Append the items of add that items doesn't already hold (by id). 0, or -1 if out of
+ * memory (items unchanged). */
+int  a64_merge_items(a64_item **items, int *n, const a64_item *add, int m);
 /* AQL for recent additions, newest years first: (latest:window) [& (category:key)] & sort. */
 void a64_build_latest_query(const char *window, const char *category_key, char *out, size_t cap);
 /* The HTML entities some names arrive with (&lt; &gt; &amp; &quot; &#39;), in place. */
