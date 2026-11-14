@@ -52,6 +52,7 @@ typedef struct {
     int       ltrig, rtrig;
     unsigned  repeat_dirs;
     Uint32    repeat_at;
+    Uint32    updated_at;      /* the last controls_update (a long gap: a stall) */
 
     ui_action actions[ACTIONQ];
     int       nactions;

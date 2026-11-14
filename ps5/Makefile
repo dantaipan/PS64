@@ -14,6 +14,8 @@ VICE_LIB := $(VICE)/vice_x64sc_libretro_ps5.a
 # The VIC-20 core (xvic): its entry points renamed vic20_* (tools/vice_vic20_names.h) and
 # everything else made local, so it links next to the C64 core.
 VIC20_LIB := $(VICE)/vice_xvic_ps5.a
+# The SuperCPU core (xscpu64), the same way with scpu_* (names written by tools/get_vice.sh).
+SCPU_LIB := $(VICE)/vice_xscpu64_ps5.a
 LRC      := $(VICE)/libretro-common
 LRC_SRC  := $(addprefix $(LRC)/, compat/compat_strl.c compat/compat_strcasestr.c compat/fopen_utf8.c \
               encodings/encoding_utf.c file/file_path.c file/file_path_io.c file/retro_dirent.c \
@@ -21,12 +23,12 @@ LRC_SRC  := $(addprefix $(LRC)/, compat/compat_strl.c compat/compat_strcasestr.c
               time/rtime.c vfs/vfs_implementation.c)
 LRC_LIB  := out/lrc.a
 
-CFLAGS  := -O2 -Wall -Wextra -std=gnu11 -I$(SDL_ROOT)/include -DPS64_EMU -DPS64_VIC20 -I$(LRC)/include
+CFLAGS  := -O2 -Wall -Wextra -std=gnu11 -I$(SDL_ROOT)/include -DPS64_EMU -DPS64_VIC20 -DPS64_SCPU -I$(LRC)/include
 # Assembly64 client ID for a build distributed under another name (see src/a64.h).
 ifdef A64_CLIENT
 CFLAGS  += -DPS64_A64_CLIENT=$(A64_CLIENT)
 endif
-LDLIBS  := $(LRC_LIB) $(VICE_LIB) $(VIC20_LIB) -lc++ -lc++abi -lunwind \
+LDLIBS  := $(LRC_LIB) $(VICE_LIB) $(VIC20_LIB) $(SCPU_LIB) -lc++ -lc++abi -lunwind \
            -L$(SDL_ROOT)/lib -lSDL2main -lSDL2 \
            -lSceSystemService -lSceUserService -lScePad -lSceAudioOut \
            -lSceVideoOut -lSceKeyboard -lSceImeDialog -lSceNotification -lSceNet -lkernel_sys
@@ -42,7 +44,7 @@ SOURCES := $(addprefix $(SRC)/, main_sdl.c controls.c osk_sdl.c font_sdl.c ui_sd
                                  mesh3d.c models.c home.c home_sdl.c playlist.c \
                                  prompts.c prompts_sdl.c)
 
-$(OUT)/eboot.elf: $(SOURCES) $(wildcard $(SRC)/*.h) $(VICE_LIB) $(VIC20_LIB) $(LRC_LIB)
+$(OUT)/eboot.elf: $(SOURCES) $(wildcard $(SRC)/*.h) $(VICE_LIB) $(VIC20_LIB) $(SCPU_LIB) $(LRC_LIB)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -o $@ $(SOURCES) $(LDLIBS)
 
@@ -52,7 +54,9 @@ $(VICE_LIB):
 	        CC=$(PS5_PAYLOAD_SDK)/bin/prospero-clang CXX=$(PS5_PAYLOAD_SDK)/bin/prospero-clang++ \
 	        AR=$(PS5_PAYLOAD_SDK)/bin/prospero-ar OBJDIR=build-ps5 TARGET=vice_x64sc_libretro_ps5.a
 
+# (A changed name list means every object again: the forced header isn't their dependency.)
 $(VIC20_LIB): ../tools/vice_vic20_names.h ../tools/vice_vic20_keep.txt
+	rm -rf $(VICE)/build-ps5-xvic
 	CFLAGS="-fno-common -include $(abspath ../tools/vice_vic20_names.h)" \
 	$(MAKE) -C $(VICE) -j$$(nproc) platform=ps5 EMUTYPE=xvic STATIC_LINKING=1 \
 	        CC=$(PS5_PAYLOAD_SDK)/bin/prospero-clang CXX=$(PS5_PAYLOAD_SDK)/bin/prospero-clang++ \
@@ -60,6 +64,16 @@ $(VIC20_LIB): ../tools/vice_vic20_names.h ../tools/vice_vic20_keep.txt
 	$(PS5_PAYLOAD_SDK)/bin/ld.lld -r --whole-archive $(VICE)/vice_xvic_libretro_ps5.a -o $(VICE)/vice_xvic_ps5.o
 	$(PS5_PAYLOAD_SDK)/bin/llvm-objcopy --keep-global-symbols=../tools/vice_vic20_keep.txt $(VICE)/vice_xvic_ps5.o
 	rm -f $@ && $(PS5_PAYLOAD_SDK)/bin/prospero-ar rcs $@ $(VICE)/vice_xvic_ps5.o
+
+$(SCPU_LIB): $(VICE)/scpu_names.h $(VICE)/scpu-keep.txt
+	rm -rf $(VICE)/build-ps5-xscpu64
+	CFLAGS="-fno-common -include $(abspath $(VICE)/scpu_names.h)" \
+	$(MAKE) -C $(VICE) -j$$(nproc) platform=ps5 EMUTYPE=xscpu64 STATIC_LINKING=1 \
+	        CC=$(PS5_PAYLOAD_SDK)/bin/prospero-clang CXX=$(PS5_PAYLOAD_SDK)/bin/prospero-clang++ \
+	        AR=$(PS5_PAYLOAD_SDK)/bin/prospero-ar OBJDIR=build-ps5-xscpu64 TARGET=vice_xscpu64_libretro_ps5.a
+	$(PS5_PAYLOAD_SDK)/bin/ld.lld -r --whole-archive $(VICE)/vice_xscpu64_libretro_ps5.a -o $(VICE)/vice_xscpu64_ps5.o
+	$(PS5_PAYLOAD_SDK)/bin/llvm-objcopy --keep-global-symbols=$(VICE)/scpu-keep.txt $(VICE)/vice_xscpu64_ps5.o
+	rm -f $@ && $(PS5_PAYLOAD_SDK)/bin/prospero-ar rcs $@ $(VICE)/vice_xscpu64_ps5.o
 
 $(LRC_LIB): $(LRC_SRC)
 	@mkdir -p out/lrc-obj

@@ -15,9 +15,10 @@
 #include <sys/stat.h>
 
 /*
- * The cores PS64 links, both statically: the C64 (x64sc) and, with PS64_VIC20, the VIC-20
- * (xvic). The VIC-20 core's entry points and the VICE functions below are renamed vic20_*
- * (tools/vice_vic20_names.h) and the rest of it is local, so the two sit side by side.
+ * The cores PS64 links, all statically: the C64 (x64sc), with PS64_VIC20 the VIC-20 (xvic)
+ * and with PS64_SCPU the SuperCPU C64 (xscpu64). The VIC-20 core's entry points and the
+ * VICE functions below are renamed vic20_* (tools/vice_vic20_names.h), the SuperCPU core's
+ * scpu_* (the same list), and the rest of each is local, so they sit side by side.
  */
 #define VICE_API(p) \
     void p##retro_set_environment(retro_environment_t); \
@@ -40,10 +41,14 @@
     void p##machine_trigger_reset(unsigned int mode); \
     int  p##file_system_attach_disk(unsigned int unit, unsigned int drive, const char *filename); \
     int  p##cartridge_attach_image(int type, const char *filename); \
-    void p##cartridge_detach_image(int type);
+    void p##cartridge_detach_image(int type); \
+    int  p##resources_set_int(const char *name, int value);
 VICE_API()
 #ifdef PS64_VIC20
 VICE_API(vic20_)
+#endif
+#ifdef PS64_SCPU
+VICE_API(scpu_)
 #endif
 
 typedef struct {
@@ -68,6 +73,7 @@ typedef struct {
     int  (*file_system_attach_disk)(unsigned int, unsigned int, const char *);
     int  (*cartridge_attach_image)(int, const char *);
     void (*cartridge_detach_image)(int);
+    int  (*resources_set_int)(const char *, int);
 } core_api;
 
 #define CORE_API(p) { \
@@ -77,11 +83,14 @@ typedef struct {
     p##retro_get_system_av_info, p##retro_set_controller_port_device, p##reload_restart, \
     p##keyboard_set_keyarr, p##keyboard_clear_keymatrix, p##machine_set_restore_key, \
     p##machine_trigger_reset, p##file_system_attach_disk, p##cartridge_attach_image, \
-    p##cartridge_detach_image }
+    p##cartridge_detach_image, p##resources_set_int }
 static const core_api cores[EMU_MACHINES] = {
     CORE_API(),
 #ifdef PS64_VIC20
     CORE_API(vic20_),
+#endif
+#ifdef PS64_SCPU
+    CORE_API(scpu_),
 #endif
 };
 
@@ -110,6 +119,7 @@ typedef struct {
     char cart_path[512];                  /* the cartridge kept in the slot ("" none) */
     struct retro_disk_control_callback disk_cb;
     int have_disk_cb;
+    int reu_kb;                           /* the REU fitted (the SuperCPU's: see apply_reu) */
     char var_keys[MAX_VARS][48], var_vals[MAX_VARS][48];
     int nvars, vars_changed;
 } machine;
@@ -118,6 +128,11 @@ typedef struct {
 #define ON_VIC20 (cur_id == EMU_VIC20)
 #else
 #define ON_VIC20 0
+#endif
+#ifdef PS64_SCPU
+#define ON_SCPU (cur_id == EMU_SCPU)
+#else
+#define ON_SCPU 0
 #endif
 
 static machine machines[EMU_MACHINES];
@@ -128,6 +143,7 @@ static machine *cur = &machines[EMU_C64];  /* the one shown, and the one the cal
 static uint32_t frame[EMULATOR_MAX_W * EMULATOR_MAX_H];
 static int frame_w, frame_h, have_frame;
 static unsigned joy_bits;
+static int reu_kb;                        /* the C64s' REU, 0 none */
 static void attach_cart(void);
 
 /* Audio between frames: a frame is ~960 stereo frames; keep a few. */
@@ -165,6 +181,36 @@ static void set_var(const char *key, const char *value)
         cur->nvars++;
         cur->vars_changed = 1;
     }
+}
+
+/* The SuperCPU's REU, in VICE's own settings (a load or power cycle sets them up afresh). */
+static void scpu_reu(void)
+{
+    cur->reu_kb = reu_kb;
+    if (reu_kb)
+        cur->api->resources_set_int("REUsize", reu_kb);
+    cur->api->resources_set_int("REU", reu_kb > 0);
+}
+
+/*
+ * The REU of the machine shown, if it's a C64 (the VIC-20 has none). x64sc has a core
+ * option for it; the SuperCPU core doesn't (its option is SuperRAM), so there it's VICE's
+ * own settings and a power cycle, once the core is up.
+ */
+static void apply_reu(void)
+{
+    if (ON_SCPU) {
+        if (cur->running && cur->reu_kb != reu_kb) {
+            scpu_reu();
+            cur->api->machine_trigger_reset(VICE_POWER_CYCLE);
+        }
+        return;
+    }
+    char v[16] = "none";
+    if (reu_kb > 0)
+        snprintf(v, sizeof(v), "%dkB", reu_kb);
+    if (!ON_VIC20)
+        set_var("vice_ram_expansion_unit", v);
 }
 
 /* ---- libretro callbacks ------------------------------------------------------- */
@@ -241,6 +287,7 @@ static bool environment(unsigned cmd, void *data)
             set_var("vice_vic20_memory_expansions", "auto");   /* (8k)-style filename tags */
         else
             set_var("vice_joyport", cur->joy_port == 1 ? "1" : "2");   /* (the VIC-20 has one) */
+        apply_reu();
         return true;
     case RETRO_ENVIRONMENT_GET_VARIABLE: {
         struct retro_variable *v = data;
@@ -445,7 +492,7 @@ void emulator_release_keys(void)
 
 void emulator_joystick(int port, unsigned bits)
 {
-    if (cur_id == EMU_C64 && port != cur->joy_port && (port == 1 || port == 2)) {
+    if (!ON_VIC20 && port != cur->joy_port && (port == 1 || port == 2)) {
         cur->joy_port = port;
         set_var("vice_joyport", port == 1 ? "1" : "2");
     }
@@ -472,6 +519,9 @@ static const char *const machine_names[EMU_MACHINES] = {
 #ifdef PS64_VIC20
     "VIC-20",
 #endif
+#ifdef PS64_SCPU
+    "SuperCPU",
+#endif
 };
 
 int emulator_select(int which)
@@ -486,6 +536,8 @@ int emulator_select(int which)
     have_frame = 0;                          /* the other machine's picture and sound go */
     audio_len = 0;
     nmessages = 0;
+    if (cur->running)
+        apply_reu();                       /* (changed while it waited: it restarts) */
     printf("emulator: %s\n", machine_names[which]);
     return 0;
 }
@@ -529,6 +581,7 @@ int emulator_start(const char *dir, int joystick_port)
     printf("emulator: first frame\n");
     cur->api->run();
     cur->running = 1;
+    apply_reu();
     attach_cart();
     printf("emulator: %ux%u (aspect %.3f), %.3f fps, audio %.0f Hz\n", cur->av.geometry.base_width,
            cur->av.geometry.base_height, cur->av.geometry.aspect_ratio, cur->av.timing.fps,
@@ -644,6 +697,8 @@ int emulator_load(const char *path)
     /* A load into a cur->running core is otherwise only a plain reset; this
      * rebuilds the autostart command line and starts the file. */
     cur->api->reload_restart();
+    if (ON_SCPU && reu_kb)
+        scpu_reu();                          /* (the load set VICE up again, without it) */
     if (!is_crt(path))
         attach_cart();                       /* (a cartridge game takes the slot) */
     return 0;
@@ -656,6 +711,13 @@ int emulator_insert_disk(const char *path)
     return cur->api->file_system_attach_disk(8, 0, path) == 0 ? 0 : -1;
 }
 
+void emulator_set_reu(int kb)
+{
+    reu_kb = kb > 0 ? kb : 0;
+    if (cur->running)
+        apply_reu();                       /* (the core restarts the C64 with it) */
+}
+
 void emulator_reset(int power_cycle)
 {
     if (!cur->running)
@@ -664,6 +726,8 @@ void emulator_reset(int power_cycle)
     if (power_cycle) {
         cur->api->unload_game();                 /* detach disks, tapes and cartridges */
         attach_cart();                       /* ...but the chosen cartridge stays in */
+        if (ON_SCPU && reu_kb)
+            scpu_reu();                          /* ...and the REU */
     }
     cur->api->machine_trigger_reset(power_cycle ? VICE_POWER_CYCLE : VICE_RESET_CPU);
 }

@@ -62,8 +62,8 @@ current modifiers. The shortcut buttons can be changed (`button-square = f2`, et
 
 **The menu (Options)**: Home, Resume, browse and search files, Search Assembly64, Favourites,
 Recents, Disk (multi-disk games), Reset C64, Reboot / Switch off and on, D-pad mode (emulators),
-Cartridge, Audio level (Left/Right; Cross mutes), Joystick port, Update search index, About,
-Quit. On screens with lists, the hint line at the bottom shows the buttons.
+Cartridge, SuperCPU and REU (VICE C64), Audio level (Left/Right; Cross mutes), Joystick port,
+Update search index, About, Quit. On screens with lists, the hint line at the bottom shows the buttons.
 
 **On the Mac**, any SDL-supported controller works, and so does the keyboard on its own:
 
@@ -120,6 +120,14 @@ disks load at full speed. **Options > Home** pauses it; **VICE C64** carries on 
 - **D-pad**: joystick by default (port 2; **Joystick port** in the menu). **Options > D-pad**
   switches it to cursor keys and RETURN for BASIC and menus.
 - **Reset C64** resets; **Switch off and on** also removes disks and cartridge games.
+- **Options > SuperCPU: < On >** gives the C64 a SuperCPU (a 20 MHz 65816 with 16 MB of
+  SuperRAM) for software that needs one; it restarts the C64 from BASIC, with the same games
+  folder. The Cartridge item is hidden then (fast loaders don't work at 20 MHz).
+- **Options > REU: < 512 KB >** fits a RAM Expansion Unit (Off, 512 KB like the 1750, or 16
+  MB), with or without the SuperCPU; changing it restarts the C64. Software that comes with
+  an REU image loads it when the `.reu` file has the program's name (`game.d64` and
+  `game.reu`). Cartridge games run without the REU.
+- Both choices are saved (`emu-supercpu`, `emu-reu` in `ps64.cfg`).
 - No ROM files are needed. SID and MOD files play in the SID player, not in the emulator.
 
 ## VICE VIC20

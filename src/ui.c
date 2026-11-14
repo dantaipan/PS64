@@ -205,6 +205,9 @@ static int petscii_to_ascii(int p)
     return -1;
 }
 
+/* The REU sizes the menu offers, in KB: none, a 1750, the most VICE has. */
+static const int ui_reu_sizes[] = { 0, 512, 16384 };
+
 int ui_menu_items(const ui_state *u, int *out)
 {
     static const int ultimate[] = { MI_HOME, MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS,
@@ -212,7 +215,8 @@ int ui_menu_items(const ui_state *u, int *out)
                                     MI_INDEX, MI_ABOUT, MI_QUIT };
     static const int emulator[] = { MI_HOME, MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS,
                                     MI_RECENTS, MI_DISK, MI_RESET, MI_REBOOT, MI_CONTROLLER,
-                                    MI_CART, MI_AUDIO, MI_PORT, MI_INDEX, MI_ABOUT, MI_QUIT };
+                                    MI_CART, MI_SCPU, MI_REU, MI_AUDIO, MI_PORT, MI_INDEX,
+                                    MI_ABOUT, MI_QUIT };
     const int *src = u->emulator ? emulator : ultimate;
     int n = u->emulator ? (int)(sizeof(emulator) / sizeof(emulator[0]))
                         : (int)(sizeof(ultimate) / sizeof(ultimate[0]));
@@ -220,9 +224,15 @@ int ui_menu_items(const ui_state *u, int *out)
     for (int i = 0; i < n; i++) {
         if (src[i] == MI_DISK && u->disks <= 1)
             continue;
-        /* The VIC-20: no Assembly64 software, no C64 cartridges, one joystick port. */
-        if (u->emulator == 2 && (src[i] == MI_A64 || src[i] == MI_CART || src[i] == MI_PORT))
+        /* The VIC-20: no Assembly64 software, no C64 cartridges, one joystick port, no
+         * SuperCPU or REU. */
+        if (u->emulator == 2 && (src[i] == MI_A64 || src[i] == MI_CART || src[i] == MI_PORT ||
+                                 src[i] == MI_SCPU || src[i] == MI_REU))
             continue;
+        if (src[i] == MI_SCPU && !u->scpu_available)
+            continue;
+        if (src[i] == MI_CART && u->emulator && u->supercpu)
+            continue;                   /* (fast loaders don't work at 20 MHz) */
         out[count++] = src[i];
     }
     return count;
@@ -278,6 +288,18 @@ static ui_action input_menu(ui_state *u, int in)
             u->cart_sel = sel;
             ui_action a = act(UA_CART);
             snprintf(a.text, sizeof(a.text), "%s", sel >= 0 ? u->carts[sel] : "");
+            return a;
+        }
+        case MI_SCPU:
+            return act(UA_SUPERCPU);
+        case MI_REU: {
+            int n_sizes = (int)(sizeof(ui_reu_sizes) / sizeof(ui_reu_sizes[0])), i = 0;
+            while (i < n_sizes && ui_reu_sizes[i] != u->reu_kb)
+                i++;
+            i = i == n_sizes ? 0 : (i + (in == IN_LEFT ? n_sizes - 1 : 1)) % n_sizes;
+            u->reu_kb = ui_reu_sizes[i];
+            ui_action a = act(UA_REU);
+            a.offset = u->reu_kb;
             return a;
         }
         case MI_DISK: {

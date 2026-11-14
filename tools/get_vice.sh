@@ -7,6 +7,7 @@
 #                              (vice_xvic_osx.a: entry points renamed vic20_* by
 #                              tools/vice_vic20_names.h, everything else made local, so the two
 #                              link into one program)
+#                              and the SuperCPU core (vice_xscpu64_osx.a, scpu_*, the same way)
 #   tools/get_vice.sh fetch    fetch only (ps5/build.sh builds the PS5 library in Docker)
 #
 # Source: mihawk-99/PS5_VICE, a fork of libretro/vice-libretro (VICE 3.10) with a
@@ -40,6 +41,26 @@ if ! grep -q "PS64: a cartridge" "$DIR/vice/src/autostart.c"; then
     rm -f "$DIR"/vice_*.a                       # rebuild with it
 fi
 
+# The SuperCPU core's names and keep list: the VIC-20's with scpu_ for vic20_ (one list to
+# keep up to date). Written into dir; ps5/Makefile uses them too.
+scpu_names() {   # (rewritten only when they change, so builds don't redo the core)
+    sed -e 's/vic20_/scpu_/g' -e 's/PS64_VIC20_NAMES_H/PS64_SCPU_NAMES_H/' \
+        -e 's/VIC-20 core (xvic)/SuperCPU core (xscpu64)/' tools/vice_vic20_names.h > "$1/scpu_names.h.new"
+    sed 's/vic20_/scpu_/' tools/vice_vic20_keep.txt > "$1/scpu-keep.txt.new"
+    for f in scpu_names.h scpu-keep.txt; do
+        if cmp -s "$1/$f.new" "$1/$f"; then rm "$1/$f.new"; else mv "$1/$f.new" "$1/$f"; fi
+    done
+}
+scpu_names "$DIR"
+
+# A renamed core built before the name list changed is built again from scratch (the
+# forced header isn't a dependency of its objects).
+renamed_core_stale() {   # library, object folder
+    if [ tools/vice_vic20_names.h -nt "$DIR/$1" ] || [ tools/vice_vic20_keep.txt -nt "$DIR/$1" ]; then
+        rm -rf "$DIR/$1" "$DIR/$2"
+    fi
+}
+
 [ "$1" = fetch ] && exit 0
 
 JOBS=$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
@@ -49,6 +70,7 @@ echo "VICE built: $DIR/vice_x64sc_libretro_osx.a"
 
 # The VIC-20 core. -fno-common makes its uninitialised globals real definitions, so the
 # partial link can make them local too.
+renamed_core_stale vice_xvic_osx.a build-osx-xvic
 if [ ! -f "$DIR/vice_xvic_osx.a" ]; then
     CFLAGS="-fno-common -include $PWD/tools/vice_vic20_names.h" \
     make -C "$DIR" -j"$JOBS" platform=osx EMUTYPE=xvic STATIC_LINKING=1 \
@@ -64,3 +86,21 @@ if [ ! -f "$DIR/vice_xvic_osx.a" ]; then
     fi
 fi
 echo "VICE built: $DIR/vice_xvic_osx.a"
+
+# The SuperCPU core (xscpu64), linked the same way with an scpu_ prefix.
+renamed_core_stale vice_xscpu64_osx.a build-osx-xscpu64
+if [ ! -f "$DIR/vice_xscpu64_osx.a" ]; then
+    CFLAGS="-fno-common -include $PWD/$DIR/scpu_names.h" \
+    make -C "$DIR" -j"$JOBS" platform=osx EMUTYPE=xscpu64 STATIC_LINKING=1 \
+         OBJDIR=build-osx-xscpu64 TARGET=vice_xscpu64_libretro_osx.a
+    sed 's/^/_/' "$DIR/scpu-keep.txt" > "$DIR/scpu-keep-macho.txt"
+    ld -r -arch arm64 -platform_version macos 11.0 11.0 -all_load "$DIR/vice_xscpu64_libretro_osx.a" \
+       -exported_symbols_list "$DIR/scpu-keep-macho.txt" -o "$DIR/vice_xscpu64_osx.o" 2>/dev/null
+    rm -f "$DIR/vice_xscpu64_osx.a"
+    ar rcs "$DIR/vice_xscpu64_osx.a" "$DIR/vice_xscpu64_osx.o"
+    if nm -g "$DIR/vice_xscpu64_osx.o" | grep -v " U " | awk '{print $3}' | grep -qv '^_scpu_'; then
+        echo "get_vice: the SuperCPU core still has other global symbols" >&2
+        exit 1
+    fi
+fi
+echo "VICE built: $DIR/vice_xscpu64_osx.a"

@@ -15,6 +15,7 @@
 #define TRIGGER_OFF   10000
 #define REPEAT_DELAY  400
 #define REPEAT_RATE   110
+#define STALL_MS      100     /* a longer gap between updates: input wasn't read meanwhile */
 #define BANNER_MS     2500
 
 static const char *const button_names[BTN_BINDABLE] = {
@@ -592,7 +593,12 @@ void controls_update(controls *c, Uint32 now)
     unsigned dirs = c->dpad | c->stick | c->key_dirs;
     int joystick = !ui_open(c) && !c->osk.open && mode(c) == REMOTE_INPUT;
 
-    /* Edge-triggered with auto-repeat for screens, the OSK cursor and cursor keys. */
+    /* Edge-triggered with auto-repeat for screens, the OSK cursor and cursor keys. After a
+     * stall (the emulator fitting a 16 MB REU, say) a press may have ended unseen, so a held
+     * direction waits for input read since before it repeats. */
+    if (c->updated_at && now - c->updated_at > STALL_MS && SDL_TICKS_PASSED(now, c->repeat_at))
+        c->repeat_at = now + REPEAT_RATE;
+    c->updated_at = now;
     if (joystick) {
         c->repeat_dirs = dirs;
     } else if (dirs != c->repeat_dirs) {

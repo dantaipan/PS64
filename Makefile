@@ -28,6 +28,12 @@ ifneq ($(wildcard $(VIC20_LIB)),)
 EMU_CFLAGS += -DPS64_VIC20
 EMU_LIBS   := lrc.a $(VICE_LIB) $(VIC20_LIB) -lc++ -lz
 endif
+# The SuperCPU core (renamed scpu_*, the same way).
+SCPU_LIB   := $(VICE)/vice_xscpu64_osx.a
+ifneq ($(wildcard $(SCPU_LIB)),)
+EMU_CFLAGS += -DPS64_SCPU
+EMU_LIBS   := $(filter-out -lc++ -lz,$(EMU_LIBS)) $(SCPU_LIB) -lc++ -lz
+endif
 EMU_DEPS   := lrc.a $(VICE_LIB)
 endif
 

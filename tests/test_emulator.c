@@ -1,8 +1,8 @@
 /*
  * Drives the real VICE core through emulator.c: boots to BASIC, types,
  * reads the joystick from BASIC, starts a PRG, starts an .m3u of two disk
- * images (built here) and swaps to the second, then switches off and on.
- * Checks the C64's screen memory after each step.
+ * images (built here) and swaps to the second, fits an REU, runs the VIC-20 and the
+ * SuperCPU, then switches off and on. Checks the C64's screen memory after each step.
  */
 #include "../src/c64files.h"
 #include "../src/c64keys.h"
@@ -30,18 +30,32 @@ static char dir[] = "/tmp/ps64-emu-test-XXXXXX";
 void *vic20_retro_get_memory_data(unsigned id);
 #endif
 static int on_vic20;    /* read the VIC-20's screen ($1E00, 22 x 23 unexpanded) */
+#ifdef PS64_SCPU
+void *scpu_retro_get_memory_data(unsigned id);
+#endif
+static int on_scpu;     /* read the SuperCPU core's RAM */
+
+/* The RAM of the machine shown. */
+static uint8_t *ram_of(void)
+{
+#ifdef PS64_VIC20
+    if (on_vic20)
+        return vic20_retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM);
+#endif
+#ifdef PS64_SCPU
+    if (on_scpu)
+        return scpu_retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM);
+#endif
+    return retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM);
+}
 
 /* Screen RAM ($0400) as text, rows joined with '|'. */
 static void screen(char *out, size_t cap)
 {
-    const uint8_t *ram = retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM);
+    const uint8_t *ram = ram_of();
     unsigned base = 0x0400, cols = 40, rows = 25;
-#ifdef PS64_VIC20
-    if (on_vic20) {
-        ram = vic20_retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM);
+    if (on_vic20)
         base = 0x1E00, cols = 22, rows = 23;
-    }
-#endif
     size_t n = 0;
     out[0] = 0;
     for (unsigned r = 0; r < rows && ram; r++) {
@@ -100,6 +114,76 @@ static int run_until_another(const char *text, int max)
     }
     return -1;
 }
+
+/* Run until text has gone from the screen (a restart cleared it). */
+static int run_until_gone(const char *text, int max)
+{
+    for (int f = 0; f < max; f++) {
+        emulator_run_frame();
+        int16_t sink[4096];
+        while (emulator_take_audio(sink, 2048))
+            ;
+        if (!count_of(text))
+            return f + 1;
+    }
+    return -1;
+}
+
+/* The number printed after tag on the screen, or -1. */
+static int printed_number(const char *tag)
+{
+    char s[1200];
+    screen(s, sizeof(s));
+    const char *p = strstr(s, tag);
+    return p ? atoi(p + strlen(tag)) : -1;
+}
+
+/* An REU's registers ($DF02/$DF03) keep what's written; without one they don't. */
+#define REU_PROBE "A=57090:POKEA,85:POKEA+1,170:?\"REU\"PEEK(A)PEEK(A+1)\n"
+#define REU_FOUND "|REU 85  170"
+/*
+ * The REU's size: a program (SYS 2061) stashes 1 in REU bank 0 and 2 in bank 240, then
+ * fetches bank 0 into $07E9 and puts $AA in $07EA. A 512 KB REU wraps bank 240 onto bank 0,
+ * so $07E9 is 2; a bigger one keeps 1. (In screen memory: the SuperCPU writes it through to
+ * the C64's RAM, where the REU and the test can see it.)
+ */
+static const uint8_t reu_size_prg[] = {
+    0x01, 0x08, 0x0B, 0x08, 0x0A, 0x00, 0x9E, '2', '0', '6', '1', 0x00, 0x00, 0x00,
+    0xA9, 0x01, 0x8D, 0xE8, 0x07, 0xA2, 0xE8, 0xA0, 0x90, 0xA9, 0x00, 0x20, 0x38, 0x08,
+    0xA9, 0x02, 0x8D, 0xE8, 0x07, 0xA2, 0xE8, 0xA0, 0x90, 0xA9, 0xF0, 0x20, 0x38, 0x08,
+    0xA2, 0xE9, 0xA0, 0x91, 0xA9, 0x00, 0x20, 0x38, 0x08,
+    0xA9, 0xAA, 0x8D, 0xEA, 0x07, 0x60,
+    /* $0838: A bank, X address low ($07xx), Y command; 1 byte. Then waits for the end of
+     * the transfer (the SuperCPU carries on while it runs). */
+    0x8D, 0x06, 0xDF, 0x8E, 0x02, 0xDF, 0xA9, 0x07, 0x8D, 0x03, 0xDF, 0xA9, 0x00, 0x8D, 0x04,
+    0xDF, 0x8D, 0x05, 0xDF, 0x8D, 0x08, 0xDF, 0xA9, 0x01, 0x8D, 0x07, 0xDF, 0x8C, 0x01, 0xDF,
+    0x2C, 0x00, 0xDF, 0x50, 0xFB, 0x60,
+};
+
+static void type(const char *text);
+
+/* 1 if the REU holds more than 512 KB, 0 if not, -1 if the program didn't finish. Started
+ * by loading it (load: its path) or, with NULL, SYS 2061 (it's still in memory). */
+static int reu_over_512k(const char *load)
+{
+    ram_of()[0x07E9] = ram_of()[0x07EA] = 0;
+    if (load)
+        emulator_load(load);
+    else
+        type("SYS2061\n");
+    for (int f = 0; f < 800; f++) {
+        emulator_run_frame();
+        int16_t sink[4096];
+        while (emulator_take_audio(sink, 2048))
+            ;
+        if (ram_of()[0x07EA] == 0xAA)
+            return ram_of()[0x07E9] == 1 ? 1 : ram_of()[0x07E9] == 2 ? 0 : -1;
+    }
+    return -1;
+}
+
+/* Jiffies a BASIC loop takes. */
+#define SPEED_PROBE "T=TI:FORI=1TO3000:NEXT:PRINT\"SPEED\"TI-T\n"
 
 static void type(const char *text)
 {
@@ -349,6 +433,88 @@ int main(void)
     run_until(NULL, 5);
     screen(s, sizeof(s));
     CHECK(strstr(s, " 36") != NULL, "the C64 kept its screen: %s", s);
+#endif
+
+    /* An REU: fitting one restarts the C64 with it; taking it out, without. */
+    emulator_set_reu(512);
+    CHECK(run_until_gone(" 36", 300) > 0 && run_until("READY.", 600) > 0, "restarts with an REU");
+    type(REU_PROBE);
+    run_until(REU_FOUND, 800);
+    screen(s, sizeof(s));
+    CHECK(count_of(REU_FOUND), "the REU answers: %s", s);
+    emulator_set_reu(0);
+    CHECK(run_until_gone("REU", 300) > 0 && run_until("READY.", 600) > 0, "restarts without");
+    type(REU_PROBE);
+    run_until("|REU", 800);
+    screen(s, sizeof(s));
+    CHECK(count_of("|REU") && !count_of(REU_FOUND), "no REU: %s", s);
+
+    /* Its size: 16 MB stays 16 MB through a load, a reset and a power cycle; 512 KB is 512. */
+    char reu_prg[600];
+    int r;
+    snprintf(reu_prg, sizeof(reu_prg), "%s/reusize.prg", dir);
+    write_file(reu_prg, reu_size_prg, sizeof(reu_size_prg));
+    emulator_set_reu(16384);
+    CHECK(run_until_gone("REU", 300) > 0 && run_until("READY.", 600) > 0, "restarts with 16 MB");
+    CHECK((r = reu_over_512k(reu_prg)) == 1, "16 MB after a load: %d", r);
+    emulator_reset(0);
+    CHECK(run_until_gone("RUN", 300) > 0 && run_until("READY.", 400) > 0, "reset");
+    CHECK((r = reu_over_512k(NULL)) == 1, "16 MB after a reset: %d", r);
+    emulator_reset(1);
+    CHECK(run_until_gone("SYS", 300) > 0 && run_until("READY.", 400) > 0, "power cycle");
+    CHECK((r = reu_over_512k(reu_prg)) == 1, "16 MB after a power cycle: %d", r);
+    emulator_set_reu(512);
+    CHECK(run_until_gone("RUN", 300) > 0 && run_until("READY.", 600) > 0, "restarts with 512 KB");
+    CHECK((r = reu_over_512k(reu_prg)) == 0, "512 KB: %d", r);
+    emulator_set_reu(0);
+    CHECK(run_until_gone("RUN", 300) > 0 && run_until("READY.", 600) > 0, "restarts without");
+
+    /* The same loop on the SuperCPU (turbo, 20 MHz) takes a fraction of the C64's time. */
+    type(SPEED_PROBE);
+    CHECK(run_until("|SPEED", 1500) > 0, "C64 speed");
+    int c64_jiffies = printed_number("|SPEED");
+#ifdef PS64_SCPU
+    char sdir[700];
+    snprintf(sdir, sizeof(sdir), "%s/scpu", dir);
+    CHECK(emulator_select(EMU_SCPU) == 0 && emulator_machine() == EMU_SCPU, "select the SuperCPU");
+    on_scpu = 1;
+    CHECK(emulator_start(sdir, 2) == 0, "SuperCPU starts");
+    CHECK(run_until("READY.", 600) > 0, "SuperCPU boots to READY.");
+    CHECK(emulator_frame(&w, &h) != NULL && w == 384 && h == 272, "SuperCPU frame %dx%d", w, h);
+    type(SPEED_PROBE);
+    CHECK(run_until("|SPEED", 600) > 0, "SuperCPU speed");
+    int scpu_jiffies = printed_number("|SPEED");
+    CHECK(scpu_jiffies >= 0 && c64_jiffies > 5 * scpu_jiffies, "SuperCPU %d jiffies, C64 %d",
+          scpu_jiffies, c64_jiffies);
+    emulator_set_reu(16384);
+    CHECK(run_until_gone("SPEED", 300) > 0 && run_until("READY.", 600) > 0, "SuperCPU restarts with an REU");
+    type(REU_PROBE);
+    CHECK(run_until(REU_FOUND, 800) > 0, "the SuperCPU's REU answers");
+    snprintf(path, sizeof(path), "%s/test.prg", dir);              /* still there after a load */
+    CHECK(emulator_load(path) == 0 && run_until("PRG OK", 600) > 0, "a PRG on the SuperCPU");
+    type(REU_PROBE);
+    CHECK(run_until(REU_FOUND, 800) > 0, "the SuperCPU's REU after a load");
+    emulator_reset(1);                                              /* ...and off and on */
+    CHECK(run_until_gone("REU", 300) > 0 && run_until("READY.", 600) > 0, "SuperCPU power cycle");
+    type(REU_PROBE);
+    CHECK(run_until(REU_FOUND, 800) > 0, "the SuperCPU's REU after a power cycle");
+    CHECK((r = reu_over_512k(reu_prg)) == 1, "the SuperCPU's 16 MB after a load: %d", r);
+    emulator_reset(0);
+    CHECK(run_until_gone("RUN", 300) > 0 && run_until("READY.", 400) > 0, "SuperCPU reset");
+    CHECK((r = reu_over_512k(NULL)) == 1, "the SuperCPU's 16 MB after a reset: %d", r);
+    emulator_reset(1);
+    CHECK(run_until_gone("SYS", 300) > 0 && run_until("READY.", 400) > 0, "SuperCPU power cycle");
+    CHECK((r = reu_over_512k(reu_prg)) == 1, "the SuperCPU's 16 MB after a power cycle: %d", r);
+    /* The C64 waited without one: it catches up when chosen again. */
+    on_scpu = 0;
+    CHECK(emulator_select(EMU_C64) == 0, "back to the C64");
+    CHECK(run_until_gone("SPEED", 300) > 0 && run_until("READY.", 600) > 0, "the C64 restarts with the REU");
+    type(REU_PROBE);
+    CHECK(run_until(REU_FOUND, 800) > 0, "the C64's REU answers");
+    emulator_set_reu(0);
+    CHECK(run_until_gone("REU", 300) > 0 && run_until("READY.", 600) > 0, "the C64 restarts without");
+#else
+    (void)c64_jiffies;
 #endif
 
     /* Off and on: back to an empty BASIC. */

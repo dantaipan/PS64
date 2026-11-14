@@ -1,6 +1,6 @@
 /*
  * emulator - PS64's built-in C64 and VIC-20: the VICE emulator (its libretro cores,
- * x64sc and xvic, linked statically) run frame by frame from the main loop.
+ * x64sc, xvic and xscpu64, linked statically) run frame by frame from the main loop.
  *
  * There is one emulated machine of each kind per process (a core keeps global state). All
  * calls come from the main thread. Built only with PS64_EMU defined.
@@ -14,10 +14,14 @@
 #define EMULATOR_MAX_W 448     /* the VIC-20's picture; the C64's is 384 */
 #define EMULATOR_MAX_H 288
 
-/* The machines: the C64, and the VIC-20 in builds with PS64_VIC20. */
+/* The machines: the C64, the VIC-20 in builds with PS64_VIC20, and a C64 with a SuperCPU
+ * (its own core) in builds with PS64_SCPU. */
 enum { EMU_C64,
 #ifdef PS64_VIC20
        EMU_VIC20,
+#endif
+#ifdef PS64_SCPU
+       EMU_SCPU,
 #endif
        EMU_MACHINES };
 
@@ -68,6 +72,13 @@ int  emulator_insert_disk(const char *path);
  * emulator_start. 0, or -1 if VICE couldn't attach it (then none).
  */
 int  emulator_set_cartridge(const char *path);
+/*
+ * The REU (RAM Expansion Unit) of the C64s (plain and SuperCPU): its size in KB (128, 256,
+ * 512 ... 16384), or 0 for none. Can be set before emulator_start; a running C64 is
+ * restarted with it (as VICE does), one paused meanwhile when it's chosen again. VICE
+ * leaves it out while a cartridge game is loaded.
+ */
+void emulator_set_reu(int kb);
 /* Reset (programs and cartridges stay), or switch off and on (everything detached). */
 void emulator_reset(int power_cycle);
 

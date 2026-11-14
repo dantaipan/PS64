@@ -89,6 +89,12 @@ static void draw_menu(SDL_Renderer *ren, const ui_state *u)
             *dot = 0;
         snprintf(cart, sizeof(cart), "Cartridge: < %.40s >", name);
     }
+    char reu[32];
+    if (u->reu_kb <= 0)
+        snprintf(reu, sizeof(reu), "REU: < Off >");
+    else
+        snprintf(reu, sizeof(reu), u->reu_kb >= 1024 ? "REU: < %d MB >" : "REU: < %d KB >",
+                 u->reu_kb >= 1024 ? u->reu_kb / 1024 : u->reu_kb);
     const char *labels[MI_COUNT] = {
         [MI_HOME] = "Home",
         [MI_RESUME] = "Resume",
@@ -104,6 +110,8 @@ static void draw_menu(SDL_Renderer *ren, const ui_state *u)
         [MI_DISK] = disk,
         [MI_CONTROLLER] = u->joy_keys ? "D-pad: < Cursor keys >" : "D-pad: < Joystick >",
         [MI_CART] = cart,
+        [MI_SCPU] = u->supercpu ? "SuperCPU: < On >" : "SuperCPU: < Off >",
+        [MI_REU] = reu,
     };
     int items[MI_COUNT];
     int n = ui_menu_items(u, items);
@@ -112,6 +120,7 @@ static void draw_menu(SDL_Renderer *ren, const ui_state *u)
     if (u->emulator || u->current_ip[0]) {
         char line[64];
         snprintf(line, sizeof(line), u->emulator == 2 ? "VICE VIC20 (built-in emulator)%.0s"
+                                   : u->emulator && u->supercpu ? "VICE C64 + SuperCPU (built-in emulator)%.0s"
                                    : u->emulator ? "VICE C64 (built-in emulator)%.0s" : "C64: %s",
                  u->current_ip);
         font_draw(ren, line, PX + 16, LIST_Y + (n + 1) * ROW_H, 1, DIM);

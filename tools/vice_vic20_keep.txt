@@ -31,3 +31,4 @@ vic20_machine_trigger_reset
 vic20_file_system_attach_disk
 vic20_cartridge_attach_image
 vic20_cartridge_detach_image
+vic20_resources_set_int

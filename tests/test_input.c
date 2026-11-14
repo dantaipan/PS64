@@ -1210,16 +1210,42 @@ static void test_emulator_mode(void)
         has_disk |= items[i] == MI_DISK;
         has_ctl |= items[i] == MI_CONTROLLER;
     }
-    CHECK(ne == 16 && !has_disk && has_ctl && items[ne - 2] == MI_ABOUT);
+    CHECK(ne == 17 && !has_disk && has_ctl && items[ne - 2] == MI_ABOUT);
     u.disks = 2;
     ne = ui_menu_items(&u, items);
-    CHECK(ne == 17 && items[0] == MI_HOME && items[7] == MI_DISK && items[11] == MI_CART);
-    /* The VIC-20's menu: no Assembly64, cartridge or joystick port. */
+    CHECK(ne == 18 && items[0] == MI_HOME && items[7] == MI_DISK && items[11] == MI_CART &&
+          items[12] == MI_REU);                                  /* (no SuperCPU in this build) */
+    /* A build with the SuperCPU: its item after the cartridge's; with it on, no cartridge. */
+    u.scpu_available = 1;
+    ne = ui_menu_items(&u, items);
+    CHECK(ne == 19 && items[11] == MI_CART && items[12] == MI_SCPU && items[13] == MI_REU);
+    u.supercpu = 1;
+    ne = ui_menu_items(&u, items);
+    CHECK(ne == 18 && items[11] == MI_SCPU && items[12] == MI_REU);
+    /* The VIC-20's menu: no Assembly64, cartridge, joystick port, SuperCPU or REU. */
     u.emulator = 2;
     int nv = ui_menu_items(&u, items), seen = 0;
     for (int i = 0; i < nv; i++)
-        seen |= items[i] == MI_A64 || items[i] == MI_CART || items[i] == MI_PORT;
+        seen |= items[i] == MI_A64 || items[i] == MI_CART || items[i] == MI_PORT ||
+                items[i] == MI_SCPU || items[i] == MI_REU;
     CHECK(nv == 14 && !seen);
+    u.emulator = 1;
+    ui_open_menu(&u);
+    u.sel = 11;                                                  /* SuperCPU: a toggle */
+    CHECK(ui_input(&u, IN_RIGHT).kind == UA_SUPERCPU && ui_input(&u, IN_OK).kind == UA_SUPERCPU);
+    u.sel = 12;                                                  /* REU: off, 512 KB, 16 MB */
+    ui_action r = ui_input(&u, IN_RIGHT);
+    CHECK(r.kind == UA_REU && r.offset == 512 && u.reu_kb == 512);
+    r = ui_input(&u, IN_RIGHT);
+    CHECK(r.offset == 16384);
+    r = ui_input(&u, IN_RIGHT);
+    CHECK(r.offset == 0);
+    r = ui_input(&u, IN_LEFT);
+    CHECK(r.offset == 16384);
+    u.reu_kb = 256;                                              /* (set in ps64.cfg) */
+    CHECK(ui_input(&u, IN_RIGHT).offset == 0);
+    u.reu_kb = 0;
+    u.supercpu = u.scpu_available = 0;
     u.emulator = 1;
     ui_open_menu(&u);
     u.sel = 7;

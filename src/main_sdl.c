@@ -119,6 +119,8 @@ typedef struct {
     int         home_music;   /* level of the home screen's random SID (on PS64), 0 off..10 */
     const char *carts_dir;    /* the emulator's cartridges (default: "carts" next to the config) */
     const char *emu_cart;     /* emulator: the cartridge kept in (a file in carts_dir; "off" none) */
+    const char *emu_supercpu; /* emulator: the C64 has a SuperCPU ("on"/"off") */
+    const char *emu_reu;      /* emulator: the C64's REU in KB ("off" none) */
 } options;
 
 #if defined(__APPLE__) && !defined(PS64_NATIVE)
@@ -166,6 +168,7 @@ static void usage(const char *argv0)
         "          [--a64-latest CATEGORY]\n"
         "          [--c64 emulator] [--games-dir DIR] [--usb-prefix PATH|none] [--dpad joystick|keys]\n"
         "          [--emu-load FILE] [--carts-dir DIR] [--emu-cartridge FILE.crt|off]\n"
+        "          [--emu-supercpu on|off] [--emu-reu off|512|16384]\n"
         "          [--home-music 0..10]\n"
         "\n"
         "--c64 (alias --start) streams from and controls that C64; --remote only controls it;\n"
@@ -251,6 +254,7 @@ static int parse_args(int argc, char **argv, options *o)
     o->home_music = UI_HOME_MUSIC_DEFAULT;
     o->carts_dir = NULL;
     o->emu_cart = NULL;
+    o->emu_supercpu = o->emu_reu = NULL;
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
         const char *next = i + 1 < argc ? argv[i + 1] : NULL;
@@ -288,6 +292,8 @@ static int parse_args(int argc, char **argv, options *o)
         }
         else if (!strcmp(a, "--carts-dir") && next) { o->carts_dir = next; i++; }
         else if (!strcmp(a, "--emu-cartridge") && next) { o->emu_cart = next; i++; }
+        else if (!strcmp(a, "--emu-supercpu") && next) { o->emu_supercpu = next; i++; }
+        else if (!strcmp(a, "--emu-reu") && next)   { o->emu_reu = next; i++; }
         else if (!strcmp(a, "--sid-output") && next) { o->sid_ultimate = !strcasecmp(next, "ultimate"); i++; }
         else if (!strcmp(a, "--browse-dir") && next) { o->browse_dir = next; i++; }
         else if (!strcmp(a, "--browse") && next)    { o->browse_path = next; i++; }
@@ -749,27 +755,45 @@ static emugames eg;
 #else
 #define MACHINE_VIC20 (-1)                      /* (a build without it: the start fails) */
 #endif
+#ifdef PS64_SCPU
+#define MACHINE_SCPU EMU_SCPU
+#else
+#define MACHINE_SCPU (-1)
+#endif
 /* The cartridges folder, and the cartridge kept in the emulator's port ("" none). */
 static char carts_dir[600] = "carts", emu_cart[128];
 static int emu_set_cart(const char *name);
+/* The C64's SuperCPU (on: it runs on the SuperCPU core, with the C64's games) and REU (KB). */
+static int emu_supercpu, emu_reu;
 
 static void emu_tap(int key, int mods)       { emulator_key_tap(key, mods); }
 static void emu_joy(int port, unsigned bits) { emulator_joystick(port, bits); }
 static void emu_release(void)                { emulator_release_keys(); }
 static void emu_key(int key, int down)       { emulator_key(key, down); }
 
+/* The core a machine runs on: the C64 with a SuperCPU has its own. */
+static int machine_core(int machine)
+{
+#ifdef PS64_SCPU
+    if (machine == EMU_C64 && emu_supercpu)
+        return EMU_SCPU;
+#endif
+    return machine;
+}
+
 static int session_begin_emulator(session *s, const options *o, int machine)
 {
-    if (emulator_select(machine) != 0)
+    int core = machine_core(machine);
+    if (emulator_select(core) != 0)
         return -1;
     snprintf(games_dir, sizeof(games_dir), "%s", machine_games[machine]);
-    snprintf(emu_dir, sizeof(emu_dir), "%s", machine_emu[machine]);
+    snprintf(emu_dir, sizeof(emu_dir), "%s", machine_emu[core]);
     snprintf(emu_index_file, sizeof(emu_index_file), "%s", machine_index[machine]);
     eg_init(&eg, games_dir, emu_dir);
     files_set_emulator(machine + 1);         /* (what the browser and favourites are for) */
     /* Started before (then left for the home screen): carry on where it was. */
-    if (!emulator_running() && emu_cart[0] && machine == EMU_C64)
-        emu_set_cart(emu_cart);              /* (kept for the start) */
+    if (!emulator_running() && emu_cart[0] && core == EMU_C64)
+        emu_set_cart(emu_cart);              /* (kept for the start; not on the SuperCPU) */
     if (emulator_running())
         emulator_joystick(o->joystick_port, 0);
     else if (emulator_start(emu_dir, o->joystick_port) != 0)
@@ -1497,6 +1521,13 @@ int main(int argc, char **argv)
         snprintf(machine_emu[EMU_C64], sizeof(machine_emu[0]), "emulator");
         snprintf(machine_index[EMU_C64], sizeof(machine_index[0]), "ps64-emu-index.txt");
     }
+#ifdef PS64_SCPU
+    /* The SuperCPU: the C64's games and index, its own working folder. */
+    snprintf(machine_games[EMU_SCPU], sizeof(machine_games[0]), "%s", machine_games[EMU_C64]);
+    snprintf(machine_index[EMU_SCPU], sizeof(machine_index[0]), "%s", machine_index[EMU_C64]);
+    snprintf(machine_emu[EMU_SCPU], sizeof(machine_emu[0]), "emulator/scpu");
+    next_to_config(config, "emulator/scpu", machine_emu[EMU_SCPU], sizeof(machine_emu[0]));
+#endif
     /* The folders people fill over FTP: open to everyone (older PS64s made them 0755). */
     for (int m = 0; m < EMU_MACHINES; m++)
         chmod(machine_games[m], 0777);
@@ -1509,6 +1540,13 @@ int main(int argc, char **argv)
     localfs_mkdirs(carts_dir);
     if (opt.emu_cart && strcasecmp(opt.emu_cart, "off"))
         snprintf(emu_cart, sizeof(emu_cart), "%s", opt.emu_cart);
+#ifdef PS64_SCPU
+    emu_supercpu = opt.emu_supercpu && !strcasecmp(opt.emu_supercpu, "on");
+#endif
+    emu_reu = opt.emu_reu ? atoi(opt.emu_reu) : 0;      /* ("off": 0) */
+    if (emu_reu < 128 || emu_reu > 16384 || (emu_reu & (emu_reu - 1)))
+        emu_reu = 0;                                 /* (VICE's sizes: 128 KB to 16 MB) */
+    emulator_set_reu(emu_reu);
     eg_init(&eg, games_dir, emu_dir);
 #endif
 
@@ -2168,6 +2206,51 @@ int main(int argc, char **argv)
                     home_music_next(&ui, tick);
 #endif
                 break;
+#ifdef PS64_EMU
+            case UA_SUPERCPU: {
+                /* The C64 again on the other core, from BASIC (it kept its state if it ran). */
+                if (ses.emu != EMU_C64 + 1 || MACHINE_SCPU < 0)
+                    break;
+                emu_supercpu = !emu_supercpu;
+                session_end(&ses, &opt);
+                emulator_select(machine_core(EMU_C64));
+                int resumed = emulator_running();
+                if (session_begin_emulator(&ses, &opt, EMU_C64) != 0) {
+                    emu_supercpu = !emu_supercpu;            /* (back to the one that ran) */
+                    session_end(&ses, &opt);
+                    session_begin_emulator(&ses, &opt, EMU_C64);
+                    snprintf(msg, sizeof(msg), "The SuperCPU didn't start");
+                } else {
+                    if (resumed)
+                        emulator_reset(1);
+                    if (config)
+                        config_set(config, "emu-supercpu", emu_supercpu ? "on" : "off", NULL);
+                    snprintf(msg, sizeof(msg), emu_supercpu ? "SuperCPU on - C64 restarted"
+                                                            : "SuperCPU off - C64 restarted");
+                }
+                printf("emulator: %s\n", msg);
+                controls_banner(&ctl, msg);
+                break;
+            }
+            case UA_REU:
+                if (ses.emu != EMU_C64 + 1)
+                    break;
+                emu_reu = a.offset;
+                emulator_set_reu(emu_reu);
+                if (config) {
+                    char kb[16];
+                    snprintf(kb, sizeof(kb), "%d", emu_reu);
+                    config_set(config, "emu-reu", emu_reu ? kb : "off", NULL);
+                }
+                if (!emu_reu)
+                    snprintf(msg, sizeof(msg), "REU out - C64 restarted");
+                else
+                    snprintf(msg, sizeof(msg), emu_reu >= 1024 ? "REU %d MB in - C64 restarted"
+                             : "REU %d KB in - C64 restarted", emu_reu >= 1024 ? emu_reu / 1024 : emu_reu);
+                printf("emulator: %s\n", msg);
+                controls_banner(&ctl, msg);
+                break;
+#endif
             case UA_CART:
 #ifdef PS64_EMU
                 if (ses.emu) {
@@ -2509,6 +2592,11 @@ int main(int argc, char **argv)
         snprintf(ui.current_ip, sizeof(ui.current_ip), "%s", ses.host);
         ui.emulator = ses.emu;
 #ifdef PS64_EMU
+#ifdef PS64_SCPU
+        ui.scpu_available = 1;
+#endif
+        ui.supercpu = emu_supercpu;
+        ui.reu_kb = emu_reu;
         if (ses.emu && strcmp(ui.games_dir, games_dir))
             snprintf(ui.games_dir, sizeof(ui.games_dir), "%s", games_dir);
 #endif

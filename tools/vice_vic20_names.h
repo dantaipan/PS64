@@ -39,4 +39,5 @@
 #define file_system_attach_disk vic20_file_system_attach_disk
 #define cartridge_attach_image vic20_cartridge_attach_image
 #define cartridge_detach_image vic20_cartridge_detach_image
+#define resources_set_int vic20_resources_set_int
 #endif
