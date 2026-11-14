@@ -62,7 +62,7 @@ current modifiers. The shortcut buttons can be changed (`button-square = f2`, et
 
 **The menu (Options)**: Home, Resume, browse and search files, Search Assembly64, Favourites,
 Recents, Disk (multi-disk games), Reset C64, Reboot / Switch off and on, D-pad mode (emulators),
-Cartridge, SuperCPU and REU (VICE C64), Audio level (Left/Right; Cross mutes), Joystick port,
+Cartridge, SuperCPU, REU and JiffyDOS (VICE C64), Audio level (Left/Right; Cross mutes), Joystick port,
 Update search index, About, Quit. On screens with lists, the hint line at the bottom shows the buttons.
 
 **On the Mac**, any SDL-supported controller works, and so does the keyboard on its own:
@@ -128,7 +128,27 @@ disks load at full speed. **Options > Home** pauses it; **VICE C64** carries on 
   an REU image loads it when the `.reu` file has the program's name (`game.d64` and
   `game.reu`). Cartridge games run without the REU.
 - Both choices are saved (`emu-supercpu`, `emu-reu` in `ps64.cfg`).
-- No ROM files are needed. SID and MOD files play in the SID player, not in the emulator.
+- No ROM files are needed, except for JiffyDOS (below). SID and MOD files play in the SID
+  player, not in the emulator.
+
+### JiffyDOS
+
+**Options > JiffyDOS: < On >** gives the C64 and its disk drive JiffyDOS, which loads several
+times faster from games that use the normal LOAD (many have their own fast loader, which
+stays as it is). PS64 doesn't include it (JiffyDOS is sold by Retro Innovations): copy your
+own ROM files into `/data/ps64/roms` (Mac: `~/Documents/PS64/roms`), named as you like, in
+folders if you like. The item appears once the ROMs are there, and the choice is saved.
+
+| ROM | For |
+| --- | --- |
+| C64 kernal (8 KB) | The C64: needed, with a drive ROM |
+| 1541-II (16 KB) | D64 and G64 disks |
+| 1581 (32 KB) | D81 disks |
+| 1571 (32 KB) | D71 disks |
+| CMD's SuperCPU ROM (64 KB or more) | The SuperCPU: it has JiffyDOS built in (VICE's own SuperCPU ROM hasn't), with a drive ROM |
+
+A drive without its JiffyDOS ROM runs the ordinary one. JiffyDOS is left out for tapes, PRG
+files and cartridge games, which don't load through the drive.
 
 ## VICE VIC20
 
@@ -197,7 +217,7 @@ useful keys include:
 | `stream-volume`, `emulator-volume`, `sid-volume` | Levels in dB (0 to -30; -12 to start) |
 | `home-music` | Home music volume, 0 (off) to 10 |
 | `search-roots` | Folders the Ultimate's search index covers |
-| `games-dir`, `vic20-dir`, `sids-dir`, `carts-dir` | Other folders for games, VIC-20 games, tunes, cartridges |
+| `games-dir`, `vic20-dir`, `sids-dir`, `carts-dir`, `roms-dir` | Other folders for games, VIC-20 games, tunes, cartridges, JiffyDOS ROMs |
 | `dpad`, `vic20-dpad` | `keys` makes the D-pad cursor keys in VICE C64 (and the stream) or VICE VIC20 |
 | `button-square` (etc.) | A C64 key for a shortcut button |
 | `usb-prefix` | Where USB drives are mounted (`none` turns them off) |

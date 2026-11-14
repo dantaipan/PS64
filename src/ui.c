@@ -215,7 +215,7 @@ int ui_menu_items(const ui_state *u, int *out)
                                     MI_INDEX, MI_ABOUT, MI_QUIT };
     static const int emulator[] = { MI_HOME, MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS,
                                     MI_RECENTS, MI_DISK, MI_RESET, MI_REBOOT, MI_CONTROLLER,
-                                    MI_CART, MI_SCPU, MI_REU, MI_AUDIO, MI_PORT, MI_INDEX,
+                                    MI_CART, MI_SCPU, MI_REU, MI_JIFFY, MI_AUDIO, MI_PORT, MI_INDEX,
                                     MI_ABOUT, MI_QUIT };
     const int *src = u->emulator ? emulator : ultimate;
     int n = u->emulator ? (int)(sizeof(emulator) / sizeof(emulator[0]))
@@ -231,6 +231,8 @@ int ui_menu_items(const ui_state *u, int *out)
             continue;
         if (src[i] == MI_SCPU && !u->scpu_available)
             continue;
+        if (src[i] == MI_JIFFY && (u->emulator != 1 || !u->jiffy_available))
+            continue;                   /* (no ROMs in the roms folder) */
         if (src[i] == MI_CART && u->emulator && u->supercpu)
             continue;                   /* (fast loaders don't work at 20 MHz) */
         out[count++] = src[i];
@@ -292,6 +294,9 @@ static ui_action input_menu(ui_state *u, int in)
         }
         case MI_SCPU:
             return act(UA_SUPERCPU);
+        case MI_JIFFY:
+            u->jiffydos = !u->jiffydos;
+            return act(UA_JIFFYDOS);
         case MI_REU: {
             int n_sizes = (int)(sizeof(ui_reu_sizes) / sizeof(ui_reu_sizes[0])), i = 0;
             while (i < n_sizes && ui_reu_sizes[i] != u->reu_kb)

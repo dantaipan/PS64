@@ -29,6 +29,7 @@
 #include "prompts_sdl.h"
 #include "localfs.h"
 #include "playlist.h"
+#include "roms.h"
 #include "osk_sdl.h"
 #include "settings.h"
 #include "shots.h"
@@ -121,6 +122,8 @@ typedef struct {
     const char *emu_cart;     /* emulator: the cartridge kept in (a file in carts_dir; "off" none) */
     const char *emu_supercpu; /* emulator: the C64 has a SuperCPU ("on"/"off") */
     const char *emu_reu;      /* emulator: the C64's REU in KB ("off" none) */
+    const char *roms_dir;     /* the emulator's JiffyDOS ROMs (default: "roms" next to the config) */
+    const char *emu_jiffydos; /* emulator: JiffyDOS on the C64, if its ROMs are there ("on"/"off") */
 } options;
 
 #if defined(__APPLE__) && !defined(PS64_NATIVE)
@@ -169,6 +172,7 @@ static void usage(const char *argv0)
         "          [--c64 emulator] [--games-dir DIR] [--usb-prefix PATH|none] [--dpad joystick|keys]\n"
         "          [--emu-load FILE] [--carts-dir DIR] [--emu-cartridge FILE.crt|off]\n"
         "          [--emu-supercpu on|off] [--emu-reu off|512|16384]\n"
+        "          [--roms-dir DIR] [--emu-jiffydos on|off]\n"
         "          [--home-music 0..10]\n"
         "\n"
         "--c64 (alias --start) streams from and controls that C64; --remote only controls it;\n"
@@ -255,6 +259,7 @@ static int parse_args(int argc, char **argv, options *o)
     o->carts_dir = NULL;
     o->emu_cart = NULL;
     o->emu_supercpu = o->emu_reu = NULL;
+    o->roms_dir = o->emu_jiffydos = NULL;
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
         const char *next = i + 1 < argc ? argv[i + 1] : NULL;
@@ -294,6 +299,8 @@ static int parse_args(int argc, char **argv, options *o)
         else if (!strcmp(a, "--emu-cartridge") && next) { o->emu_cart = next; i++; }
         else if (!strcmp(a, "--emu-supercpu") && next) { o->emu_supercpu = next; i++; }
         else if (!strcmp(a, "--emu-reu") && next)   { o->emu_reu = next; i++; }
+        else if (!strcmp(a, "--roms-dir") && next)  { o->roms_dir = next; i++; }
+        else if (!strcmp(a, "--emu-jiffydos") && next) { o->emu_jiffydos = next; i++; }
         else if (!strcmp(a, "--sid-output") && next) { o->sid_ultimate = !strcasecmp(next, "ultimate"); i++; }
         else if (!strcmp(a, "--browse-dir") && next) { o->browse_dir = next; i++; }
         else if (!strcmp(a, "--browse") && next)    { o->browse_path = next; i++; }
@@ -765,11 +772,29 @@ static char carts_dir[600] = "carts", emu_cart[128];
 static int emu_set_cart(const char *name);
 /* The C64's SuperCPU (on: it runs on the SuperCPU core, with the C64's games) and REU (KB). */
 static int emu_supercpu, emu_reu;
+static char roms_dir[600] = "roms";
+static int emu_jiffydos, jiffy_roms;        /* JiffyDOS wanted; the core shown has its ROMs */
 
 static void emu_tap(int key, int mods)       { emulator_key_tap(key, mods); }
 static void emu_joy(int port, unsigned bits) { emulator_joystick(port, bits); }
 static void emu_release(void)                { emulator_release_keys(); }
 static void emu_key(int key, int down)       { emulator_key(key, down); }
+
+/* The JiffyDOS ROMs from the roms folder, into core's system folder (where VICE looks), and
+ * JiffyDOS on there if it's wanted and they're there. */
+static void emu_jiffy_roms(int core)
+{
+    jiffy_roms = 0;
+#ifdef PS64_VIC20
+    if (core == EMU_VIC20)
+        return;
+#endif
+    char vice_dir[700];
+    snprintf(vice_dir, sizeof(vice_dir), "%s/system/vice", machine_emu[core]);
+    int found = roms_install(roms_dir, vice_dir);
+    jiffy_roms = roms_jiffydos(found, core == MACHINE_SCPU);
+    emulator_set_jiffydos(emu_jiffydos && jiffy_roms);
+}
 
 /* The core a machine runs on: the C64 with a SuperCPU has its own. */
 static int machine_core(int machine)
@@ -794,6 +819,7 @@ static int session_begin_emulator(session *s, const options *o, int machine)
     /* Started before (then left for the home screen): carry on where it was. */
     if (!emulator_running() && emu_cart[0] && core == EMU_C64)
         emu_set_cart(emu_cart);              /* (kept for the start; not on the SuperCPU) */
+    emu_jiffy_roms(core);
     if (emulator_running())
         emulator_joystick(o->joystick_port, 0);
     else if (emulator_start(emu_dir, o->joystick_port) != 0)
@@ -1538,6 +1564,11 @@ int main(int argc, char **argv)
     if (opt.carts_dir)
         snprintf(carts_dir, sizeof(carts_dir), "%s", opt.carts_dir);
     localfs_mkdirs(carts_dir);
+    next_to_config(config, "roms", roms_dir, sizeof(roms_dir));
+    if (opt.roms_dir)
+        snprintf(roms_dir, sizeof(roms_dir), "%s", opt.roms_dir);
+    localfs_mkdirs(roms_dir);
+    emu_jiffydos = opt.emu_jiffydos && !strcasecmp(opt.emu_jiffydos, "on");
     if (opt.emu_cart && strcasecmp(opt.emu_cart, "off"))
         snprintf(emu_cart, sizeof(emu_cart), "%s", opt.emu_cart);
 #ifdef PS64_SCPU
@@ -2232,6 +2263,18 @@ int main(int argc, char **argv)
                 controls_banner(&ctl, msg);
                 break;
             }
+            case UA_JIFFYDOS:
+                if (ses.emu != EMU_C64 + 1 || !jiffy_roms)
+                    break;
+                emu_jiffydos = !emu_jiffydos;
+                emulator_set_jiffydos(emu_jiffydos);
+                if (config)
+                    config_set(config, "emu-jiffydos", emu_jiffydos ? "on" : "off", NULL);
+                snprintf(msg, sizeof(msg), emu_jiffydos ? "JiffyDOS on - C64 restarted"
+                                                        : "JiffyDOS off - C64 restarted");
+                printf("emulator: %s\n", msg);
+                controls_banner(&ctl, msg);
+                break;
             case UA_REU:
                 if (ses.emu != EMU_C64 + 1)
                     break;
@@ -2597,6 +2640,8 @@ int main(int argc, char **argv)
 #endif
         ui.supercpu = emu_supercpu;
         ui.reu_kb = emu_reu;
+        ui.jiffy_available = ses.emu == EMU_C64 + 1 && jiffy_roms;
+        ui.jiffydos = emu_jiffydos;
         if (ses.emu && strcmp(ui.games_dir, games_dir))
             snprintf(ui.games_dir, sizeof(ui.games_dir), "%s", games_dir);
 #endif
@@ -2964,13 +3009,16 @@ int main(int argc, char **argv)
             }
         }
 
-        /* The menu opened: which cartridges there are (the C64 Ultimate's over FTP). */
+        /* The menu opened: which cartridges there are (the C64 Ultimate's over FTP), and
+         * JiffyDOS ROMs copied in meanwhile. */
         static int menu_was_open;
         if (ui.screen == UI_MENU && !menu_was_open) {
 #ifdef PS64_EMU
-            if (ses.emu)
+            if (ses.emu) {
                 emu_carts(&ui);
-            else
+                emu_jiffy_roms(emulator_machine());
+                ui.jiffy_available = ses.emu == EMU_C64 + 1 && jiffy_roms;
+            } else
 #endif
             if (ses.files) {
                 ui.carts_state = CARTS_LOADING;

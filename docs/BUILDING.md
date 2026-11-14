@@ -14,12 +14,16 @@ make          # builds ps64 and fake_sender (uses third_party/SDL2.framework)
 make test     # unit tests (and test_emulator when VICE is built)
 ```
 
+JiffyDOS can only be tested with real ROMs, which aren't in the repository: point
+`PS64_TEST_JIFFYDOS` at a folder of them (`PS64_TEST_JIFFYDOS=~/roms ./test_emulator`) and
+test_emulator also checks JiffyDOS starts and loads a long file several times faster.
+
 Fetch the third-party parts once (they aren't kept in the repository):
 
 | Script | What it gets |
 | --- | --- |
 | `tools/get_sdl2.sh` | The official SDL 2.30.9 macOS framework, into `third_party/` (required) |
-| `tools/get_vice.sh` | The VICE libretro cores (pinned commit), built into `third_party/vice`: the C64's (x64sc), the VIC-20's (xvic) and the SuperCPU's (xscpu64); the Makefile includes the emulator whenever they're there. It also patches VICE's autostart so it works with Epyx FastLoad in |
+| `tools/get_vice.sh` | The VICE libretro cores (pinned commit), built into `third_party/vice`: the C64's (x64sc), the VIC-20's (xvic) and the SuperCPU's (xscpu64); the Makefile includes the emulator whenever they're there. It also patches VICE's autostart so it works with Epyx FastLoad in, and its JiffyDOS set-up so a drive whose JiffyDOS ROM isn't there keeps the stock one |
 | `tools/get_sidplayfp.sh` | libsidplayfp + libresidfp for the SID player (Mac or PS5 build) |
 | `tools/get_songlengths.sh` | HVSC's `Songlengths.md5` (pinned by SHA-256) |
 
@@ -70,7 +74,8 @@ Every config key is also a command-line option (`--key value`); `./ps64 --help` 
   touching its streams (use it for tests, so a PS5's streams aren't redirected).
 - `--build-index` builds the search index, prints counts and timing, and exits.
 - Emulator: `--c64 emulator`, `--games-dir DIR`, `--emu-load /path/in/games`,
-  `--carts-dir DIR`, `--emu-cartridge FILE.crt|off`.
+  `--carts-dir DIR`, `--emu-cartridge FILE.crt|off`, `--emu-supercpu on|off`,
+  `--emu-reu off|512|16384`, `--roms-dir DIR`, `--emu-jiffydos on|off`.
 - SID player: `--sid FILE`, `--sid-song N`, `--sids-dir DIR`, `--songlengths FILE`,
   `--home-music 0..10`.
 

@@ -31,6 +31,7 @@ enum { MI_HOME, MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS, MI_RECENTS, MI
        MI_ABOUT,
        MI_CART,                         /* the cartridge kept in the port (e.g. a fast loader) */
        MI_SCPU, MI_REU,                 /* emulator, the C64: SuperCPU on/off, the REU's size */
+       MI_JIFFY,                        /* emulator, the C64: JiffyDOS on/off (with its ROMs) */
        MI_COUNT };
 
 enum { UA_NONE, UA_MUTE, UA_PORT, UA_QUIT, UA_CONNECT, UA_RESCAN,
@@ -57,7 +58,8 @@ enum { UA_NONE, UA_MUTE, UA_PORT, UA_QUIT, UA_CONNECT, UA_RESCAN,
        UA_HOME_MUSIC,    /* the home screen's music: level offset -1/+1, or 0 off <-> on */
        UA_HOME_NEXT,     /* home: another random tune */
        UA_SUPERCPU,      /* emulator: the C64 with a SuperCPU <-> without (it restarts) */
-       UA_REU };         /* emulator: the C64's REU, offset KB (0 none; it restarts) */
+       UA_REU,           /* emulator: the C64's REU, offset KB (0 none; it restarts) */
+       UA_JIFFYDOS };    /* emulator: JiffyDOS on <-> off (it restarts) */
 
 typedef struct {
     int  kind;
@@ -133,6 +135,7 @@ typedef struct {
     int emulator;                 /* a built-in emulator is the machine: 1 C64, 2 VIC-20 (set by main) */
     int scpu_available;           /* the build has the SuperCPU (set by main) */
     int supercpu, reu_kb;         /* the C64's SuperCPU is on; its REU in KB, 0 none (set by main) */
+    int jiffy_available, jiffydos;  /* the C64 has JiffyDOS ROMs; JiffyDOS is on (set by main) */
     int disk, disks;              /* emulator: inserted disk (0-based) of a swappable set */
     int joy_keys;                 /* emulator: D-pad/stick/Cross are cursor keys and RETURN */
     char games_dir[256];          /* emulator: the real folder behind "/" (shown when empty) */

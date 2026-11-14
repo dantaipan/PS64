@@ -120,6 +120,7 @@ typedef struct {
     struct retro_disk_control_callback disk_cb;
     int have_disk_cb;
     int reu_kb;                           /* the REU fitted (the SuperCPU's: see apply_reu) */
+    int jiffydos;                         /* JiffyDOS on (its ROMs are in system/vice) */
     char var_keys[MAX_VARS][48], var_vals[MAX_VARS][48];
     int nvars, vars_changed;
 } machine;
@@ -213,6 +214,17 @@ static void apply_reu(void)
         set_var("vice_ram_expansion_unit", v);
 }
 
+/* JiffyDOS on a C64 (the VIC-20 has none): VICE's ROMs swapped for the user's. The SuperCPU
+ * has it in its own ROM, CMD's (VICE's built-in one hasn't). The core restarts the C64. */
+static void apply_jiffydos(void)
+{
+    if (ON_VIC20)
+        return;
+    set_var("vice_jiffydos", cur->jiffydos ? "enabled" : "disabled");
+    if (ON_SCPU)
+        set_var("vice_supercpu_kernal", cur->jiffydos ? "2" : "0");
+}
+
 /* ---- libretro callbacks ------------------------------------------------------- */
 
 #ifdef PS64_NATIVE
@@ -288,6 +300,7 @@ static bool environment(unsigned cmd, void *data)
         else
             set_var("vice_joyport", cur->joy_port == 1 ? "1" : "2");   /* (the VIC-20 has one) */
         apply_reu();
+        apply_jiffydos();
         return true;
     case RETRO_ENVIRONMENT_GET_VARIABLE: {
         struct retro_variable *v = data;
@@ -718,6 +731,17 @@ void emulator_set_reu(int kb)
         apply_reu();                       /* (the core restarts the C64 with it) */
 }
 
+void emulator_set_jiffydos(int on)
+{
+    if (ON_VIC20 || cur->jiffydos == (on != 0))
+        return;                              /* (a C64 carried on with isn't restarted) */
+    cur->jiffydos = on != 0;
+    if (cur->running) {
+        apply_jiffydos();
+        emulator_reset(1);                   /* (the core takes ROMs only as it sets up again) */
+    }
+}
+
 void emulator_reset(int power_cycle)
 {
     if (!cur->running)
@@ -725,6 +749,12 @@ void emulator_reset(int power_cycle)
     emulator_release_keys();
     if (power_cycle) {
         cur->api->unload_game();                 /* detach disks, tapes and cartridges */
+        /* The core takes JiffyDOS (on, off, or back after a PRG or tape kept it off) only
+         * as it sets up for a load: a load of nothing, so it's there from BASIC. */
+        if (!ON_VIC20) {
+            cur->api->load_game(NULL);
+            cur->api->reload_restart();
+        }
         attach_cart();                       /* ...but the chosen cartridge stays in */
         if (ON_SCPU && reu_kb)
             scpu_reu();                          /* ...and the REU */

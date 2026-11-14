@@ -10,6 +10,7 @@
 #include "../src/emugames.h"
 #include "../src/emulator.h"
 #include "../src/localfs.h"
+#include "../src/roms.h"
 
 #include "libretro.h"
 
@@ -201,15 +202,15 @@ static void write_file(const char *path, const void *data, size_t len)
     fclose(f);
 }
 
-/* BASIC: 10 PRINT"<text>" as a PRG at $0801. */
-static size_t basic_print_at(const char *text, unsigned base, uint8_t *out)
+/* BASIC: line 10 (body tokenised already: "\x99" is PRINT) as a PRG at base. */
+static size_t basic_line_at(const char *body, unsigned base, uint8_t *out)
 {
-    uint8_t line[64];
+    uint8_t line[96];
     size_t n = 0;
-    line[n++] = 10; line[n++] = 0; line[n++] = 0x99; line[n++] = '"';
-    for (const char *p = text; *p; p++)
+    line[n++] = 10; line[n++] = 0;
+    for (const char *p = body; *p && n < sizeof(line) - 1; p++)
         line[n++] = (uint8_t)*p;
-    line[n++] = '"'; line[n++] = 0;
+    line[n++] = 0;
     unsigned next = base + 2 + (unsigned)n;
     size_t m = 0;
     out[m++] = base & 0xFF; out[m++] = base >> 8;
@@ -218,6 +219,14 @@ static size_t basic_print_at(const char *text, unsigned base, uint8_t *out)
     m += n;
     out[m++] = 0; out[m++] = 0;
     return m;
+}
+
+/* BASIC: 10 PRINT"<text>". */
+static size_t basic_print_at(const char *text, unsigned base, uint8_t *out)
+{
+    char body[80];
+    snprintf(body, sizeof(body), "\x99\"%s\"", text);
+    return basic_line_at(body, base, out);
 }
 
 static size_t basic_print(const char *text, uint8_t *out)
@@ -251,10 +260,51 @@ static void write_d64(const char *path, const char *disk_name, const uint8_t *pr
     de[0] = 0x82; de[1] = 1; de[2] = 0;
     memset(de + 3, 0xA0, 16);
     memcpy(de + 3, "GAME", 4);
-    de[28] = 1;
-    data[0] = 0; data[1] = (uint8_t)(len + 1);
-    memcpy(data + 2, prg, len);
+    /* The file from track 1 on (18 is the directory's), every 10th sector as the 1541
+     * writes them (so a fast loader isn't held up waiting for the disk to turn). */
+    static int ts[683][2];
+    int nts = 0, blocks = 0;
+    for (int t = 1; t <= 35; t++) {
+        int n = t <= 17 ? 21 : t <= 24 ? 19 : t <= 30 ? 18 : 17, step = n == 18 ? 11 : 10;
+        for (int i = 0; t != 18 && i < n; i++)
+            ts[nts][0] = t, ts[nts++][1] = i * step % n;
+    }
+    for (size_t at = 0; at < len; at += 254, blocks++) {
+        data = img + TS(ts[blocks][0], ts[blocks][1]);
+        size_t part = len - at < 254 ? len - at : 254;
+        data[0] = len - at > 254 ? (uint8_t)ts[blocks + 1][0] : 0;
+        data[1] = len - at > 254 ? (uint8_t)ts[blocks + 1][1] : (uint8_t)(part + 1);
+        memcpy(data + 2, prg + at, part);
+    }
+    de[28] = (uint8_t)blocks;
+    de[29] = (uint8_t)(blocks >> 8);
     write_file(path, img, sizeof(img));
+}
+
+/*
+ * Tenths of a second (by the C64's time-of-day clock, which runs on while the kernal holds
+ * interrupts off to load) to LOAD the file on a disk: its program prints the clock.
+ */
+static int load_tenths(const char *d64)
+{
+    char s[1200];
+    emulator_reset(1);
+    if (run_until("READY.", 600) < 0)
+        return -1;
+    emulator_insert_disk(d64);
+    run_until(NULL, 20);
+    type("POKE56331,0:POKE56330,0:POKE56329,0:POKE56328,0:LOAD\"GAME\",8\n");
+    if (run_until_another("READY.", 30000) < 0)
+        return -1;
+    type("RUN\n");
+    if (run_until("TB", 300) < 0)
+        return -1;
+    screen(s, sizeof(s));
+    int m, sec, t;
+    if (sscanf(strstr(s, "TB") + 2, "%d %d %d", &m, &sec, &t) != 3)
+        return -1;
+    #define BCD(x) (((x) >> 4) * 10 + ((x) & 15))
+    return BCD(m) * 600 + BCD(sec) * 10 + t;
 }
 
 int main(void)
@@ -293,7 +343,9 @@ int main(void)
     CHECK(strstr(s, " 14|") != NULL, "up+fire reads 14: %s", s);
     emulator_joystick(2, 0);
     emulator_key_tap(C64K_RUN_STOP, 0);
-    CHECK(run_until("BREAK", 100) > 0, "RUN/STOP breaks the program");
+    int broke = run_until("BREAK", 100);
+    screen(s, sizeof(s));
+    CHECK(broke > 0, "RUN/STOP breaks the program: %s", s);
 
     /* A PRG autostarts. */
     uint8_t prg[64];
@@ -406,6 +458,34 @@ int main(void)
     CHECK(run_until("A64 D2 OK", 4000) > 0, "cached Disk2 starts");
     a64_stop(net);
     files_set_emulator(0);
+
+    /* JiffyDOS, with real ROMs (they can't be in the repo): PS64_TEST_JIFFYDOS=<a folder of
+     * them>. Its start-up screen, and a long file loading several times faster. */
+    const char *jroms = getenv("PS64_TEST_JIFFYDOS");
+    if (jroms) {
+        char vice[700];
+        snprintf(vice, sizeof(vice), "%s/system/vice", dir);
+        int found = roms_install(jroms, vice);
+        CHECK(roms_jiffydos(found, 0), "JiffyDOS ROMs in %s: %#x", jroms, found);
+        static uint8_t big[2 + 100 * 254];           /* (100 blocks: the program, then 0s) */
+        basic_line_at("\x99\"TB\"\xc2(56330)\xc2(56329)\xc2(56328)", 0x0801, big);
+        snprintf(path, sizeof(path), "%s/big.d64", dir);
+        write_d64(path, "BIG", big, sizeof(big));
+        int stock = load_tenths(path);
+        emulator_set_jiffydos(1);
+        CHECK(run_until("JIFFYDOS", 600) > 0, "JiffyDOS's start-up screen");
+        type("PRINT 7*7\n");
+        CHECK(run_until(" 49", 300) > 0, "typed with JiffyDOS");
+        emulator_set_jiffydos(1);                    /* (as PS64 does going back to the C64) */
+        run_until(NULL, 100);
+        CHECK(count_of(" 49") == 1, "on again when it's on: not restarted");
+        int jiffy = load_tenths(path);
+        printf("100 blocks: %d.%d s, with JiffyDOS %d.%d s\n", stock / 10, stock % 10, jiffy / 10, jiffy % 10);
+        CHECK(jiffy > 0 && stock > 3 * jiffy, "JiffyDOS loads faster: %d vs %d tenths", jiffy, stock);
+        emulator_set_jiffydos(0);
+        CHECK(run_until_gone("JIFFYDOS", 600) > 0, "off again: the C64's own kernal");
+        CHECK(run_until("READY.", 600) > 0, "back to READY.");
+    }
 
 #ifdef PS64_VIC20
     /* The VIC-20 next to it: boots, types, starts a PRG, and the C64 waits where it was. */

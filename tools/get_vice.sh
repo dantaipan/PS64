@@ -41,6 +41,20 @@ if ! grep -q "PS64: a cartridge" "$DIR/vice/src/autostart.c"; then
     rm -f "$DIR"/vice_*.a                       # rebuild with it
 fi
 
+# JiffyDOS takes all its ROMs from system/vice, and a drive whose ROM isn't there doesn't
+# work at all; people often have only some (no 1571's), so a missing one is the stock ROM.
+if ! grep -q "PS64: a JiffyDOS ROM" "$DIR/retrodep/ui.c"; then
+    perl -0pi -e '
+        my %stock = ("1541-II" => "DRIVE_ROM1541II_NAME", "1571_repl310654" => "DRIVE_ROM1571_NAME",
+                     "1581" => "DRIVE_ROM1581_NAME", "C64" => "C64_KERNAL_REV3_NAME",
+                     "SX-64" => "C64_KERNAL_SX64_NAME", "C128" => "C128_KERNAL_NAME");
+        s/("JiffyDOS_([^"]+)\.bin"\);\n\s*log_resources_set_string\("\w+", )\(const char\*\)tmp_str\)/$1ps64_rom(tmp_str, $stock{$2}))/g;
+        s/(int ui_init_finalize\(void\)\n)/\/* PS64: a JiffyDOS ROM that isn\x27t there: the stock one. *\/\nstatic const char *ps64_rom(const char *path, const char *stock)\n{\n   return util_file_exists(path) ? path : stock;\n}\n\n$1/;
+    ' "$DIR/retrodep/ui.c"
+    [ "$(grep -c 'ps64_rom(' "$DIR/retrodep/ui.c")" -ge 7 ] || { echo "get_vice: JiffyDOS patch didn't apply" >&2; exit 1; }
+    rm -f "$DIR"/vice_*.a                       # rebuild with it
+fi
+
 # The SuperCPU core's names and keep list: the VIC-20's with scpu_ for vic20_ (one list to
 # keep up to date). Written into dir; ps5/Makefile uses them too.
 scpu_names() {   # (rewritten only when they change, so builds don't redo the core)

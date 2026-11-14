@@ -17,6 +17,7 @@
 #include "../src/osk.h"
 #include "../src/playlist.h"
 #include "../src/prompts.h"
+#include "../src/roms.h"
 #include "../src/settings.h"
 #include "../src/sidrandom.h"
 #include "../src/ui.h"
@@ -1222,12 +1223,16 @@ static void test_emulator_mode(void)
     u.supercpu = 1;
     ne = ui_menu_items(&u, items);
     CHECK(ne == 18 && items[11] == MI_SCPU && items[12] == MI_REU);
-    /* The VIC-20's menu: no Assembly64, cartridge, joystick port, SuperCPU or REU. */
+    /* JiffyDOS: after the REU, only with its ROMs in the roms folder. */
+    u.jiffy_available = 1;
+    ne = ui_menu_items(&u, items);
+    CHECK(ne == 19 && items[12] == MI_REU && items[13] == MI_JIFFY);
+    /* The VIC-20's menu: no Assembly64, cartridge, joystick port, SuperCPU, REU or JiffyDOS. */
     u.emulator = 2;
     int nv = ui_menu_items(&u, items), seen = 0;
     for (int i = 0; i < nv; i++)
         seen |= items[i] == MI_A64 || items[i] == MI_CART || items[i] == MI_PORT ||
-                items[i] == MI_SCPU || items[i] == MI_REU;
+                items[i] == MI_SCPU || items[i] == MI_REU || items[i] == MI_JIFFY;
     CHECK(nv == 14 && !seen);
     u.emulator = 1;
     ui_open_menu(&u);
@@ -1245,7 +1250,10 @@ static void test_emulator_mode(void)
     u.reu_kb = 256;                                              /* (set in ps64.cfg) */
     CHECK(ui_input(&u, IN_RIGHT).offset == 0);
     u.reu_kb = 0;
-    u.supercpu = u.scpu_available = 0;
+    u.sel = 13;                                                  /* JiffyDOS: a toggle */
+    CHECK(ui_input(&u, IN_RIGHT).kind == UA_JIFFYDOS && u.jiffydos == 1);
+    CHECK(ui_input(&u, IN_OK).kind == UA_JIFFYDOS && u.jiffydos == 0);
+    u.supercpu = u.scpu_available = u.jiffy_available = 0;
     u.emulator = 1;
     ui_open_menu(&u);
     u.sel = 7;
@@ -1918,8 +1926,69 @@ static void test_prompts(void)
     CHECK((c >> 24) > 200 && (c & 0xFF) > ((c >> 16) & 0xFF));
 }
 
+/* JiffyDOS ROMs: recognised by size and text whatever they're called, copied in under VICE's
+ * names, and taken out again when they go from the roms folder. */
+static void test_roms(void)
+{
+    static unsigned char k[0x2000], u64[0x2000], drive8k[0x2000], d41[0x4000], d81[0x8000],
+                         d71[0x8000], scpu[0x10000];
+    memcpy(k + 0x100, "JIFFYDOS V6.01 (C)1989 CMD", 26);
+    memcpy(k + 0x200, " BASIC BYTES FREE", 17);
+    memcpy(u64 + 0x100, "**** ULTIMATE 64  BASIC V2 **** BASIC BYTES FREE", 48);   /* (no JiffyDOS) */
+    memcpy(drive8k + 0x100, "JIFFYDOS 5.0 1541 BLOCKS FREE", 29);
+    memcpy(d41 + 0x100, "JIFFYDOS 6.0 154", 16);
+    d41[0x110] = '1' | 0x80;                                     /* (CBM: the last with bit 7) */
+    memcpy(d81 + 0x100, "(C) 1989 JIFFYDOS 6.0 1581", 26);
+    memcpy(d71 + 0x100, "JIFFYDOS 1571", 13);
+    memcpy(scpu + 0x100, "jiffydos", 8);
+    CHECK(roms_identify("Kernal JiffyDOS V6.01 (1989)(Creative Micro Designs).rom", k, sizeof(k)) == ROM_C64);
+    CHECK(roms_identify("kernal.bin", u64, sizeof(u64)) == 0);
+    CHECK(roms_identify("x.bin", drive8k, sizeof(drive8k)) == 0);  /* (a 1541, not a 1541-II) */
+    CHECK(roms_identify("x.bin", d41, sizeof(d41)) == ROM_1541);
+    CHECK(roms_identify("x.bin", d41, sizeof(d41) - 1) == 0);
+    CHECK(roms_identify("x.bin", d81, sizeof(d81)) == ROM_1581);
+    CHECK(roms_identify("x.bin", d71, sizeof(d71)) == ROM_1571);
+    CHECK(roms_identify("scpu-dos-2.04.bin", scpu, sizeof(scpu)) == ROM_SCPU);
+    CHECK(roms_identify("other.bin", scpu, sizeof(scpu)) == 0);
+    CHECK(roms_identify("x.bin", NULL, 0) == 0);
+
+    CHECK(roms_jiffydos(ROM_C64 | ROM_1541, 0) && roms_jiffydos(ROM_C64 | ROM_1581, 0));
+    CHECK(!roms_jiffydos(ROM_C64, 0) && !roms_jiffydos(ROM_1541 | ROM_1581, 0));
+    CHECK(!roms_jiffydos(ROM_C64 | ROM_1541, 1) && roms_jiffydos(ROM_SCPU, 1));
+
+    char dir[] = "/tmp/ps64-roms-XXXXXX", roms[600], vice[600], p[700];
+    CHECK(mkdtemp(dir) != NULL);
+    snprintf(roms, sizeof(roms), "%s/roms", dir);
+    snprintf(vice, sizeof(vice), "%s/system/vice", dir);
+    CHECK(roms_install(roms, vice) == 0);                         /* (no folder yet) */
+    snprintf(p, sizeof(p), "%s/My JiffyDOS.rom", roms);
+    localfs_write(p, k, sizeof(k));
+    snprintf(p, sizeof(p), "%s/kernal.bin", roms);
+    localfs_write(p, u64, sizeof(u64));
+    snprintf(p, sizeof(p), "%s/1541 kit/JiffyDOS_1541-II_6.00.bin", roms);   /* (in a folder) */
+    localfs_write(p, d41, sizeof(d41));
+    snprintf(p, sizeof(p), "%s/scpu-dos-2.04.bin", roms);
+    localfs_write(p, scpu, sizeof(scpu));
+    CHECK(roms_install(roms, vice) == (ROM_C64 | ROM_1541 | ROM_SCPU));
+    struct stat st;
+    snprintf(p, sizeof(p), "%s/JiffyDOS_C64.bin", vice);
+    CHECK(stat(p, &st) == 0 && st.st_size == sizeof(k));
+    snprintf(p, sizeof(p), "%s/JiffyDOS_1541-II.bin", vice);
+    CHECK(stat(p, &st) == 0 && st.st_size == sizeof(d41));
+    snprintf(p, sizeof(p), "%s/SCPU64/scpu-dos-2.04.bin", vice);
+    CHECK(stat(p, &st) == 0 && st.st_size == sizeof(scpu));
+    snprintf(p, sizeof(p), "%s/JiffyDOS_1581.bin", vice);
+    CHECK(stat(p, &st) != 0);
+    snprintf(p, sizeof(p), "%s/My JiffyDOS.rom", roms);
+    remove(p);
+    CHECK(roms_install(roms, vice) == (ROM_1541 | ROM_SCPU));
+    snprintf(p, sizeof(p), "%s/JiffyDOS_C64.bin", vice);
+    CHECK(stat(p, &st) != 0);                                    /* (gone from the roms folder) */
+}
+
 int main(void)
 {
+    test_roms();
     test_ftp_get();
     test_carts();
     test_vic20_keys();

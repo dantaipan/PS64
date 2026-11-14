@@ -79,6 +79,12 @@ int  emulator_set_cartridge(const char *path);
  * leaves it out while a cartridge game is loaded.
  */
 void emulator_set_reu(int kb);
+/*
+ * JiffyDOS on or off on the machine shown, if a C64 (plain or SuperCPU): its ROMs must be
+ * in <dir>/system/vice already (roms_install). Can be set before emulator_start; a running
+ * C64 is restarted with it. VICE leaves it out for tapes, PRGs and cartridge games.
+ */
+void emulator_set_jiffydos(int on);
 /* Reset (programs and cartridges stay), or switch off and on (everything detached). */
 void emulator_reset(int power_cycle);
 
