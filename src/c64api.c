@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -91,6 +92,10 @@ static int connect_to(const char *host, int port, int timeout_ms, int recv_timeo
     struct timeval tv = { recv_timeout_s, 0 };
     setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    /* Small requests go out at once: with Nagle a body sent after its headers waits for
+     * the C64 to ACK them, and its stack delays that ACK by up to 250 ms. */
+    int one = 1;
+    setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
     if (connect_timeout(s, &addr, timeout_ms) < 0) {
         close(s);
         return -1;
@@ -144,8 +149,23 @@ int c64api_request_alloc(const c64api *api, const char *method, const char *path
         api->client_id ? "\r\n" : "",
         content_type ? "Content-Type: " : "", content_type ? content_type : "",
         content_type ? "\r\n" : "", body_len);
-    if (n < 0 || (size_t)n >= sizeof(head) || send_all(s, head, (size_t)n) != 0 ||
-        (body_len && send_all(s, body, body_len) != 0)) {
+    if (n < 0 || (size_t)n >= sizeof(head)) {
+        close(s);
+        return -1;
+    }
+    /* Headers and a small body in one segment (one round trip for the C64 to answer). */
+    char one_buf[sizeof(head) + 4096];
+    int sent;
+    if (body_len && body_len <= sizeof(one_buf) - (size_t)n) {
+        memcpy(one_buf, head, (size_t)n);
+        memcpy(one_buf + n, body, body_len);
+        sent = send_all(s, one_buf, (size_t)n + body_len);
+    } else {
+        sent = send_all(s, head, (size_t)n);
+        if (sent == 0 && body_len)
+            sent = send_all(s, body, body_len);
+    }
+    if (sent != 0) {
         close(s);
         return -1;
     }

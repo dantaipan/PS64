@@ -384,6 +384,14 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
   answers `RETRO_DEVICE_MOUSE`, the joystick goes on libretro port 1 = C64 port 2).
   Quirk: the core's mapper also clicks the mouse's left button with port 2's fire (button
   B is both); fixing it would mean patching the core. No mouse on the VIC-20.
+- **Latency fix (2026-11-19):** the first PS5 test (H.E.R.O.) felt laggy and "moved several
+  times". `input-log = on` (ps64.log) showed clean press/release pairs, no resyncs, but
+  every POST with a body took 100-275 ms (mostly ~245) against ~20 ms for a GET: c64api
+  sent the headers and the body in two writes, and Nagle held the body until the C64's
+  lwIP ACKed the headers (delayed ACK, up to 250 ms). Now TCP_NODELAY, and headers plus
+  a body up to 4 KB go in one write. Affects every REST POST (input, config, uploads).
+- GEOS: L1 (the mouse's right button) moving the pointer up means GEOS is on its joystick
+  driver (a 1351's right button is the joystick-up line); pick the COMM 1351 input driver.
 - Tests: `test_input` has a fake Ultimate in three styles (1.1.0/1.2.0/1.2.1, menu, 429,
   pending); `test_emulator` reads port 1 fire, POT X and port 2 with the mouse in.
 
