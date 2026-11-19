@@ -358,9 +358,10 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
   `palette` parameter on `streams/video:start`. Live replies: GET `machine:input` has
   `"mouse" : { "attached" : false, "inputs" : [ ], "pending" : 0 }`; `menu_screen` with the
   menu closed gives 404 `{ "errors" : [ "Menu screen unavailable." ] }`.
-- The firmware update reset the C64's settings. Afterwards it was on Ethernet by DHCP at
-  192.168.2.183 (MAC 02:15:41:5F:35:38), and 192.168.2.64 didn't answer. Streams leave by the
-  wired port only.
+- The firmware update reset the C64's settings. Its Ethernet (MAC 02:15:41:5F:35:38) came up
+  by DHCP at 192.168.2.183 until the user set the static address again: a new static IP
+  needs a power cycle to take effect. Back at 192.168.2.64 since 2026-11-19. Streams leave
+  by the wired port only.
 - `machine:input`: ≤64 events, body <4096 bytes, validated whole (400 changes nothing).
   Keyboard press/release/tap (1-8 names; `restore` tap only, alone); joystick port 1|2 incl.
   fire2/fire3; `release_all` (also unplugs the mouse); a reset clears REST input. Mouse
