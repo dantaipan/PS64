@@ -27,3 +27,4 @@ __pycache__/
 
 # Mac app disk images (tools/make_dmg.sh)
 dist/
+/sid-cache/
