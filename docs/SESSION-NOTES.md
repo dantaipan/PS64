@@ -419,10 +419,12 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
 
 ## Open items
 
-- **1.2.1 network control (for 1.0.7):** API checked against upstream (identical). Next, with
-  the user's OK, test on the Mac with `--remote`: held keys, RESTORE,
-  menu control, mouse in GEOS/C64 OS (right stick, R1/L1, captured Mac mouse, wheel), then
-  PS64 Dev on the PS5.
+- **1.2.1 network control (for 1.0.7): done and tested** by the user on PS64 Dev on the PS5
+  (2026-11-19): RESTORE, Ultimate menu control, H.E.R.O. with the joystick (after the
+  Nagle fix), the mouse in GEOS (COMM 1351 driver). Input timings then: median 20 ms, joystick
+  max 32 ms, no failed POSTs. Ready to release when the user says. Optional later: even out
+  mouse steps (they alternate ~7/13 counts: 60 Hz adding up, ~45 sends/s), a PS64 mouse-speed
+  option, the VICE port 2 fire/left-button quirk.
 
 - **Next:** install PS64 Dev when the PS5 is on (the SID player's C64 Ultimate list and the
   D-pad icon colours are built but not yet on the PS5), then the user tests the C64 Ultimate

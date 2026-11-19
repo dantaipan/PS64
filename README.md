@@ -66,7 +66,9 @@ are held down while you hold the button (on a C64 Ultimate, with firmware 1.2.0 
 other mouse software, on the VICE C64 and on a C64 Ultimate with firmware 1.2.1 or newer. The
 right stick moves it, R1 and L1 are its buttons, and the joystick moves to port 2 meanwhile.
 On the Mac, click the picture to use the Mac's own mouse (Esc or Cmd lets go). On the VICE
-C64, the joystick's fire also clicks the mouse's left button.
+C64, the joystick's fire also clicks the mouse's left button. In GEOS, choose the COMM 1351
+input driver (geos menu > select input): on its joystick driver the pointer only moves up,
+with the right button.
 
 **The menu (Options)**: Home, Resume, browse and search files, Search Assembly64, Favourites,
 Recents, Disk (multi-disk games), Reset C64, Reboot / Switch off and on, D-pad mode (emulators),
