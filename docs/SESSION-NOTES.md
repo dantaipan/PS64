@@ -352,8 +352,15 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
   (2026-11-07) added the mouse. The routes are Gideon's upstream ones (1541ultimate master,
   `doc/api/rest_api_openapi_u64.yaml`, `software/api/route_input.cc`); c64cast confirms 1.2.1
   ships the upstream mouse. The device serves its own spec at `GET /openapi.yaml` and
-  `/api.html`: **still to compare against upstream on the user's C64 (it was off on
-  2026-11-19)**.
+  `/api.html`. **Checked on the user's C64 (1.2.1, git 31687dbd, FPGA 126, core 1.50) on
+  2026-11-19:** the input, mouse and menu paths and schemas are identical to upstream master,
+  and so are its 47 routes. Upstream is slightly newer: it has stream docs and an optional
+  `palette` parameter on `streams/video:start`. Live replies: GET `machine:input` has
+  `"mouse" : { "attached" : false, "inputs" : [ ], "pending" : 0 }`; `menu_screen` with the
+  menu closed gives 404 `{ "errors" : [ "Menu screen unavailable." ] }`.
+- The firmware update reset the C64's settings. Afterwards it was on Ethernet by DHCP at
+  192.168.2.183 (MAC 02:15:41:5F:35:38), and 192.168.2.64 didn't answer. Streams leave by the
+  wired port only.
 - `machine:input`: ≤64 events, body <4096 bytes, validated whole (400 changes nothing).
   Keyboard press/release/tap (1-8 names; `restore` tap only, alone); joystick port 1|2 incl.
   fire2/fire3; `release_all` (also unplugs the mouse); a reset clears REST input. Mouse
@@ -403,8 +410,8 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
 
 ## Open items
 
-- **1.2.1 network control (for 1.0.7):** with the C64 on, compare its `/openapi.yaml` with
-  upstream, then (with the user's OK) test on the Mac with `--remote`: held keys, RESTORE,
+- **1.2.1 network control (for 1.0.7):** API checked against upstream (identical). Next, with
+  the user's OK, test on the Mac with `--remote`: held keys, RESTORE,
   menu control, mouse in GEOS/C64 OS (right stick, R1/L1, captured Mac mouse, wheel), then
   PS64 Dev on the PS5.
 
