@@ -82,6 +82,10 @@ void remote_mouse_buttons(remote *r, unsigned bits);
 /* Wheel detents (+ away from the user). */
 void remote_mouse_wheel(remote *r, int detents);
 
+/* Print each batch sent to a C64 Ultimate, with its HTTP status and time (to stdout: the
+ * log on the PS5). Failures are printed either way. */
+void remote_trace(int on);
+
 /* Pops one status message for the UI (e.g. "RESTORE needs newer firmware"). */
 int remote_take_message(remote *r, char *out, size_t cap);
 

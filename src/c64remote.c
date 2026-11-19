@@ -367,6 +367,10 @@ static int menu_button(remote *r)
     return c64api_request(&r->api, "PUT", "/v1/machine:menu_button", NULL, NULL, 0, NULL, 0, NULL);
 }
 
+static volatile int trace;
+
+void remote_trace(int on) { trace = on; }
+
 /* POST the events; *pending gets mouse.pending from the reply (-1 if none). */
 static int post_events(remote *r, const remote_event *ev, int n, int *pending)
 {
@@ -377,9 +381,13 @@ static int post_events(remote *r, const remote_event *ev, int n, int *pending)
         *pending = -1;
     if (!len)
         return -1;
+    uint32_t t0 = now_ms();
     int status = c64api_request(&r->api, "POST", "/v1/machine:input", "application/json",
                                 body, len, reply, sizeof(reply) - 1, &got);
     reply[got] = 0;
+    if (trace || status != 200)
+        printf("input: %u HTTP %d in %u ms: %.*s\n", (unsigned)t0, status,
+               (unsigned)(now_ms() - t0), (int)len, body);
     if (pending && status == 200)
         *pending = remote_parse_pending(reply);
     return status;
@@ -500,6 +508,8 @@ static void input_step(remote *r, wstate *w, int *retry_ms)
     wstate before = *w;
     int resync = w->need_resync;
     if (resync) {
+        if (trace)
+            printf("input: %u release_all and press held keys again\n", (unsigned)now);
         memset(&ev[n++], 0, sizeof(ev[0]));
         ev[0].kind = EV_RELEASE_ALL;
         memset(&w->joy, 0, sizeof(w->joy));
@@ -619,6 +629,8 @@ static int poll_menu(remote *r)
                                 b, sizeof(b), &got);
     if (status == 404 && got == 0)
         return 0;                   /* (the router's empty 404: firmware 1.1.0) */
+    if (trace && (status == 200) != r->menu_open)
+        printf("input: %u menu_screen HTTP %d\n", (unsigned)now_ms(), status);
     if (status == 200 || status == 404) {
         pthread_mutex_lock(&r->lock);
         r->menu_open = status == 200;
@@ -853,6 +865,8 @@ void remote_joystick(remote *r, int port, unsigned bits)
     }
     pthread_mutex_lock(&r->lock);
     if (r->joy_port != port || r->joy_wanted != bits) {
+        if (trace)
+            printf("input: %u wanted port %d bits %02x\n", (unsigned)now_ms(), port, bits);
         r->joy_port = port;
         r->joy_wanted = bits;
         pthread_cond_signal(&r->wake);

@@ -166,7 +166,8 @@ static void usage(const char *argv0)
         "          [--stream-volume DB] [--emulator-volume DB] [--no-home] [--home-sel N]\n"
         "          [--sid FILE] [--sid-song N] [--sids-dir DIR] [--songlengths FILE]\n"
         "          [--sid-volume DB] [--sid-output ps64|ultimate]\n"
-        "          [--joystick-port 1|2] [--mouse on|off] [--button-NAME KEY] [--type TEXT]\n"
+        "          [--joystick-port 1|2] [--mouse on|off] [--input-log on|off]\n"
+        "          [--button-NAME KEY] [--type TEXT]\n"
         "          [--browse-dir DIR]\n"
         "          [--search-roots /SD,/USB0] [--build-index] [--search TEXT]\n"
         "          [--assembly64-url URL] [--a64-search TEXT]\n"
@@ -280,6 +281,7 @@ static int parse_args(int argc, char **argv, options *o)
         else if (!strcmp(a, "--dpad") && next)      { o->dpad_keys = !strcasecmp(next, "keys"); i++; }
         else if (!strcmp(a, "--vic20-dpad") && next) { o->vic20_dpad_keys = !strcasecmp(next, "keys"); i++; }
         else if (!strcmp(a, "--mouse") && next)     { o->mouse = !strcasecmp(next, "on"); i++; }
+        else if (!strcmp(a, "--input-log") && next) { remote_trace(!strcasecmp(next, "on")); i++; }
         else if (!strcmp(a, "--pick"))              { o->pick = 1; }
         else if (!strcmp(a, "--no-home"))           { o->no_home = 1; }
         else if (!strcmp(a, "--home-sel") && next)  { o->home_sel = atoi(next); i++; }
