@@ -264,6 +264,7 @@ static int restart_and_wait(c64files *f, const char *route)
     int status = c64api_request(&f->api, "PUT", route, NULL, NULL, 0, NULL, 0, NULL);
     if (status < 200 || status >= 300)
         return status;
+    remote_resync(f->rem);          /* (a reset lets go of what the input command held) */
     for (int tries = 0; tries < 50; tries++) {
         sleep_ms(200);
         unsigned char screen[1000];
@@ -313,6 +314,14 @@ static int post_data(c64files *f, const char *route, const unsigned char *data, 
 }
 
 /* Actions on a file sent along with the request (e.g. an Assembly64 download). */
+/* Runners and resets restart the C64, which lets go of what the input command held. */
+static void resync_after(c64files *f, int action)
+{
+    if (action == FA_RUN || action == FA_LOAD || action == FA_RUN_CRT || action == FA_PLAY ||
+        action == FA_RESET || action == FA_REBOOT)
+        remote_resync(f->rem);
+}
+
 static int do_data_action(c64files *f, const char *name, const unsigned char *data, size_t len,
                           int action, int song, char *msg, size_t cap)
 {
@@ -367,6 +376,7 @@ static int do_data_action(c64files *f, const char *name, const unsigned char *da
                  status);
         return -1;
     }
+    resync_after(f, action);
     snprintf(msg, cap, "%s %s", action == FA_MOUNT_RUN ? "Loading" :
              action == FA_PLAY ? "Playing" : action == FA_MOUNT_A || action == FA_MOUNT_B ? "Mounted"
              : "Started", name);
@@ -477,6 +487,7 @@ static int do_action(c64files *f, const char *path, int action, char *msg, size_
                  status);
         return -1;
     }
+    resync_after(f, action);
     return 0;
 }
 
@@ -533,6 +544,7 @@ static int set_cart(c64files *f, const char *name, char *msg, size_t cap)
         snprintf(msg, cap, status < 0 ? "Can't reach the C64" : "The C64 refused that (HTTP %d)", status);
         return -1;
     }
+    remote_resync(f->rem);
     if (name[0])
         snprintf(msg, cap, "Cartridge %s in - C64 restarted", name);
     else

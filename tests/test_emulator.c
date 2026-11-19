@@ -347,6 +347,44 @@ int main(void)
     screen(s, sizeof(s));
     CHECK(broke > 0, "RUN/STOP breaks the program: %s", s);
 
+    /* A 1351 mouse in port 1: its left button is port 1's fire, its motion SID's POT X;
+     * the joystick moves to port 2 beside it and still works. */
+    /* (typed in parts: the tap queue holds 64; a tap takes 7 frames) */
+    const char *const mouse_prg[] = { "NEW\n10 POKE830,PEEK(56321)AND31:", "POKE831,PEEK(54297):",
+                                      "POKE832,PEEK(56320)AND31:GOTO10\n" };
+    for (size_t i = 0; i < sizeof(mouse_prg) / sizeof(mouse_prg[0]); i++) {
+        type(mouse_prg[i]);
+        run_until(NULL, 7 * (int)strlen(mouse_prg[i]) + 10);
+    }
+    uint8_t *ram = ram_of();
+    ram[832] = 0xff;
+    type("RUN\n");
+    emulator_mouse(1);
+    for (int f = 0; f < 200 && ram[832] == 0xff; f++)
+        run_until(NULL, 1);
+    run_until(NULL, 30);
+    int pot = ram[831];
+    CHECK(ram[830] == 31 && ram[832] == 31, "mouse idle: port 1 %d, port 2 %d", ram[830], ram[832]);
+    emulator_mouse_buttons(MOUSE_LEFT);
+    run_until(NULL, 20);
+    CHECK(ram[830] == 15, "left button is port 1's fire: %d", ram[830]);
+    emulator_mouse_buttons(0);
+    for (int f = 0; f < 10; f++) {
+        emulator_mouse_move(3, 0);
+        run_until(NULL, 1);
+    }
+    run_until(NULL, 10);
+    CHECK(ram[831] != pot, "moving it changes POT X (%d -> %d)", pot, ram[831]);
+    emulator_joystick(2, JOY_UP | JOY_FIRE);
+    run_until(NULL, 20);
+    /* (VICE's libretro core also clicks the mouse's left button with the other port's fire:
+     * its mapper takes button B as both) */
+    CHECK(ram[832] == 14, "joystick on port 2 beside the mouse: %d", ram[832]);
+    emulator_joystick(2, 0);
+    emulator_mouse(0);
+    emulator_key_tap(C64K_RUN_STOP, 0);
+    CHECK(run_until("BREAK", 100) > 0, "the mouse program stops");
+
     /* A PRG autostarts. */
     uint8_t prg[64];
     size_t n = basic_print("PRG OK", prg);

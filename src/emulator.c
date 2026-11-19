@@ -144,6 +144,10 @@ static machine *cur = &machines[EMU_C64];  /* the one shown, and the one the cal
 static uint32_t frame[EMULATOR_MAX_W * EMULATOR_MAX_H];
 static int frame_w, frame_h, have_frame;
 static unsigned joy_bits;
+/* The 1351 mouse in port 1 (VICE's "Mouse (1351)" port type on its port 1; the joystick
+ * then on the other port, libretro's port 1). Motion adds up between frames. */
+static int mouse_on, mouse_dx, mouse_dy, frame_dx, frame_dy;
+static unsigned mouse_bits;
 static int reu_kb;                        /* the C64s' REU, 0 none */
 static void attach_cart(void);
 
@@ -396,12 +400,30 @@ static void audio_sample(int16_t l, int16_t r)
     audio_batch(s, 1);
 }
 
-static void input_poll(void) {}
+/* Once a frame, before the core reads its input: this frame's mouse motion. */
+static void input_poll(void)
+{
+    frame_dx = mouse_dx;
+    frame_dy = mouse_dy;
+    mouse_dx = mouse_dy = 0;
+}
 
 static int16_t input_state(unsigned port, unsigned device, unsigned index, unsigned id)
 {
     (void)index;
-    if (port != 0 || device != RETRO_DEVICE_JOYPAD)
+    if (mouse_on && port == 0 && device == RETRO_DEVICE_MOUSE) {
+        switch (id) {
+        case RETRO_DEVICE_ID_MOUSE_X:      return (int16_t)frame_dx;
+        case RETRO_DEVICE_ID_MOUSE_Y:      return (int16_t)frame_dy;
+        case RETRO_DEVICE_ID_MOUSE_LEFT:   return (mouse_bits & MOUSE_LEFT) != 0;
+        case RETRO_DEVICE_ID_MOUSE_RIGHT:  return (mouse_bits & MOUSE_RIGHT) != 0;
+        case RETRO_DEVICE_ID_MOUSE_MIDDLE: return (mouse_bits & MOUSE_MIDDLE) != 0;
+        }
+        return 0;
+    }
+    /* The joystick: libretro's port 0, or its port 1 (the other C64 port) while the mouse
+     * has port 0 (its D-pad would move the mouse). */
+    if (port != (mouse_on ? 1u : 0u) || device != RETRO_DEVICE_JOYPAD)
         return 0;
     unsigned mask = 0;
     if (joy_bits & JOY_UP)    mask |= 1u << RETRO_DEVICE_ID_JOYPAD_UP;
@@ -497,6 +519,7 @@ void emulator_release_keys(void)
 {
     ntaps = tap_step = 0;
     joy_bits = 0;
+    mouse_bits = 0;
     if (cur->running) {
         cur->api->keyboard_clear_keymatrix();
         cur->api->machine_set_restore_key(0);
@@ -507,9 +530,39 @@ void emulator_joystick(int port, unsigned bits)
 {
     if (!ON_VIC20 && port != cur->joy_port && (port == 1 || port == 2)) {
         cur->joy_port = port;
-        set_var("vice_joyport", port == 1 ? "1" : "2");
+        if (!mouse_on)              /* (the mouse keeps VICE's port 1; the joystick is on 2) */
+            set_var("vice_joyport", port == 1 ? "1" : "2");
     }
     joy_bits = bits;
+}
+
+void emulator_mouse(int on)
+{
+    on = on && !ON_VIC20;
+    if (mouse_on == on)
+        return;
+    mouse_on = on;
+    mouse_dx = mouse_dy = frame_dx = frame_dy = 0;
+    mouse_bits = 0;
+    set_var("vice_joyport_type", on ? "3" : "1");
+    set_var("vice_joyport", on || cur->joy_port == 1 ? "1" : "2");
+}
+
+void emulator_mouse_move(int dx, int dy)
+{
+    if (!mouse_on)
+        return;
+    mouse_dx += dx;
+    mouse_dy += dy;
+    if (mouse_dx > 32000) mouse_dx = 32000;
+    if (mouse_dx < -32000) mouse_dx = -32000;
+    if (mouse_dy > 32000) mouse_dy = 32000;
+    if (mouse_dy < -32000) mouse_dy = -32000;
+}
+
+void emulator_mouse_buttons(unsigned bits)
+{
+    mouse_bits = mouse_on ? bits : 0;
 }
 
 /* ---- lifecycle ------------------------------------------------------------------- */
@@ -588,6 +641,7 @@ int emulator_start(const char *dir, int joystick_port)
         return -1;
     }
     cur->api->set_controller_port_device(0, RETRO_DEVICE_JOYPAD);
+    cur->api->set_controller_port_device(1, RETRO_DEVICE_JOYPAD);   /* (the joystick beside a mouse) */
     cur->api->get_system_av_info(&cur->av);
     /* The core finishes setting up in its first frame; loading before that
      * would set it up a second time (and crash). */

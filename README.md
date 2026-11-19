@@ -54,27 +54,36 @@ Cross starts the one in the middle. **Options > Home** goes back there from a ma
 | Touchpad click | On-screen keyboard (every key, with Shift / C= / CTRL) |
 | L3 | File browser |
 | R3 | The Ultimate's own menu |
+| Right stick, R1 / L1 | The mouse and its left / right buttons (when **Mouse** is on) |
 | Options | PS64's menu |
 
 **On-screen keyboard**: D-pad moves, Cross types, Circle closes, Square DEL, Triangle SPACE,
 R2 RETURN, L1 Shift (twice locks), R1 C=, L2 CTRL. Keys show what they'll type with the
-current modifiers. The shortcut buttons can be changed (`button-square = f2`, etc.).
+current modifiers. The shortcut buttons can be changed (`button-square = f2`, etc.). Their keys
+are held down while you hold the button (on a C64 Ultimate, with firmware 1.2.0 or newer).
+
+**Mouse** (Options > Mouse, Cmd+U on the Mac): a 1351 mouse in port 1, for GEOS, C64 OS and
+other mouse software, on the VICE C64 and on a C64 Ultimate with firmware 1.2.1 or newer. The
+right stick moves it, R1 and L1 are its buttons, and the joystick moves to port 2 meanwhile.
+On the Mac, click the picture to use the Mac's own mouse (Esc or Cmd lets go). On the VICE
+C64, the joystick's fire also clicks the mouse's left button.
 
 **The menu (Options)**: Home, Resume, browse and search files, Search Assembly64, Favourites,
 Recents, Disk (multi-disk games), Reset C64, Reboot / Switch off and on, D-pad mode (emulators),
 Cartridge, SuperCPU, REU and JiffyDOS (VICE C64), Audio level (Left/Right; Cross mutes), Joystick port,
-Update search index, About, Quit. On screens with lists, the hint line at the bottom shows the buttons.
+Mouse, Update search index, About, Quit. On screens with lists, the hint line at the bottom shows the buttons.
 
 **On the Mac**, any SDL-supported controller works, and so does the keyboard on its own:
 
 - **Typing**: in a machine the Mac keyboard is the C64's. Keys are held as you hold them in
-  the built-in machines (so they work in games); on a C64 Ultimate they're typed into its
-  keyboard buffer. Esc is RUN/STOP, Option is C=, Control is CTRL, PgUp (fn+Up) is RESTORE,
+  the built-in machines and on a C64 Ultimate with firmware 1.2.0 or newer (so they work in
+  games); on older firmware they're typed into its keyboard buffer. Esc is RUN/STOP, Option is C=, Control is CTRL, PgUp (fn+Up) is RESTORE,
   Home (fn+Left) is CLR/HOME, F1-F8 the C64's function keys (fn+F1... on a laptop keyboard).
 - **Joystick**: **Cmd+J** turns the arrows into the joystick, with Space or Right Shift as
   fire (other keys still type); Cmd+J again for typing. Starting a game turns it on.
 - **PS64's keys**: **Cmd+O** menu (on the home screen: Settings), **Cmd+B** file browser,
-  **Cmd+K** on-screen keyboard, **Cmd+F** fullscreen, **Cmd+M** mute, **Cmd+Q** quit. In PS64's
+  **Cmd+K** on-screen keyboard, **Cmd+U** mouse, **Cmd+F** fullscreen, **Cmd+M** mute,
+  **Cmd+Q** quit. In PS64's
   screens: arrows, Return, Esc, Space, PgUp/PgDn, Tab, F (favourite) and L.
 - With no controller connected, the hints show these keys instead of controller buttons.
 
@@ -99,10 +108,13 @@ It remembers the C64 you chose.
   while it builds. **Update search index** refreshes it.
 - **Reset C64** restarts it (a running cartridge restarts too); **Reboot C64** also clears
   the cartridge.
-- **Typing**: on the C64 Ultimate's firmware 1.1.0, keys go into the C64's keyboard buffer.
-  That works in BASIC, loaders and most menus, but not in games that read the keyboard
-  directly, and there's no joystick. Real key presses and the joystick come with firmware
-  that has the Ultimate's input command; PS64 uses it automatically when it's there.
+- **Keys and joystick**: with firmware 1.2.0 or newer, PS64 sends real key presses (held as
+  long as you hold them), the joystick and RESTORE; 1.2.1 adds the mouse. PS64 finds out what
+  the firmware can do when it connects. On firmware 1.1.0, keys go into the C64's keyboard
+  buffer, which works in BASIC, loaders and most menus but not in games that read the
+  keyboard directly, and there's no joystick.
+- **The Ultimate's menu** (R3): with firmware 1.2.0 or newer, PS64 notices when it's open,
+  and the D-pad moves through it, Cross selects and Circle goes back.
 
 ## VICE C64: the built-in emulator
 

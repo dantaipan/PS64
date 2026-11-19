@@ -30,6 +30,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -97,12 +98,24 @@ static void test_json(void)
     CHECK(n == strlen(want) && !strcmp(out, want));
     CHECK(remote_events_json(out, 20, ev, 3) == 0);             /* doesn't fit */
 
-    /* The largest batch the sender builds stays inside the 4096-byte limit:
-     * release_all + REMOTE_MAX_KEY_EVENTS worst-case keys + two joystick events. */
-    remote_event many[REMOTE_MAX_KEY_EVENTS + 3];
+    /* The largest batch the sender builds stays inside the 4096-byte limit: release_all,
+     * two events of keys pressed again, REMOTE_MAX_KEY_EVENTS worst-case keys, two joystick
+     * events, and the mouse's buttons, a move and the wheel. */
+    remote_event many[REMOTE_MAX_KEY_EVENTS + 16];
     int nm = 0;
     memset(many, 0, sizeof(many));
     many[nm++].kind = EV_RELEASE_ALL;
+    for (int i = 0; i < 2; i++, nm++) {                 /* the keys still held, pressed again */
+        many[nm].kind = EV_KEYBOARD; many[nm].transition = TR_PRESS; many[nm].count = 8;
+        for (int j = 0; j < 8; j++)
+            many[nm].names[j] = "cursor_left_right";
+    }
+    many[nm].kind = EV_MOUSE; many[nm].transition = TR_RELEASE; many[nm].count = 3;
+    many[nm].names[0] = "left"; many[nm].names[1] = "right"; many[nm].names[2] = "middle"; nm++;
+    many[nm].kind = EV_MOUSE; many[nm].transition = TR_PRESS; many[nm].count = 3;
+    many[nm].names[0] = "left"; many[nm].names[1] = "right"; many[nm].names[2] = "middle"; nm++;
+    many[nm].kind = EV_MOUSE_MOVE; many[nm].x = -127; many[nm].y = -127; nm++;
+    many[nm].kind = EV_MOUSE_WHEEL; many[nm].y = -64; nm++;
     for (int i = 0; i < REMOTE_MAX_KEY_EVENTS; i++, nm++) {
         many[nm].kind = EV_KEYBOARD; many[nm].transition = TR_TAP;
         many[nm].count = 4;
@@ -1203,7 +1216,7 @@ static void test_emulator_mode(void)
     ui_setup(&u);
     int items[MI_COUNT];
     int nu = ui_menu_items(&u, items);
-    CHECK(nu == 15 && items[nu - 1] == MI_QUIT && items[nu - 2] == MI_ABOUT);
+    CHECK(nu == 16 && items[nu - 1] == MI_QUIT && items[nu - 2] == MI_ABOUT && items[nu - 4] == MI_MOUSE);
     u.emulator = 1;
     int ne = ui_menu_items(&u, items);
     int has_disk = 0, has_ctl = 0;
@@ -1211,28 +1224,30 @@ static void test_emulator_mode(void)
         has_disk |= items[i] == MI_DISK;
         has_ctl |= items[i] == MI_CONTROLLER;
     }
-    CHECK(ne == 17 && !has_disk && has_ctl && items[ne - 2] == MI_ABOUT);
+    CHECK(ne == 18 && !has_disk && has_ctl && items[ne - 2] == MI_ABOUT && items[ne - 4] == MI_MOUSE);
     u.disks = 2;
     ne = ui_menu_items(&u, items);
-    CHECK(ne == 18 && items[0] == MI_HOME && items[7] == MI_DISK && items[11] == MI_CART &&
+    CHECK(ne == 19 && items[0] == MI_HOME && items[7] == MI_DISK && items[11] == MI_CART &&
           items[12] == MI_REU);                                  /* (no SuperCPU in this build) */
     /* A build with the SuperCPU: its item after the cartridge's; with it on, no cartridge. */
     u.scpu_available = 1;
     ne = ui_menu_items(&u, items);
-    CHECK(ne == 19 && items[11] == MI_CART && items[12] == MI_SCPU && items[13] == MI_REU);
+    CHECK(ne == 20 && items[11] == MI_CART && items[12] == MI_SCPU && items[13] == MI_REU);
     u.supercpu = 1;
     ne = ui_menu_items(&u, items);
-    CHECK(ne == 18 && items[11] == MI_SCPU && items[12] == MI_REU);
+    CHECK(ne == 19 && items[11] == MI_SCPU && items[12] == MI_REU);
     /* JiffyDOS: after the REU, only with its ROMs in the roms folder. */
     u.jiffy_available = 1;
     ne = ui_menu_items(&u, items);
-    CHECK(ne == 19 && items[12] == MI_REU && items[13] == MI_JIFFY);
-    /* The VIC-20's menu: no Assembly64, cartridge, joystick port, SuperCPU, REU or JiffyDOS. */
+    CHECK(ne == 20 && items[12] == MI_REU && items[13] == MI_JIFFY);
+    /* The VIC-20's menu: no Assembly64, cartridge, joystick port, SuperCPU, REU, JiffyDOS or
+     * mouse. */
     u.emulator = 2;
     int nv = ui_menu_items(&u, items), seen = 0;
     for (int i = 0; i < nv; i++)
         seen |= items[i] == MI_A64 || items[i] == MI_CART || items[i] == MI_PORT ||
-                items[i] == MI_SCPU || items[i] == MI_REU || items[i] == MI_JIFFY;
+                items[i] == MI_SCPU || items[i] == MI_REU || items[i] == MI_JIFFY ||
+                items[i] == MI_MOUSE;
     CHECK(nv == 14 && !seen);
     u.emulator = 1;
     ui_open_menu(&u);
@@ -1722,14 +1737,14 @@ static void sink_key(int key, int down) { if (down) sink_downs++; else sink_ups+
 
 static void test_mac_keyboard(void)
 {
-    remote_sink held = { sink_tap, sink_joy, sink_release, sink_key };
+    remote_sink held = { sink_tap, sink_joy, sink_release, sink_key, NULL, NULL, NULL };
     remote *r = remote_start_local(&held);
     CHECK(remote_local(r));
     remote_key(r, C64K_SPACE, 1);
     remote_key(r, C64K_SPACE, 0);
     CHECK(sink_downs == 1 && sink_ups == 1 && sink_taps == 0 && sink_last == C64K_SPACE);
     remote_stop(r);
-    remote_sink taps_only = { sink_tap, sink_joy, sink_release, NULL };
+    remote_sink taps_only = { sink_tap, sink_joy, sink_release, NULL, NULL, NULL, NULL };
     r = remote_start_local(&taps_only);
     remote_key(r, C64K_RETURN, 1);
     remote_key(r, C64K_RETURN, 0);
@@ -1986,8 +2001,354 @@ static void test_roms(void)
     CHECK(stat(p, &st) != 0);                                    /* (gone from the roms folder) */
 }
 
+/* Firmware 1.2.x input: held keys, the mouse and its reports, as pure planning. */
+static void test_remote_helpers(void)
+{
+    /* Mouse events as the firmware takes them. */
+    remote_event ev[8];
+    memset(ev, 0, sizeof(ev));
+    ev[0].kind = EV_MOUSE; ev[0].transition = TR_PRESS; ev[0].count = 1; ev[0].names[0] = "left";
+    ev[1].kind = EV_MOUSE_MOVE; ev[1].x = -5; ev[1].y = 127;
+    ev[2].kind = EV_MOUSE_WHEEL; ev[2].y = -2;
+    char out[512];
+    remote_events_json(out, sizeof(out), ev, 3);
+    CHECK(!strcmp(out, "{\"events\":[{\"kind\":\"mouse\",\"inputs\":[\"left\"],\"transition\":\"press\"},"
+                       "{\"kind\":\"mouse\",\"move\":{\"x\":-5,\"y\":127}},"
+                       "{\"kind\":\"mouse\",\"wheel\":{\"vertical\":-2}}]}"));
+
+    /* Buttons: pressed at once, let go after the minimum hold. */
+    joy_track m;
+    memset(&m, 0, sizeof(m));
+    CHECK(mouse_plan(&m, MOUSE_LEFT, 1000, ev) == 1 && ev[0].kind == EV_MOUSE &&
+          ev[0].transition == TR_PRESS && !strcmp(ev[0].names[0], "left"));
+    CHECK(mouse_plan(&m, 0, 1030, ev) == 0 && m.sent == MOUSE_LEFT);
+    CHECK(mouse_plan(&m, MOUSE_RIGHT, 1060, ev) == 2 && ev[0].transition == TR_RELEASE &&
+          !strcmp(ev[1].names[0], "right"));
+
+    /* Motion: at most 127 counts per report, the rest kept. */
+    int dx = 300, dy = -10;
+    CHECK(mouse_motion(&dx, &dy, ev) == 1 && ev[0].x == 127 && ev[0].y == -10 && dx == 173 && dy == 0);
+    CHECK(mouse_motion(&dx, &dy, ev) == 1 && ev[0].x == 127 && dx == 46);
+    CHECK(mouse_motion(&dx, &dy, ev) == 1 && ev[0].x == 46 && dx == 0);
+    CHECK(mouse_motion(&dx, &dy, ev) == 0);
+
+    /* Replies: the queue length, and whether there's a mouse at all. */
+    const char *v121 = "{ \"keyboard\" : { \"inputs\" : [ ] }, \"mouse\" : { \"attached\" : true, "
+                       "\"inputs\" : [ \"left\" ], \"pending\" : 7 }, \"errors\" : [ ] }";
+    const char *v120 = "{\"keyboard\":{\"inputs\":[]},\"joysticks\":[{\"port\":1,\"inputs\":[]}],\"errors\":[]}";
+    CHECK(remote_parse_pending(v121) == 7 && remote_reply_has_mouse(v121));
+    CHECK(remote_parse_pending(v120) == -1 && !remote_reply_has_mouse(v120));
+    CHECK(remote_parse_pending(NULL) == -1 && !remote_reply_has_mouse("{\"mouse\":null}"));
+
+    /* Held keys: a press goes at once, its release waits out the minimum hold. */
+    key_track t;
+    memset(&t, 0, sizeof(t));
+    remote_keytap q[8] = {
+        { C64K_SPACE, 0, TR_PRESS }, { C64K_SPACE, 0, TR_RELEASE },
+    };
+    int taken, wait;
+    int n = keys_plan(&t, q, 2, 1000, ev, 24, &taken, &wait);
+    CHECK(n == 1 && taken == 1 && wait == 60 && ev[0].transition == TR_PRESS &&
+          !strcmp(ev[0].names[0], "space") && (t.held >> C64K_SPACE) & 1);
+    n = keys_plan(&t, q + 1, 1, 1040, ev, 24, &taken, &wait);
+    CHECK(n == 0 && taken == 0 && wait == 20);
+    n = keys_plan(&t, q + 1, 1, 1060, ev, 24, &taken, &wait);
+    CHECK(n == 1 && taken == 1 && ev[0].transition == TR_RELEASE && t.held == 0);
+
+    /* A tap with SHIFT while SHIFT is held: just the key. Pressing a held key does nothing. */
+    remote_keytap q2[] = { { C64K_LSHIFT, 0, TR_PRESS }, { 10 /* a */, C64MOD_SHIFT, TR_TAP },
+                           { C64K_LSHIFT, 0, TR_PRESS } };
+    memset(&t, 0, sizeof(t));
+    n = keys_plan(&t, q2, 3, 2000, ev, 24, &taken, &wait);
+    CHECK(n == 2 && taken == 3 && ev[1].transition == TR_TAP && ev[1].count == 1 &&
+          !strcmp(ev[1].names[0], "a"));
+
+    /* The same key twice waits for the next request; RESTORE goes alone. */
+    remote_keytap q3[] = { { 10, 0, TR_TAP }, { 10, 0, TR_TAP }, { C64K_RESTORE, 0, TR_TAP } };
+    memset(&t, 0, sizeof(t));
+    CHECK(keys_plan(&t, q3, 3, 0, ev, 24, &taken, &wait) == 1 && taken == 1);
+    CHECK(keys_plan(&t, q3 + 1, 2, 0, ev, 24, &taken, &wait) == 1 && taken == 1);
+    CHECK(keys_plan(&t, q3 + 2, 1, 0, ev, 24, &taken, &wait) == 1 && taken == 1 &&
+          !strcmp(ev[0].names[0], "restore") && ev[0].transition == TR_TAP);
+    remote_keytap q4[] = { { C64K_RESTORE, 0, TR_PRESS }, { C64K_RESTORE, 0, TR_RELEASE } };
+    CHECK(keys_plan(&t, q4, 2, 0, ev, 24, &taken, &wait) == 1 && taken == 1 &&
+          ev[0].transition == TR_TAP);                  /* (RESTORE is only ever tapped) */
+    CHECK(keys_plan(&t, q4 + 1, 1, 0, ev, 24, &taken, &wait) == 0 && taken == 1);
+
+    /* After a release_all, everything still held is pressed again. */
+    memset(&t, 0, sizeof(t));
+    t.held = (1ull << C64K_SPACE) | (1ull << C64K_LSHIFT);
+    CHECK(keys_repress(&t, ev, 2) == 1 && ev[0].transition == TR_PRESS && ev[0].count == 2);
+    memset(&t, 0, sizeof(t));
+    CHECK(keys_repress(&t, ev, 2) == 0);
+}
+
+/* The built-in emulator's mouse: straight to its callbacks; the VIC-20 has none. */
+static int sink_mouse_on, sink_mouse_dx;
+static unsigned sink_mouse_bits;
+static void sink_menable(int on) { sink_mouse_on = on; }
+static void sink_mmove(int dx, int dy) { (void)dy; sink_mouse_dx += dx; }
+static void sink_mbuttons(unsigned bits) { sink_mouse_bits = bits; }
+
+static void test_local_mouse(void)
+{
+    remote_sink with = { sink_tap, sink_joy, sink_release, sink_key, sink_menable, sink_mmove, sink_mbuttons };
+    remote *r = remote_start_local(&with);
+    CHECK(remote_has_mouse(r) && !remote_menu_open(r) && remote_holds_keys(r));
+    remote_mouse_move(r, 5, 0);
+    CHECK(sink_mouse_dx == 0);                          /* (not plugged in yet) */
+    remote_mouse_enable(r, 1);
+    remote_mouse_move(r, 5, 0);
+    remote_mouse_buttons(r, MOUSE_LEFT);
+    CHECK(sink_mouse_on == 1 && sink_mouse_dx == 5 && sink_mouse_bits == MOUSE_LEFT);
+    remote_stop(r);                                     /* (unplugs it) */
+    CHECK(sink_mouse_on == 0);
+    remote_sink without = { sink_tap, sink_joy, sink_release, sink_key, NULL, NULL, NULL };
+    r = remote_start_local(&without);
+    CHECK(!remote_has_mouse(r));
+    remote_stop(r);
+}
+
+/* A C64 Ultimate's input routes, as firmware 1.1.0 (none), 1.2.0 (keys, joystick, menu
+ * screen) or 1.2.1 (and the mouse) answers them. */
+typedef struct {
+    int fd;
+    volatile int stop;
+    int style;                          /* 0: 1.1.0, 1: 1.2.0, 2: 1.2.1 */
+    volatile int menu_open, refuse_mouse, pending;
+    volatile int menu_polls, posts;
+    pthread_mutex_t lock;
+    char log[65536];
+    size_t log_len;
+} fake_ult;
+
+static void *fake_ult_run(void *arg)
+{
+    fake_ult *f = arg;
+    while (!f->stop) {
+        fd_set rd;
+        FD_ZERO(&rd);
+        FD_SET(f->fd, &rd);
+        struct timeval tv = { 0, 20000 };
+        if (select(f->fd + 1, &rd, NULL, NULL, &tv) <= 0)
+            continue;
+        int c = accept(f->fd, NULL, NULL);
+        if (c < 0)
+            continue;
+        char req[8192];
+        size_t n = 0;
+        char *body = NULL;
+        long want = 0;
+        for (;;) {
+            ssize_t r = recv(c, req + n, sizeof(req) - 1 - n, 0);
+            if (r <= 0)
+                break;
+            n += (size_t)r;
+            req[n] = 0;
+            if (!body && (body = strstr(req, "\r\n\r\n")) != NULL) {
+                body += 4;
+                const char *cl = strstr(req, "Content-Length:");
+                want = cl ? atol(cl + 15) : 0;
+            }
+            if (body && (long)(req + n - body) >= want)
+                break;
+        }
+        char method[8] = "", path[256] = "";
+        sscanf(req, "%7s %255s", method, path);
+        char head[256], payload[2100];
+        int status = 200;
+        size_t plen = 0;
+        const char *type = "application/json";
+        int is_input = !strcmp(path, "/v1/machine:input");
+        int is_menu = !strcmp(path, "/v1/machine:menu_screen");
+        if ((is_input || is_menu) && f->style == 0) {
+            status = 404;                               /* (the router's own: no body) */
+        } else if (is_menu) {
+            f->menu_polls++;
+            if (f->menu_open) {
+                memset(payload, 0x20, 2000);
+                plen = 2000;
+                type = "application/octet-stream";
+            } else {
+                status = 404;
+                plen = (size_t)snprintf(payload, sizeof(payload), "{ \"errors\" : [ \"Menu screen unavailable.\" ] }");
+            }
+        } else if (is_input) {
+            if (!strcmp(method, "POST")) {
+                f->posts++;
+                pthread_mutex_lock(&f->lock);
+                f->log_len += (size_t)snprintf(f->log + f->log_len, sizeof(f->log) - f->log_len, "%s\n",
+                                               body ? body : "");
+                pthread_mutex_unlock(&f->lock);
+                if (f->refuse_mouse && body && strstr(body, "\"move\"")) {
+                    f->refuse_mouse--;
+                    status = 429;
+                }
+            }
+            if (status == 429)
+                plen = (size_t)snprintf(payload, sizeof(payload), "{ \"errors\" : [ \"queue full\" ] }");
+            else if (f->style == 2)
+                plen = (size_t)snprintf(payload, sizeof(payload),
+                                        "{ \"keyboard\" : { \"inputs\" : [ ] }, \"joysticks\" : [ ], "
+                                        "\"mouse\" : { \"attached\" : false, \"inputs\" : [ ], \"pending\" : %d }, "
+                                        "\"errors\" : [ ] }", f->pending);
+            else
+                plen = (size_t)snprintf(payload, sizeof(payload),
+                                        "{ \"keyboard\" : { \"inputs\" : [ ] }, \"joysticks\" : [ ], \"errors\" : [ ] }");
+        } else {
+            plen = (size_t)snprintf(payload, sizeof(payload), "{ \"errors\" : [ ] }");
+        }
+        int hl = snprintf(head, sizeof(head), "HTTP/1.1 %d X\r\nContent-Type: %s\r\nContent-Length: %zu\r\n"
+                          "Connection: close\r\n\r\n", status, type, plen);
+        send(c, head, (size_t)hl, 0);
+        if (plen)
+            send(c, payload, plen, 0);
+        close(c);
+    }
+    return NULL;
+}
+
+static int fake_ult_start(fake_ult *f, int style, pthread_t *t)
+{
+    memset(f, 0, sizeof(*f));
+    f->style = style;
+    pthread_mutex_init(&f->lock, NULL);
+    f->fd = socket(AF_INET, SOCK_STREAM, 0);
+    int one = 1;
+    setsockopt(f->fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    /* (any address: macOS lets anyone listen on port 80 only that way) */
+    struct sockaddr_in a = { .sin_family = AF_INET, .sin_port = htons(80) };
+    if (bind(f->fd, (struct sockaddr *)&a, sizeof(a)) != 0 || listen(f->fd, 16) != 0) {
+        close(f->fd);
+        return -1;
+    }
+    pthread_create(t, NULL, fake_ult_run, f);
+    return 0;
+}
+
+static void fake_ult_stop(fake_ult *f, pthread_t t)
+{
+    f->stop = 1;
+    pthread_join(t, NULL);
+    close(f->fd);
+    pthread_mutex_destroy(&f->lock);
+}
+
+static int wait_for(remote *r, int (*cond)(remote *), int ms)
+{
+    for (int i = 0; i < ms / 10; i++) {
+        if (cond(r))
+            return 1;
+        usleep(10000);
+    }
+    return cond(r);
+}
+static int is_input_mode(remote *r) { return remote_mode(r) == REMOTE_INPUT; }
+static int is_buffer_mode(remote *r) { return remote_mode(r) == REMOTE_BUFFER; }
+static int menu_is_open(remote *r) { return remote_menu_open(r); }
+static int menu_is_closed(remote *r) { return !remote_menu_open(r); }
+
+/* The x counts of every mouse move in a log, added up. */
+static int moved_x(fake_ult *f)
+{
+    int sum = 0;
+    pthread_mutex_lock(&f->lock);
+    for (const char *p = strstr(f->log, "\"move\":{\"x\":"); p; p = strstr(p + 1, "\"move\":{\"x\":"))
+        sum += atoi(p + 12);
+    pthread_mutex_unlock(&f->lock);
+    return sum;
+}
+
+static int log_has(fake_ult *f, const char *text)
+{
+    pthread_mutex_lock(&f->lock);
+    int has = strstr(f->log, text) != NULL;
+    pthread_mutex_unlock(&f->lock);
+    return has;
+}
+
+static void test_remote_firmware(void)
+{
+    fake_ult f;
+    pthread_t t;
+    if (fake_ult_start(&f, 2, &t) != 0) {
+        printf("(firmware input not tested: can't listen on port 80)\n");
+        return;
+    }
+    /* 1.2.1: keys held as long as they're held, the menu noticed, the mouse. */
+    remote *r = remote_start("127.0.0.1", NULL);
+    CHECK(wait_for(r, is_input_mode, 2000) && remote_has_mouse(r) && remote_holds_keys(r));
+    remote_key(r, C64K_SPACE, 1);
+    usleep(150000);
+    CHECK(log_has(&f, "{\"kind\":\"keyboard\",\"inputs\":[\"space\"],\"transition\":\"press\"}") &&
+          !log_has(&f, "\"inputs\":[\"space\"],\"transition\":\"release\""));
+    remote_key(r, C64K_SPACE, 0);
+    usleep(150000);
+    CHECK(log_has(&f, "{\"kind\":\"keyboard\",\"inputs\":[\"space\"],\"transition\":\"release\"}"));
+
+    f.menu_open = 1;
+    CHECK(wait_for(r, menu_is_open, 2500));
+    f.menu_open = 0;
+    remote_menu_button(r);                              /* (then it asks more often) */
+    CHECK(wait_for(r, menu_is_closed, 1000));
+
+    remote_mouse_move(r, 50, 0);                        /* (not plugged in: dropped) */
+    remote_mouse_enable(r, 1);
+    f.refuse_mouse = 1;                                 /* the first report bounces (429) */
+    remote_mouse_move(r, 300, 0);
+    for (int i = 0; i < 100 && moved_x(&f) < 127 + 300; i++)
+        usleep(10000);
+    printf("mouse: %d counts posted\n", moved_x(&f));
+    CHECK(moved_x(&f) == 127 + 300);                    /* (the refused report, then all 300) */
+    /* A long queue at the C64: motion waits until it's had time to send it. */
+    pthread_mutex_lock(&f.lock);
+    f.log_len = 0;
+    f.log[0] = 0;
+    pthread_mutex_unlock(&f.lock);
+    f.pending = 40;                                     /* (0.8 s of reports) */
+    remote_mouse_move(r, 300, 0);
+    usleep(300000);
+    CHECK(moved_x(&f) == 127);
+    f.pending = 0;
+    for (int i = 0; i < 200 && moved_x(&f) < 300; i++)
+        usleep(10000);
+    CHECK(moved_x(&f) == 300);
+    remote_mouse_buttons(r, MOUSE_LEFT);
+    usleep(150000);
+    CHECK(log_has(&f, "{\"kind\":\"mouse\",\"inputs\":[\"left\"],\"transition\":\"press\"}"));
+    pthread_mutex_lock(&f.lock);
+    f.log_len = 0;
+    f.log[0] = 0;
+    pthread_mutex_unlock(&f.lock);
+    remote_mouse_enable(r, 0);                          /* unplugged: release_all */
+    usleep(150000);
+    CHECK(log_has(&f, "{\"kind\":\"release_all\"}"));
+    remote_stop(r);
+    fake_ult_stop(&f, t);
+
+    /* 1.2.0: keys and joystick, no mouse. */
+    if (fake_ult_start(&f, 1, &t) == 0) {
+        r = remote_start("127.0.0.1", NULL);
+        CHECK(wait_for(r, is_input_mode, 2000) && !remote_has_mouse(r));
+        remote_stop(r);
+        fake_ult_stop(&f, t);
+    }
+    /* 1.1.0: the typing buffer, no menu screen (asked once, then not again). */
+    if (fake_ult_start(&f, 0, &t) == 0) {
+        r = remote_start("127.0.0.1", NULL);
+        CHECK(wait_for(r, is_buffer_mode, 2000) && !remote_has_mouse(r) && !remote_holds_keys(r));
+        usleep(300000);
+        CHECK(f.menu_polls == 0 && !remote_menu_open(r));
+        remote_stop(r);
+        fake_ult_stop(&f, t);
+    }
+}
+
 int main(void)
 {
+    test_remote_helpers();
+    test_local_mouse();
+    test_remote_firmware();
     test_roms();
     test_ftp_get();
     test_carts();

@@ -49,10 +49,11 @@ Features, in the order they were built:
 
 | Controller | Action |
 | --- | --- |
-| D-pad / left stick | Cursor keys (joystick only on firmware with the REST input command) |
-| Cross | RETURN (fire on firmware with the input command) |
-| Square / Triangle / Circle | SPACE / RETURN / RUN/STOP (configurable `button-*`) |
-| L1 / R1 / L2 / R2 | F1 / F3 / F5 / F7 |
+| D-pad / left stick | Cursor keys (joystick only on firmware with the REST input command); cursor keys while the Ultimate menu is open |
+| Cross | RETURN (fire on firmware with the input command; RETURN in the Ultimate menu) |
+| Square / Triangle / Circle | SPACE / RETURN / RUN/STOP (configurable `button-*`; held while held where keys can be; Circle is RUN/STOP in the Ultimate menu) |
+| L1 / R1 / L2 / R2 | F1 / F3 / F5 / F7 (mouse on: R1 / L1 are its left / right buttons) |
+| Right stick | The mouse (Options > Mouse, Cmd+U on the Mac) |
 | Touchpad | On-screen keyboard |
 | L3 | File browser (L2 there: search; Triangle in lists: favourite) |
 | R3 | Ultimate menu button |
@@ -65,8 +66,9 @@ Features, in the order they were built:
   loaders and menus, **not in games** (they scan the CIA keyboard matrix directly). RUN/STOP
   can't break a running program; RESTORE isn't possible. PETSCII codes come from the C64's own
   KERNAL tables (`$EB81/$EBC2/$EC03/$EC78`), verified against the device.
-- **`POST /v1/machine:input`** (Ultimate firmware 3.15+) gives real keys and joystick; it returns
-  404 on C64 Ultimate 1.1.0. PS64 probes it at start and switches automatically when available.
+- **`POST /v1/machine:input`** (Ultimate firmware 3.15+, **C64 Ultimate 1.2.0+**) gives real keys
+  and joystick; it returns 404 on C64 Ultimate 1.1.0. PS64 probes it at start and switches
+  automatically when available. See "C64 Ultimate firmware 1.2.x" below.
 - **Joystick hack via CIA `$DC00` writes was built and then removed at the user's request**
   (keyboard control only; don't reintroduce it).
 - **Stream names are `video` and `audio`** (not `vic`); `ip=<addr>:<port>` is accepted.
@@ -344,6 +346,39 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
   rolling dark band every 6-9 s), redrawn at 25 fps only while the TV is in view.
 - Notes: `docs/release-notes/01.000.005.md`. Release only when the user says so.
 
+## C64 Ultimate firmware 1.2.x network control (built 2026-11-19, for 1.0.7)
+
+- Firmware 1.2.0 (2026-09-10) added keyboard/joystick input and the menu snapshot; 1.2.1
+  (2026-11-07) added the mouse. The routes are Gideon's upstream ones (1541ultimate master,
+  `doc/api/rest_api_openapi_u64.yaml`, `software/api/route_input.cc`); c64cast confirms 1.2.1
+  ships the upstream mouse. The device serves its own spec at `GET /openapi.yaml` and
+  `/api.html`: **still to compare against upstream on the user's C64 (it was off on
+  2026-11-19)**.
+- `machine:input`: ≤64 events, body <4096 bytes, validated whole (400 changes nothing).
+  Keyboard press/release/tap (1-8 names; `restore` tap only, alone); joystick port 1|2 incl.
+  fire2/fire3; `release_all` (also unplugs the mouse); a reset clears REST input. Mouse
+  (port 1): buttons left/right/middle (a tap holds 40 ms), `move` {x,y} ±127, `wheel`
+  {vertical,horizontal} ±64, `path` (≤256 steps). The firmware sends one report per 20 ms
+  from a 1024-report queue; replies carry `mouse.pending`; too many give 429. The GET reply
+  has a `mouse` object only on firmware with the mouse (PS64's detection).
+- `GET /v1/machine:menu_screen`: 2000 bytes (screen codes + colours) while the menu is open,
+  404 with a JSON body when closed, the router's empty 404 on 1.1.0. PS64 polls it (1 s;
+  250 ms for 3 s after R3) only to know whether the menu is open.
+- PS64 (`src/c64remote.c`): key queue entries carry a transition; `keys_plan` holds keys
+  (releases wait out 60 ms, taps skip modifiers already held), `remote_resync` sends
+  release_all and presses again what's held (after PS64's resets, runners, reboots).
+  Mouse motion goes one `move` per pass while `pending` ≤ 2 (estimated down 1 per 20 ms; a
+  GET when unknown, e.g. after a 429). Controls: bound buttons held while held; Ultimate
+  menu open = D-pad cursor keys, Cross RETURN, Circle RUN/STOP, no joystick; mouse =
+  right stick (dead zone 7000, 20-400 counts/s), R1/L1 buttons, the Mac's mouse captured
+  by a click (Esc/Cmd lets go), joystick moved to port 2 while it's in. Setting `mouse`.
+- Emulator: VICE's own 1351 (`vice_joyport_type` 3 on `vice_joyport` 1; libretro port 0
+  answers `RETRO_DEVICE_MOUSE`, the joystick goes on libretro port 1 = C64 port 2).
+  Quirk: the core's mapper also clicks the mouse's left button with port 2's fire (button
+  B is both); fixing it would mean patching the core. No mouse on the VIC-20.
+- Tests: `test_input` has a fake Ultimate in three styles (1.1.0/1.2.0/1.2.1, menu, 429,
+  pending); `test_emulator` reads port 1 fire, POT X and port 2 with the mouse in.
+
 ## Diagnosing native crashes
 
 - ShadowMountPlus writes RIP/backtrace to `/data/shadowmount/debug.log`, but only in an app's
@@ -367,6 +402,11 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
   that changes its state.
 
 ## Open items
+
+- **1.2.1 network control (for 1.0.7):** with the C64 on, compare its `/openapi.yaml` with
+  upstream, then (with the user's OK) test on the Mac with `--remote`: held keys, RESTORE,
+  menu control, mouse in GEOS/C64 OS (right stick, R1/L1, captured Mac mouse, wheel), then
+  PS64 Dev on the PS5.
 
 - **Next:** install PS64 Dev when the PS5 is on (the SID player's C64 Ultimate list and the
   D-pad icon colours are built but not yet on the PS5), then the user tests the C64 Ultimate

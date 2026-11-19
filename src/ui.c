@@ -212,11 +212,11 @@ int ui_menu_items(const ui_state *u, int *out)
 {
     static const int ultimate[] = { MI_HOME, MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS,
                                     MI_RECENTS, MI_RESET, MI_REBOOT, MI_CART, MI_AUDIO, MI_PORT,
-                                    MI_INDEX, MI_ABOUT, MI_QUIT };
+                                    MI_MOUSE, MI_INDEX, MI_ABOUT, MI_QUIT };
     static const int emulator[] = { MI_HOME, MI_RESUME, MI_BROWSE, MI_SEARCH, MI_A64, MI_FAVS,
                                     MI_RECENTS, MI_DISK, MI_RESET, MI_REBOOT, MI_CONTROLLER,
-                                    MI_CART, MI_SCPU, MI_REU, MI_JIFFY, MI_AUDIO, MI_PORT, MI_INDEX,
-                                    MI_ABOUT, MI_QUIT };
+                                    MI_CART, MI_SCPU, MI_REU, MI_JIFFY, MI_AUDIO, MI_PORT, MI_MOUSE,
+                                    MI_INDEX, MI_ABOUT, MI_QUIT };
     const int *src = u->emulator ? emulator : ultimate;
     int n = u->emulator ? (int)(sizeof(emulator) / sizeof(emulator[0]))
                         : (int)(sizeof(ultimate) / sizeof(ultimate[0]));
@@ -225,9 +225,9 @@ int ui_menu_items(const ui_state *u, int *out)
         if (src[i] == MI_DISK && u->disks <= 1)
             continue;
         /* The VIC-20: no Assembly64 software, no C64 cartridges, one joystick port, no
-         * SuperCPU or REU. */
+         * SuperCPU, REU or mouse. */
         if (u->emulator == 2 && (src[i] == MI_A64 || src[i] == MI_CART || src[i] == MI_PORT ||
-                                 src[i] == MI_SCPU || src[i] == MI_REU))
+                                 src[i] == MI_SCPU || src[i] == MI_REU || src[i] == MI_MOUSE))
             continue;
         if (src[i] == MI_SCPU && !u->scpu_available)
             continue;
@@ -278,6 +278,7 @@ static ui_action input_menu(ui_state *u, int in)
             return a;
         case MI_PORT:  return act(UA_PORT);
         case MI_CONTROLLER: return act(UA_CONTROLLER);
+        case MI_MOUSE: return act(UA_MOUSE);
         case MI_CART: {
             if (u->carts_state != CARTS_READY || !u->ncarts)
                 return none();

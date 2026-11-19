@@ -94,8 +94,13 @@ void emulator_key(int key, int down);
 void emulator_key_tap(int key, int mods);
 /* Release all keys and the joystick, drop queued taps. */
 void emulator_release_keys(void);
-/* JOY_* bits on port 1 or 2. */
+/* JOY_* bits on port 1 or 2 (port 2 while the mouse is in). */
 void emulator_joystick(int port, unsigned bits);
+/* A 1351 mouse in port 1 (the C64s; not the VIC-20), moved by counts (+y down) and its
+ * MOUSE_* buttons. */
+void emulator_mouse(int on);
+void emulator_mouse_move(int dx, int dy);
+void emulator_mouse_buttons(unsigned bits);
 
 /* Disk swapping, for disks loaded from an .m3u list. */
 int  emulator_disk_count(void);

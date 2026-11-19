@@ -113,6 +113,7 @@ static void draw_menu(SDL_Renderer *ren, const ui_state *u)
         [MI_SCPU] = u->supercpu ? "SuperCPU: < On >" : "SuperCPU: < Off >",
         [MI_REU] = reu,
         [MI_JIFFY] = u->jiffydos ? "JiffyDOS: < On >" : "JiffyDOS: < Off >",
+        [MI_MOUSE] = u->mouse ? "Mouse (port 1): < On >" : "Mouse (port 1): < Off >",
     };
     int items[MI_COUNT];
     int n = ui_menu_items(u, items);

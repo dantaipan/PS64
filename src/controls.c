@@ -17,6 +17,9 @@
 #define REPEAT_RATE   110
 #define STALL_MS      100     /* a longer gap between updates: input wasn't read meanwhile */
 #define BANNER_MS     2500
+#define MOUSE_DEAD    7000    /* right stick dead zone */
+#define MOUSE_SLOW    20.0f   /* mouse counts per second just past it */
+#define MOUSE_FAST    400.0f  /* ... and at full tilt */
 
 static const char *const button_names[BTN_BINDABLE] = {
     "square", "triangle", "circle", "l1", "r1", "l2", "r2",
@@ -100,6 +103,20 @@ static void to_ui(controls *c, int input)
     push_action(c, ui_input(c->ui, input));
 }
 
+static void mods_hold(controls *c, int mods, int down);
+
+/* The Ultimate menu is on screen and has the keyboard (PS64's own screens aren't up). */
+static int ult_menu(controls *c)
+{
+    return c->remote && !ui_open(c) && !c->osk.open && remote_menu_open(c->remote);
+}
+
+/* The mouse is plugged in and nothing else has the controls. */
+static int mouse_active(controls *c)
+{
+    return c->mouse_in && !ui_open(c) && !c->osk.open && !ult_menu(c);
+}
+
 static int mode(controls *c)
 {
     int m = c->remote ? remote_mode(c->remote) : REMOTE_UNREACHABLE;
@@ -123,7 +140,46 @@ static void run_binding(controls *c, const binding *b)
         remote_menu_button(c->remote);
 }
 
-/* Directions for the screens, the OSK cursor, or cursor keys in buffer mode. */
+/* A bound button pressed: its key held down while the button is, where the machine holds
+ * keys, else typed. */
+static void binding_down(controls *c, int btn)
+{
+    const binding *b = &c->bind[btn];
+    if (b->kind == BIND_KEY && remote_holds_keys(c->remote)) {
+        if (!c->bind_held[btn]) {
+            mods_hold(c, b->mods, 1);
+            remote_key(c->remote, b->key, 1);
+            c->bind_held[btn] = 1;
+        }
+        return;
+    }
+    run_binding(c, b);
+}
+
+static void binding_up(controls *c, int btn)
+{
+    if (!c->bind_held[btn])
+        return;
+    c->bind_held[btn] = 0;
+    remote_key(c->remote, c->bind[btn].key, 0);
+    mods_hold(c, c->bind[btn].mods, 0);
+}
+
+/* The bindable button a controller button is, or -1. */
+static int bind_index(int b)
+{
+    switch (b) {
+    case SDL_CONTROLLER_BUTTON_X:             return BTN_SQUARE;
+    case SDL_CONTROLLER_BUTTON_Y:             return BTN_TRIANGLE;
+    case SDL_CONTROLLER_BUTTON_B:             return BTN_CIRCLE;
+    case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:  return BTN_L1;
+    case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: return BTN_R1;
+    }
+    return -1;
+}
+
+/* Directions for the screens, the OSK cursor, or cursor keys in buffer mode (and in the
+ * Ultimate menu). */
 static void directions(controls *c, unsigned dirs)
 {
     if (ui_open(c)) {
@@ -137,7 +193,7 @@ static void directions(controls *c, unsigned dirs)
     int dy = (dirs & JOY_DOWN ? 1 : 0) - (dirs & JOY_UP ? 1 : 0);
     if (c->osk.open) {
         osk_move(&c->osk, dx, dy);
-    } else if (mode(c) == REMOTE_BUFFER) {
+    } else if (mode(c) == REMOTE_BUFFER || ult_menu(c)) {
         if (dy) tap(c, C64K_CRSR_UD, dy < 0 ? C64MOD_SHIFT : 0);
         if (dx) tap(c, C64K_CRSR_LR, dx < 0 ? C64MOD_SHIFT : 0);
     }
@@ -210,6 +266,18 @@ static void button_down(controls *c, int b)
         return;
     }
 
+    /* The Ultimate menu: Cross selects, Circle goes back. */
+    if (ult_menu(c) && (b == SDL_CONTROLLER_BUTTON_A || b == SDL_CONTROLLER_BUTTON_B)) {
+        tap(c, b == SDL_CONTROLLER_BUTTON_A ? C64K_RETURN : C64K_RUN_STOP, 0);
+        return;
+    }
+    /* The mouse: R1 its left button, L1 its right. */
+    if (mouse_active(c) && (b == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER ||
+                            b == SDL_CONTROLLER_BUTTON_LEFTSHOULDER)) {
+        c->pad_buttons |= b == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER ? MOUSE_LEFT : MOUSE_RIGHT;
+        return;
+    }
+
     switch (b) {
     case SDL_CONTROLLER_BUTTON_A:
         if (mode(c) == REMOTE_INPUT)
@@ -217,11 +285,6 @@ static void button_down(controls *c, int b)
         else
             tap(c, C64K_RETURN, 0);
         break;
-    case SDL_CONTROLLER_BUTTON_X:             run_binding(c, &c->bind[BTN_SQUARE]); break;
-    case SDL_CONTROLLER_BUTTON_Y:             run_binding(c, &c->bind[BTN_TRIANGLE]); break;
-    case SDL_CONTROLLER_BUTTON_B:             run_binding(c, &c->bind[BTN_CIRCLE]); break;
-    case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:  run_binding(c, &c->bind[BTN_L1]); break;
-    case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: run_binding(c, &c->bind[BTN_R1]); break;
     case SDL_CONTROLLER_BUTTON_RIGHTSTICK:
         if (c->remote)
             remote_menu_button(c->remote);
@@ -229,7 +292,26 @@ static void button_down(controls *c, int b)
     case SDL_CONTROLLER_BUTTON_LEFTSTICK:
         push_action(c, (ui_action){ .kind = UA_OPEN_BROWSER });
         break;
+    default: {
+        int i = bind_index(b);
+        if (i >= 0)
+            binding_down(c, i);
+        break;
     }
+    }
+}
+
+static void button_up(controls *c, int b)
+{
+    if (b == SDL_CONTROLLER_BUTTON_A)
+        c->fire = 0;
+    if (b == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)
+        c->pad_buttons &= ~MOUSE_LEFT;
+    if (b == SDL_CONTROLLER_BUTTON_LEFTSHOULDER)
+        c->pad_buttons &= ~MOUSE_RIGHT;
+    int i = bind_index(b);
+    if (i >= 0)
+        binding_up(c, i);
 }
 
 static void trigger(controls *c, int right, int value)
@@ -243,10 +325,11 @@ static void trigger(controls *c, int right, int value)
             if (right) tap(c, C64K_RETURN, 0);
             else       osk_toggle_ctrl(&c->osk);
         } else {
-            run_binding(c, &c->bind[right ? BTN_R2 : BTN_L2]);
+            binding_down(c, right ? BTN_R2 : BTN_L2);
         }
     } else if (*state && value < TRIGGER_OFF) {
         *state = 0;
+        binding_up(c, right ? BTN_R2 : BTN_L2);
     }
 }
 
@@ -327,6 +410,28 @@ static int held_key(SDL_Keycode sym, int shift, int *mods)
     return -1;
 }
 
+/* The Mac's mouse as the C64's (relative mode: the pointer hidden, motion unbounded). */
+static void capture(controls *c, int on)
+{
+    if (c->captured == !!on)
+        return;
+    c->captured = !!on;
+    c->mac_buttons = 0;
+    SDL_SetRelativeMouseMode(on ? SDL_TRUE : SDL_FALSE);
+    if (on)
+        controls_banner(c, "The Mac's mouse is the C64's - Esc or Cmd lets go");
+}
+
+static unsigned mac_button(Uint8 b)
+{
+    switch (b) {
+    case SDL_BUTTON_LEFT:   return MOUSE_LEFT;
+    case SDL_BUTTON_RIGHT:  return MOUSE_RIGHT;
+    case SDL_BUTTON_MIDDLE: return MOUSE_MIDDLE;
+    }
+    return 0;
+}
+
 static const int mod_keys[3] = { C64K_LSHIFT, C64K_CBM, C64K_CTRL };
 static const int mod_bits[3] = { C64MOD_SHIFT, C64MOD_CBM, C64MOD_CTRL };
 
@@ -341,12 +446,12 @@ static void mods_hold(controls *c, int mods, int down)
         }
 }
 
-/* A C64 key pressed for Mac key sc: held on a built-in machine, typed on the Ultimate. */
+/* A C64 key pressed for Mac key sc: held where the machine holds keys, else typed. */
 static void press(controls *c, int sc, int key, int mods)
 {
     if (!c->remote)
         return;
-    if (!remote_local(c->remote)) {
+    if (!remote_holds_keys(c->remote)) {
         remote_key_tap(c->remote, key, mods);
         return;
     }
@@ -378,8 +483,20 @@ static void let_go_all(controls *c)
 {
     while (c->nheld)
         let_go(c, c->held[0].sc);
+    for (int i = 0; i < BTN_BINDABLE; i++)
+        binding_up(c, i);
     c->key_dirs = 0;
     c->key_fire = 0;
+    c->pad_buttons = 0;
+    c->mac_buttons = 0;
+}
+
+static int any_held(controls *c)
+{
+    for (int i = 0; i < BTN_BINDABLE; i++)
+        if (c->bind_held[i])
+            return 1;
+    return c->nheld || c->key_dirs || c->key_fire || c->pad_buttons || c->mac_buttons;
 }
 
 static unsigned arrow_bit(SDL_Keycode sym)
@@ -407,6 +524,7 @@ static int command_key(controls *c, SDL_Keycode sym)
             set_osk(c, !c->osk.open);
         return 1;
     case SDLK_j: controls_keyboard_joystick(c, !c->kbd_joy, 1); return 1;
+    case SDLK_u: push_action(c, (ui_action){ .kind = UA_MOUSE }); return 1;
     case SDLK_l:                                /* Assembly64's latest, while typing */
         if (typing(c) && c->ui->screen == UI_A64) {
             to_ui(c, IN_R1);
@@ -422,6 +540,11 @@ static int key_down(controls *c, const SDL_KeyboardEvent *k)
 {
     SDL_Keycode sym = k->keysym.sym;
     int kmod = k->keysym.mod;
+    if (c->captured && (sym == SDLK_ESCAPE || sym == SDLK_LGUI || sym == SDLK_RGUI || (kmod & KMOD_GUI))) {
+        capture(c, 0);              /* (the Mac's mouse back) */
+        if (sym == SDLK_ESCAPE)
+            return 1;
+    }
     if (kmod & KMOD_GUI) {
         let_go_all(c);
         return command_key(c, sym);
@@ -545,8 +668,8 @@ int controls_event(controls *c, const SDL_Event *ev)
         unsigned bit = dpad_bit(ev->cbutton.button);
         if (bit)
             c->dpad &= ~bit;
-        else if (ev->cbutton.button == SDL_CONTROLLER_BUTTON_A)
-            c->fire = 0;
+        else
+            button_up(c, ev->cbutton.button);
         return 1;
     }
     case SDL_CONTROLLERAXISMOTION:
@@ -557,7 +680,40 @@ int controls_event(controls *c, const SDL_Event *ev)
         else if (ev->caxis.axis == SDL_CONTROLLER_AXIS_LEFTX ||
                  ev->caxis.axis == SDL_CONTROLLER_AXIS_LEFTY)
             stick(c, ev->caxis.axis, ev->caxis.value);
+        else if (ev->caxis.axis == SDL_CONTROLLER_AXIS_RIGHTX)
+            c->rx = ev->caxis.value;
+        else if (ev->caxis.axis == SDL_CONTROLLER_AXIS_RIGHTY)
+            c->ry = ev->caxis.value;
         return 1;
+    case SDL_MOUSEBUTTONDOWN:
+        if (ev->button.which == SDL_TOUCH_MOUSEID || !mouse_active(c))
+            return 0;
+        if (!c->captured)
+            capture(c, 1);          /* (the click that hands the mouse over isn't sent) */
+        else
+            c->mac_buttons |= mac_button(ev->button.button);
+        return 1;
+    case SDL_MOUSEBUTTONUP:
+        if (!c->captured)
+            return 0;
+        c->mac_buttons &= ~mac_button(ev->button.button);
+        return 1;
+    case SDL_MOUSEMOTION:
+        if (!c->captured)
+            return 0;
+        if (mouse_active(c))
+            remote_mouse_move(c->remote, ev->motion.xrel, ev->motion.yrel);
+        return 1;
+    case SDL_MOUSEWHEEL: {
+        if (!c->captured)
+            return 0;
+        int y = ev->wheel.y;
+        if (ev->wheel.direction == SDL_MOUSEWHEEL_FLIPPED)
+            y = -y;
+        if (mouse_active(c))
+            remote_mouse_wheel(c->remote, y);
+        return 1;
+    }
     case SDL_KEYDOWN:
         if (ev->key.keysym.sym == SDLK_ESCAPE && !ev->key.repeat && c->ui && c->ui->screen == UI_HOME)
             c->quit_held = 1;                   /* (the Mac's Circle) */
@@ -580,6 +736,82 @@ int controls_event(controls *c, const SDL_Event *ev)
     return 0;
 }
 
+/* Mouse counts from one right stick axis for dt ms: slow just past the dead zone, a
+ * quadratic curve up to MOUSE_FAST. */
+static int stick_counts(int v, float *frac, Uint32 dt)
+{
+    int a = v < 0 ? -v : v;
+    if (a <= MOUSE_DEAD) {
+        *frac = 0;
+        return 0;
+    }
+    float t = (float)(a - MOUSE_DEAD) / (float)(32767 - MOUSE_DEAD);
+    if (t > 1)
+        t = 1;
+    float speed = MOUSE_SLOW + (MOUSE_FAST - MOUSE_SLOW) * t * t;
+    *frac += (v < 0 ? -speed : speed) * (float)dt / 1000.0f;
+    int n = (int)*frac;
+    *frac -= (float)n;
+    return n;
+}
+
+int controls_set_mouse(controls *c, int on, int announce)
+{
+    int detecting = c->remote && remote_mode(c->remote) == REMOTE_DETECTING;
+    if (on && !(c->remote && remote_has_mouse(c->remote)) && !detecting) {
+        if (announce)
+            controls_banner(c, !c->remote || remote_local(c->remote)
+                               ? "This machine has no mouse port"
+                               : "The mouse needs C64 Ultimate firmware 1.2.1");
+        c->mouse = 0;
+        return 0;
+    }
+    c->mouse = !!on;
+    if (announce) {
+        char msg[96];
+        if (!on)
+            snprintf(msg, sizeof(msg), "Mouse off");
+        else if (controls_have_pad())
+            snprintf(msg, sizeof(msg), "Mouse on port 1: right stick moves it, R1/L1 click%s",
+                     c->port == 1 ? " (joystick on port 2)" : "");
+        else
+            snprintf(msg, sizeof(msg), "Mouse on port 1: click the picture to use the Mac's mouse");
+        controls_banner(c, msg);
+    }
+    return c->mouse;
+}
+
+/* Plug the mouse in or out to match the setting, move it with the right stick, press its
+ * buttons. */
+static void update_mouse(controls *c, Uint32 dt)
+{
+    if (c->mouse_for != c->remote) {           /* (another machine: nothing plugged in yet) */
+        c->mouse_for = c->remote;
+        c->mouse_in = 0;
+    }
+    int in = c->mouse && c->remote && remote_has_mouse(c->remote);
+    if (in != c->mouse_in) {
+        c->mouse_in = in;
+        remote_mouse_enable(c->remote, in);
+        c->mfrac_x = c->mfrac_y = 0;
+        c->pad_buttons = 0;
+        if (!in)
+            capture(c, 0);
+    }
+    if (!c->mouse_in)
+        return;
+    int active = mouse_active(c);
+    if (!active) {
+        c->pad_buttons = 0;
+        capture(c, 0);
+    } else {
+        int dx = stick_counts(c->rx, &c->mfrac_x, dt);
+        int dy = stick_counts(c->ry, &c->mfrac_y, dt);
+        remote_mouse_move(c->remote, dx, dy);
+    }
+    remote_mouse_buttons(c->remote, active ? c->pad_buttons | c->mac_buttons : 0);
+}
+
 void controls_update(controls *c, Uint32 now)
 {
     /* Circle held on the home screen: quit once it's been held long enough. */
@@ -588,10 +820,17 @@ void controls_update(controls *c, Uint32 now)
             c->quit_held = 0;
         push_action(c, ui_home_hold(c->ui, c->quit_held, now));
     }
-    if ((ui_open(c) || c->osk.open) && (c->nheld || c->key_dirs || c->key_fire))
+    if ((ui_open(c) || c->osk.open) && any_held(c))
         let_go_all(c);                          /* (a screen opened while keys were down) */
     unsigned dirs = c->dpad | c->stick | c->key_dirs;
-    int joystick = !ui_open(c) && !c->osk.open && mode(c) == REMOTE_INPUT;
+    int menu = ult_menu(c);
+    if (menu && !c->menu_was_open)
+        controls_banner(c, controls_have_pad() ? "Ultimate menu: D-pad moves, Cross selects, Circle goes back"
+                                               : "Ultimate menu: arrows move, Return selects, Esc goes back");
+    c->menu_was_open = menu;
+    int joystick = !ui_open(c) && !c->osk.open && !menu && mode(c) == REMOTE_INPUT;
+    Uint32 dt = c->updated_at ? now - c->updated_at : 0;
+    update_mouse(c, dt > 50 ? 50 : dt);
 
     /* Edge-triggered with auto-repeat for screens, the OSK cursor and cursor keys. After a
      * stall (the emulator fitting a 16 MB REU, say) a press may have ended unseen, so a held
@@ -612,8 +851,10 @@ void controls_update(controls *c, Uint32 now)
         c->repeat_at = now + REPEAT_RATE;
     }
 
+    /* The mouse is on port 1, so the joystick goes to port 2 meanwhile. */
+    int port = c->mouse_in && c->port == 1 ? 2 : c->port;
     if (c->remote)
-        remote_joystick(c->remote, c->port,
+        remote_joystick(c->remote, port,
                         joystick ? dirs | (c->fire || c->key_fire ? JOY_FIRE : 0) : 0);
 }
 

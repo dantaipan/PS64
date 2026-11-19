@@ -107,6 +107,7 @@ typedef struct {
     const char *emu_load;     /* debug: start this file in the emulator at launch */
     int         dpad_keys;    /* emulator: D-pad/stick/Cross as cursor keys and RETURN */
     int         vic20_dpad_keys;  /* the same for the VIC-20 (its own: its games want the joystick) */
+    int         mouse;        /* a 1351 mouse on port 1 (where the machine takes one) */
     int         no_home;      /* start straight away (debug flags imply it) instead of on the home screen */
     int         home_sel;     /* debug: the home screen's chosen object (-1: default) */
     const char *sid_file;     /* debug: play this .sid with the built-in SID player */
@@ -165,7 +166,8 @@ static void usage(const char *argv0)
         "          [--stream-volume DB] [--emulator-volume DB] [--no-home] [--home-sel N]\n"
         "          [--sid FILE] [--sid-song N] [--sids-dir DIR] [--songlengths FILE]\n"
         "          [--sid-volume DB] [--sid-output ps64|ultimate]\n"
-        "          [--joystick-port 1|2] [--button-NAME KEY] [--type TEXT] [--browse-dir DIR]\n"
+        "          [--joystick-port 1|2] [--mouse on|off] [--button-NAME KEY] [--type TEXT]\n"
+        "          [--browse-dir DIR]\n"
         "          [--search-roots /SD,/USB0] [--build-index] [--search TEXT]\n"
         "          [--assembly64-url URL] [--a64-search TEXT]\n"
         "          [--a64-latest CATEGORY]\n"
@@ -234,6 +236,7 @@ static int parse_args(int argc, char **argv, options *o)
     o->emu_load = NULL;
     o->dpad_keys = 0;
     o->vic20_dpad_keys = 0;
+    o->mouse = 0;
     o->no_home = 0;
     o->home_sel = -1;
     o->sid_file = NULL;
@@ -276,6 +279,7 @@ static int parse_args(int argc, char **argv, options *o)
         else if (!strcmp(a, "--emu-load") && next)  { o->emu_load = next; i++; }
         else if (!strcmp(a, "--dpad") && next)      { o->dpad_keys = !strcasecmp(next, "keys"); i++; }
         else if (!strcmp(a, "--vic20-dpad") && next) { o->vic20_dpad_keys = !strcasecmp(next, "keys"); i++; }
+        else if (!strcmp(a, "--mouse") && next)     { o->mouse = !strcasecmp(next, "on"); i++; }
         else if (!strcmp(a, "--pick"))              { o->pick = 1; }
         else if (!strcmp(a, "--no-home"))           { o->no_home = 1; }
         else if (!strcmp(a, "--home-sel") && next)  { o->home_sel = atoi(next); i++; }
@@ -779,6 +783,9 @@ static void emu_tap(int key, int mods)       { emulator_key_tap(key, mods); }
 static void emu_joy(int port, unsigned bits) { emulator_joystick(port, bits); }
 static void emu_release(void)                { emulator_release_keys(); }
 static void emu_key(int key, int down)       { emulator_key(key, down); }
+static void emu_mouse_on(int on)             { emulator_mouse(on); }
+static void emu_mouse_move(int dx, int dy)   { emulator_mouse_move(dx, dy); }
+static void emu_mouse_buttons(unsigned bits) { emulator_mouse_buttons(bits); }
 
 /* The JiffyDOS ROMs from the roms folder, into core's system folder (where VICE looks), and
  * JiffyDOS on there if it's wanted and they're there. */
@@ -824,9 +831,17 @@ static int session_begin_emulator(session *s, const options *o, int machine)
         emulator_joystick(o->joystick_port, 0);
     else if (emulator_start(emu_dir, o->joystick_port) != 0)
         return -1;
-    static const remote_sink sink = { emu_tap, emu_joy, emu_release, emu_key };
+    /* The C64s take a 1351 mouse on port 1; the VIC-20 doesn't (one port, no POT mouse). */
+    static const remote_sink sink = { emu_tap, emu_joy, emu_release, emu_key,
+                                       emu_mouse_on, emu_mouse_move, emu_mouse_buttons };
+    static const remote_sink vic20_sink = { emu_tap, emu_joy, emu_release, emu_key, NULL, NULL, NULL };
     s->emu = machine + 1;                    /* (EMU_* + 1: non-zero for either machine) */
+#ifdef PS64_VIC20
+    s->rem = remote_start_local(machine == EMU_VIC20 ? &vic20_sink : &sink);
+#else
+    (void)vic20_sink;
     s->rem = remote_start_local(&sink);
+#endif
     files_set_emulator(s->emu);
     localfs_mkdirs(games_dir);
     s->index = index_new();
@@ -1678,6 +1693,7 @@ int main(int argc, char **argv)
     ctl.osk.cbm = (opt.osk_mods & C64MOD_CBM) != 0;
     ctl.osk.ctrl = (opt.osk_mods & C64MOD_CTRL) != 0;
     ctl.joy_keys = opt.dpad_keys;
+    ctl.mouse = opt.mouse;
     char browse_dir[512];
     snprintf(browse_dir, sizeof(browse_dir), "%s", opt.browse_dir ? opt.browse_dir : "/");
 
@@ -2410,6 +2426,11 @@ int main(int argc, char **argv)
                 break;
             }
 #endif
+            case UA_MOUSE:
+                opt.mouse = controls_set_mouse(&ctl, !ctl.mouse, 1);
+                if (config)
+                    config_set(config, "mouse", opt.mouse ? "on" : "off", NULL);
+                break;
             case UA_CONTROLLER:
                 /* Each machine keeps its own (the C64's also applies to the stream). */
                 ctl.joy_keys = !ctl.joy_keys;
@@ -2651,6 +2672,7 @@ int main(int argc, char **argv)
             ctl.joy_keys = ses.emu == 2 ? opt.vic20_dpad_keys : opt.dpad_keys;
         }
         ui.joy_keys = ctl.joy_keys;
+        ui.mouse = ctl.mouse;
 #ifdef PS64_EMU
         ui.disks = ses.emu ? emulator_disk_count() : 0;
         ui.disk = ses.emu ? emulator_disk_index() : 0;
