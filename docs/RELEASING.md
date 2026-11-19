@@ -3,10 +3,10 @@
 How PS64 gets to the Prospero Store, how updates reach people, and how to test a new
 version on the PS5 next to the copy installed from the store.
 
-Status (2026-11-14): **1.0.6 released** (GitHub release `01.000.006`: SuperCPU, REU and
-JiffyDOS in the VICE C64, SID search by musician; catalog pull request #1302). Listed at
-https://prosperostore.net/app/PPSA06464/.
-**Next release**: collect changes in `docs/release-notes/01.000.007.md` (features and fixes;
+Status (2026-11-19): **1.0.7 released** (GitHub release `01.000.007`: C64 Ultimate firmware
+1.2.x control (held keys, Ultimate menu control) and a 1351 mouse; catalog pull request #1350).
+Listed at https://prosperostore.net/app/PPSA06464/.
+**Next release**: collect changes in `docs/release-notes/01.000.008.md` (features and fixes;
 cosmetic changes as "Enhancements to the UI"); release when it's ready (`release.sh` attaches the Mac
 disk image, `PS64-<version>-mac-arm64.dmg`, to the GitHub release too; the catalog only counts
 the `.zip`). Commits use the private GitHub address
