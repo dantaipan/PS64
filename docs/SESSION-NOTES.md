@@ -421,7 +421,8 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
 
 - **1.2.1 network control (for 1.0.7): done and tested** by the user on PS64 Dev on the PS5
   (2026-11-19): RESTORE, Ultimate menu control, H.E.R.O. with the joystick (after the
-  Nagle fix), the mouse in GEOS (COMM 1351 driver). Input timings then: median 20 ms, joystick
+  Nagle fix), the mouse in GEOS (COMM 1351 driver); then on the Mac with `--remote`, the captured Mac
+  mouse moving and clicking in GEOS (the wheel not tested yet). Input timings then: median 20 ms, joystick
   max 32 ms, no failed POSTs. Ready to release when the user says. Optional later: even out
   mouse steps (they alternate ~7/13 counts: 60 Hz adding up, ~45 sends/s), a PS64 mouse-speed
   option, the VICE port 2 fire/left-button quirk.
