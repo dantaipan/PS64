@@ -158,6 +158,8 @@ typedef struct {
     unsigned home_snack_serial;
     int  home_stream;             /* HOME_STREAM_* (set by main) */
     char home_ip[16];             /* the C64 Ultimate found (set by main) */
+    char no_c64[96];              /* set by main while the saved C64 streams here but doesn't
+                                   * answer (it's retried): shown instead of "No C64 Ultimate" */
     int  picker_from_home;        /* the picker is the home screen's settings */
 
     /* SID player. Lists: */

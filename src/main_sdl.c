@@ -718,6 +718,12 @@ static void session_end(session *s, const options *o)
     memset(s, 0, sizeof(*s));
 }
 
+/* What to say when an action needs a C64 Ultimate and none is attached. */
+static const char *no_c64(const ui_state *u, const char *usual)
+{
+    return u->no_c64[0] ? u->no_c64 : usual;
+}
+
 /*
  * Attach to host: start its streams towards us if stream is set, then the
  * input and file workers. Returns 0, -1 if unreachable, or the HTTP status
@@ -1115,7 +1121,7 @@ static void sid_load_current(ui_state *ui, a64 *a64c, c64files *files)
         /* Its bytes over FTP first (title, songs, lengths), then it plays as "Play on" says. */
         const char *name = strrchr(sp.paths[cur], '/');
         if (!files) {
-            snprintf(ui->sid_status, sizeof(ui->sid_status), "No C64 Ultimate connected");
+            snprintf(ui->sid_status, sizeof(ui->sid_status), "%s", no_c64(ui, "No C64 Ultimate connected"));
         } else {
             sidplay_close(sp.engine);                /* silence while it's fetched */
             sp.engine = NULL;
@@ -1738,6 +1744,11 @@ int main(int argc, char **argv)
     Uint32 home_search_at = 0, stream_since = 0, last_frame_tick = 0;
     uint64_t frames_seen = 0;
     int home_locked = 0;
+    /* Who the video stream comes from (its last packet), and the check that attaches again
+     * to the saved C64 while it streams here with nothing attached (see below). */
+    in_addr_t stream_from = 0;
+    Uint32 stream_from_tick = 0, reattach_at = 0;
+    discover *reattach = NULL;
     if (opt.start_host)
         snprintf(home_want, sizeof(home_want), "%s", opt.start_host);
     if (opt.password)
@@ -1940,11 +1951,19 @@ int main(int argc, char **argv)
 
         /* Drain everything that arrived since the last vsync. */
         for (;;) {
-            ssize_t n = recv(sock, buf, sizeof(buf), 0);
+            struct sockaddr_in from;
+            socklen_t fromlen = sizeof(from);
+            ssize_t n = recvfrom(sock, buf, sizeof(buf), 0, (struct sockaddr *)&from, &fromlen);
             if (n < 0) {
                 if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
                     perror("recv");
                 break;
+            }
+            if (fromlen >= (socklen_t)sizeof(from) && from.sin_family == AF_INET) {
+                stream_from = from.sin_addr.s_addr;
+                stream_from_tick = SDL_GetTicks();
+                if (!stream_from_tick)
+                    stream_from_tick = 1;      /* 0 is "never" */
             }
             if (!ses.emu && vic_feed(&dec, buf, (size_t)n))
                 dirty = 1;
@@ -2347,7 +2366,7 @@ int main(int argc, char **argv)
                         snprintf(sp.ult_listing, sizeof(sp.ult_listing), "%s", a.path);
                         files_list(ses.files, a.path);
                     } else {
-                        ui_sid_list_error(&ui, SID_TAB_ULTIMATE, a.path, "No C64 Ultimate connected");
+                        ui_sid_list_error(&ui, SID_TAB_ULTIMATE, a.path, no_c64(&ui, "No C64 Ultimate connected"));
                     }
                 } else {
                     sid_list(&ui, a.path);
@@ -2456,7 +2475,7 @@ int main(int argc, char **argv)
                 }
 #endif
                 if (!ses.files) {
-                    controls_banner(&ctl, "No C64 Ultimate connected (Options > Home > settings)");
+                    controls_banner(&ctl, no_c64(&ui, "No C64 Ultimate connected (Options > Home > settings)"));
                     break;
                 }
                 files_action(ses.files, "", a.kind == UA_RESET ? FA_RESET : FA_REBOOT);
@@ -2498,7 +2517,7 @@ int main(int argc, char **argv)
                 }
 #endif
                 if (!ses.files) {
-                    controls_banner(&ctl, "No C64 Ultimate connected (Options > Home > settings)");
+                    controls_banner(&ctl, no_c64(&ui, "No C64 Ultimate connected (Options > Home > settings)"));
                     break;
                 }
                 if (a64c) {
@@ -2510,7 +2529,7 @@ int main(int argc, char **argv)
                 break;
             case UA_OPEN_SEARCH:
                 if (!ses.index) {
-                    controls_banner(&ctl, "No C64 Ultimate connected (Options > Home > settings)");
+                    controls_banner(&ctl, no_c64(&ui, "No C64 Ultimate connected (Options > Home > settings)"));
                     break;
                 }
                 ui.index = ses.index;
@@ -2518,7 +2537,7 @@ int main(int argc, char **argv)
                 break;
             case UA_BUILD_INDEX:
                 if (!ses.index) {
-                    controls_banner(&ctl, "No C64 Ultimate connected (Options > Home > settings)");
+                    controls_banner(&ctl, no_c64(&ui, "No C64 Ultimate connected (Options > Home > settings)"));
                     break;
                 }
 #ifdef PS64_EMU
@@ -2541,7 +2560,7 @@ int main(int argc, char **argv)
                 }
 #endif
                 if (!ses.files) {
-                    controls_banner(&ctl, "No C64 Ultimate connected (Options > Home > settings)");
+                    controls_banner(&ctl, no_c64(&ui, "No C64 Ultimate connected (Options > Home > settings)"));
                     break;
                 }
                 a = ui_open_browser(&ui, browse_dir);
@@ -2602,7 +2621,7 @@ int main(int argc, char **argv)
                 }
 #endif
                 if (!ses.files) {
-                    controls_banner(&ctl, "No C64 Ultimate connected (Options > Home > settings)");
+                    controls_banner(&ctl, no_c64(&ui, "No C64 Ultimate connected (Options > Home > settings)"));
                     break;
                 }
                 if (!local && !a64c) {
@@ -2984,6 +3003,46 @@ int main(int argc, char **argv)
             }
         }
 
+        /* The saved C64 still streaming here with nothing attached: its web remote control
+         * stopped answering (or did when PS64 started). Away from home (which looks for it
+         * itself), check it every 10 s and attach again once it answers. Only while its own
+         * stream arrives here, so it's never taken from another PS64 (e.g. on the PS5). */
+        struct in_addr want_addr;
+        int orphaned = !ses.files && !ses.emu && !home_locked && home_want[0] &&
+                       inet_pton(AF_INET, home_want, &want_addr) == 1 &&
+                       stream_from_tick && stream_from == want_addr.s_addr &&
+                       tick - stream_from_tick < 1500;
+        if (orphaned)
+            snprintf(ui.no_c64, sizeof(ui.no_c64),
+                     "The C64 at %s isn't answering its web remote control - retrying", home_want);
+        else
+            ui.no_c64[0] = 0;
+        if (orphaned && ui.screen != UI_HOME && !reattach && SDL_TICKS_PASSED(tick, reattach_at))
+            reattach = discover_start_one(home_want, home_pass);
+        if (reattach) {
+            c64_device found[DISCOVER_MAX];
+            int n, progress;
+            if (discover_poll(reattach, found, &n, &progress)) {
+                discover_stop(reattach);
+                reattach = NULL;
+                reattach_at = tick + 10000;
+                if (n == 1 && orphaned) {
+                    home_locked = found[0].locked && !home_pass[0];
+                    int rc = home_locked ? -1 : session_begin(&ses, &opt, home_want, home_pass, 1);
+                    if (rc == 0) {
+                        stream_since = tick;
+                        ui.no_c64[0] = 0;
+                        snprintf(msg, sizeof(msg), "Reconnected to the C64 at %s", home_want);
+                        printf("%s\n", msg);
+                        controls_banner(&ctl, msg);
+                    } else if (!home_locked) {
+                        session_end(&ses, &opt);
+                        home_locked = rc == 403;
+                    }
+                }
+            }
+        }
+
         /* Home: look for the C64 Ultimate (again every 15 s until one answers). */
         int home_idle = ui.screen == UI_HOME && !ses.streaming && !ses.emu;
         if (home_idle && !scan && SDL_TICKS_PASSED(tick, home_search_at))
@@ -3213,6 +3272,7 @@ int main(int argc, char **argv)
                (unsigned long long)aout.underruns, (unsigned long long)aout.overflows);
 
     discover_stop(scan);
+    discover_stop(reattach);
     a64_stop(a64c);
     shots_stop(shotw);
     free(shot_px);

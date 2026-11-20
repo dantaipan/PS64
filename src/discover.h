@@ -20,6 +20,9 @@ typedef struct discover discover;
 /* also_near: an IP whose /24 is scanned too (e.g. the saved C64), or NULL. */
 discover *discover_start(const char *also_near, const char *password);
 
+/* Probe just ip (no scan): found has it if it answers as an Ultimate (or locked). */
+discover *discover_start_one(const char *ip, const char *password);
+
 /* Copies results found so far; returns 1 when the scan has finished.
  * progress is 0-100. */
 int discover_poll(discover *d, c64_device *out, int *count, int *progress);

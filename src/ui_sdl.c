@@ -313,7 +313,8 @@ static void draw_search(SDL_Renderer *ren, const ui_state *u, Uint32 now)
     }
 
     if (!u->index) {
-        font_draw(ren, "No C64 Ultimate connected (Options > Home > settings)", PX + 16, LIST_Y, 1, YELLOW);
+        font_draw(ren, u->no_c64[0] ? u->no_c64 : "No C64 Ultimate connected (Options > Home > settings)",
+                  PX + 16, LIST_Y, 1, YELLOW);
         footer(ren, "{circle} close");
         return;
     }

@@ -395,6 +395,25 @@ joystick; favourites/recents carried over; Options > Quit returns cleanly.
 - Tests: `test_input` has a fake Ultimate in three styles (1.1.0/1.2.0/1.2.1, menu, 429,
   pending); `test_emulator` reads port 1 fire, POT X and port 2 with the mouse in.
 
+## Reattaching to a C64 whose web server stopped answering (built 2026-11-20, unreleased)
+
+- Seen on the user's C64 (1.2.1) on 2026-11-20: port 80 accepts the connection but resets every
+  HTTP request (FTP still fine, ping fine), while the video/audio streams it was already sending
+  to the Mac keep arriving. PS64 (started then) failed `streams/video:start`, so `session_begin`
+  returned before the files/input workers: picture on screen, every action "No C64 Ultimate
+  connected". Only a power cycle brings the web server back.
+- PS64 now records who the video stream comes from (`recvfrom`). While nothing is attached, the
+  saved C64 (`c64 =`) is the sender (a packet in the last 1.5 s) and the screen isn't Home (Home
+  has its own 15 s search), it probes just that address (`discover_start_one`, GET `/v1/info`)
+  every 10 s and attaches again ("Reconnected to the C64 at ..."). Actions say "The C64 at ...
+  isn't answering its web remote control - retrying" meanwhile. Decision (user, option A): only
+  while its own stream arrives here, so it never takes the stream from another PS64; after a
+  power cycle (the stream stops) press Home and its search reconnects.
+- Tested with a fake Ultimate (resets for 8 s, then answers) and `fake_sender` on port 12000
+  with `--no-audio --no-home`: reattached at the first probe after recovery; no probe with no
+  stream, nor with the stream from another address. `make test` and the PS5 homebrew build pass;
+  not yet on the real C64 or the native app.
+
 ## Diagnosing native crashes
 
 - ShadowMountPlus writes RIP/backtrace to `/data/shadowmount/debug.log`, but only in an app's

@@ -24,6 +24,7 @@ struct discover {
     char            near[16];
     char            password[64];
     int             have_password;
+    int             only;           /* probe just near, no scan */
     int             quit, done, progress;
     c64_device      found[DISCOVER_MAX];
     int             count;
@@ -150,6 +151,14 @@ static void *worker(void *arg)
     uint32_t nets[2];
     int nnets = 0;
     char me[INET_ADDRSTRLEN];
+    if (d->only) {
+        probe(d, d->near);
+        pthread_mutex_lock(&d->lock);
+        d->done = 1;
+        d->progress = 100;
+        pthread_mutex_unlock(&d->lock);
+        return NULL;
+    }
     /* A UDP "connect" picks the outgoing interface without sending anything. */
     if (c64api_local_ip("8.8.8.8", me, sizeof(me)) == 0 && net24(me))
         nets[nnets++] = net24(me);
@@ -174,11 +183,12 @@ static void *worker(void *arg)
     return NULL;
 }
 
-discover *discover_start(const char *also_near, const char *password)
+static discover *start(const char *also_near, const char *password, int only)
 {
     discover *d = calloc(1, sizeof(*d));
     if (!d)
         return NULL;
+    d->only = only;
     if (also_near)
         snprintf(d->near, sizeof(d->near), "%s", also_near);
     if (password) {
@@ -192,6 +202,16 @@ discover *discover_start(const char *also_near, const char *password)
         return NULL;
     }
     return d;
+}
+
+discover *discover_start(const char *also_near, const char *password)
+{
+    return start(also_near, password, 0);
+}
+
+discover *discover_start_one(const char *ip, const char *password)
+{
+    return start(ip, password, 1);
 }
 
 int discover_poll(discover *d, c64_device *out, int *count, int *progress)
